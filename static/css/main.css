@@ -407,6 +407,12 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
   .hero { padding: var(--space-5) var(--space-4); }
   .hero h1 { font-size: var(--text-2xl); }
   #map { height: 380px; }
+
+  /* Таблицы (задачи, архив, очередь проверки) шире экрана телефона.
+     Даём им прокручиваться внутри себя, чтобы вбок не уезжала вся
+     страница — иначе на телефоне «плывёт» вообще всё. */
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  table th, table td { white-space: normal; min-width: 90px; }
 }
 
 /* --- Панель организатора ------------------------------------------------- */
