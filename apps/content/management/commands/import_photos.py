@@ -62,7 +62,7 @@ class Command(BaseCommand):
                 season=season,
                 image=ContentFile(path.read_bytes(), name=path.name),
                 caption=options["caption"],
-                order=100 - number,  # свежие сезоны выше
+                order=number,
             )
             created += 1
             self.stdout.write(f"  {path.name} → {season.title}")

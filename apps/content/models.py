@@ -364,7 +364,9 @@ class Photo(TimeStampedModel):
     class Meta:
         verbose_name = "фотография"
         verbose_name_plural = "фотографии"
-        ordering = ["-season__year", "order", "pk"]
+        # От первых сезонов к последним: галерея читается как история
+        # олимпиады, а не как лента новостей.
+        ordering = ["season__year", "order", "pk"]
 
     def __str__(self):
         return self.caption or f"Фото {self.pk}"

@@ -429,3 +429,20 @@ class FinalPhotosTest(TestCase):
     def test_empty_gallery_says_so_instead_of_breaking(self):
         html = self.client.get("/final/").content.decode()
         self.assertIn("Финалы прошлых лет", html)
+
+    def test_gallery_runs_from_the_first_season_to_the_last(self):
+        """Галерея читается как история олимпиады, а не как лента новостей."""
+        from django.core.files.base import ContentFile
+
+        from apps.content.models import Photo
+        from apps.seasons.models import Season
+
+        for year in (2023, 2021, 2022):
+            Photo.objects.create(
+                season=Season.objects.get_or_create(
+                    year=year, defaults={"slug": f"s{year}", "title": f"АО {year}",
+                                         "is_published": True})[0],
+                image=ContentFile(b"\x89PNG\r\n\x1a\n", name=f"y{year}.png"),
+            )
+        years = [p.season.year for p in Photo.objects.published()]
+        self.assertEqual(years, sorted(years))

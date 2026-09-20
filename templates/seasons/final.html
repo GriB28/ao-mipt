@@ -37,13 +37,15 @@
           сохранить, не подключая ради этого отдельную галерею на JS.
         {% endcomment %}
         <a href="{{ photo.image.url }}" target="_blank" rel="noopener">
-          <img src="{{ photo.image.url }}" alt="{{ photo.caption }}" loading="lazy">
+          <img src="{{ photo.image.url }}" alt="{{ photo.caption|default:photo.year_label }}" loading="lazy">
         </a>
-        {% if photo.caption or photo.year_label %}
-          <figcaption>
-            {% if photo.year_label %}<span class="photo-year">{{ photo.year_label }}</span>{% endif %}
-            {{ photo.caption }}
-          </figcaption>
+        {% if photo.year_label %}
+          {% comment %}
+            В подписи только номер сезона: «Финалисты» одинаково на всех
+            снимках и ничего не добавляет. Сама подпись остаётся в базе —
+            она идёт в alt для тех, кто не видит картинку.
+          {% endcomment %}
+          <figcaption>{{ photo.year_label }}</figcaption>
         {% endif %}
       </figure>
     {% endfor %}
