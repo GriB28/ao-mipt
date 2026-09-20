@@ -1,0 +1,104 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Аэрокосмическая олимпиада МФТИ{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
+  {% if current_season and current_season.accent_color %}
+  {% comment %}
+    Цвет сезона задаётся в админке и подменяет основной цвет бренда.
+    Все производные (кнопки, ссылки) пересчитываются сами — см. tokens.css.
+    Именно {% templatetag openblock %} comment {% templatetag closeblock %}, а не {% templatetag opencomment %} … {% templatetag closecomment %}:
+    короткая форма работает только в одну строку, многострочная утекает в HTML.
+  {% endcomment %}
+  <style>:root { --color-brand-500: {{ current_season.accent_color }}; }</style>
+  {% endif %}
+  {% block head %}{% endblock %}
+</head>
+<body>
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="logo" href="{% url 'core:home' %}">
+      {% if current_season.logo %}<img src="{{ current_season.logo.url }}" alt="">{% endif %}
+      <span>АО&nbsp;МФТИ</span>
+    </a>
+    <nav class="main-nav">
+      {% comment %}
+        Порядок: новости, затем этапы по ходу олимпиады, затем материалы.
+        Пункты «Очный тур» и «Дистанционный тур» рядом намеренно — это
+        два формата одного отбора.
+      {% endcomment %}
+      <a href="{% url 'content:news_list' %}">Новости</a>
+      <a href="{% url 'venues:map' %}">Очный тур</a>
+      <a href="{% url 'contest:problem_list' %}">Дистанционный тур</a>
+      <a href="{% url 'seasons:second_round' %}">Второй тур</a>
+      <a href="{% url 'seasons:final' %}">Финал</a>
+      <a href="{% url 'content:lecture_list' %}">Лекции</a>
+      <a href="{% url 'content:problem_archive' %}">Архив</a>
+    </nav>
+    <div class="user-nav">
+      {% if user.is_authenticated %}
+        <a href="{% url 'accounts:profile' %}">Кабинет</a>
+        {% if user.is_manager %}<span class="role-tag">{{ user.get_role_display|lower }}</span>{% endif %}
+        {% if user.is_staff %}<a href="{% url 'admin:index' %}">Админка</a>{% endif %}
+        <form method="post" action="{% url 'accounts:logout' %}" class="inline-form">
+          {% csrf_token %}<button type="submit" class="link-button">Выйти</button>
+        </form>
+      {% else %}
+        <a href="{% url 'accounts:login' %}">Войти</a>
+        <a class="btn btn-small" href="{% url 'accounts:signup' %}">Регистрация</a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}<li class="message {{ message.tags }}">{{ message }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <div>
+      <p class="footer-title">Аэрокосмическая олимпиада МФТИ</p>
+      {% if current_season %}<p>{{ current_season.title }}</p>{% endif %}
+    </div>
+
+    <div>
+      <p class="footer-title">Связаться</p>
+      <p>Вопросы по олимпиаде:<br>
+        <a href="mailto:{{ CONTACT_EMAIL }}">{{ CONTACT_EMAIL }}</a></p>
+      {% if SUPPORT_EMAIL %}
+        <p>Проблемы с сайтом:<br>
+          <a href="mailto:{{ SUPPORT_EMAIL }}">{{ SUPPORT_EMAIL }}</a></p>
+      {% endif %}
+    </div>
+
+    {% if TELEGRAM_URL or TELEGRAM_CHAT_URL or VK_URL %}
+    <div>
+      <p class="footer-title">Мы в соцсетях</p>
+      <ul class="footer-links">
+        {% if TELEGRAM_URL %}<li><a href="{{ TELEGRAM_URL }}" rel="noopener">Телеграм-канал</a></li>{% endif %}
+        {% if TELEGRAM_CHAT_URL %}<li><a href="{{ TELEGRAM_CHAT_URL }}" rel="noopener">Чат участников</a></li>{% endif %}
+        {% if VK_URL %}<li><a href="{{ VK_URL }}" rel="noopener">ВКонтакте</a></li>{% endif %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div>
+      <p class="footer-title">Документы</p>
+      <ul class="footer-links">
+        <li><a href="{% url 'content:page' 'rules' %}">Правила</a></li>
+        <li><a href="{% url 'content:page' 'privacy' %}">Обработка персональных данных</a></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

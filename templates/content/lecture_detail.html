@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ lecture.title }}{% endblock %}
+{% block content %}
+<h1>{{ lecture.title }}</h1>
+<p class="muted">
+  {{ lecture.season.title }}
+  {% if lecture.lecturer %} · {{ lecture.lecturer }}{% endif %}
+  {% if lecture.held_at %} · {{ lecture.held_at|date:"d.m.Y" }}{% endif %}
+</p>
+
+{% if lecture.embed_url %}
+  <div class="video-frame">
+    <iframe src="{{ lecture.embed_url }}" title="{{ lecture.title }}"
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+            allowfullscreen loading="lazy"></iframe>
+  </div>
+  <p class="muted">Не проигрывается? <a href="{{ lecture.video_url }}" rel="noopener">Открыть
+    {% if lecture.platform_title %}в {{ lecture.platform_title }}{% else %}по ссылке{% endif %}</a>.</p>
+{% elif lecture.video_url %}
+  <p><a class="btn" href="{{ lecture.video_url }}" rel="noopener">Смотреть в {{ lecture.platform_title }}</a></p>
+  {% if user.is_staff %}
+    <p class="muted">Здесь стоит ссылка на плейлист — такой плеер не встраивается.
+      Замените её на ссылку конкретного видео, и запись будет играть прямо на странице.</p>
+  {% endif %}
+{% endif %}
+
+{% if lecture.description %}<div class="prose">{{ lecture.description|linebreaks }}</div>{% endif %}
+
+{% if lecture.slides %}
+  <p><a class="btn btn-secondary" href="{{ lecture.slides.url }}">Скачать презентацию</a></p>
+{% endif %}
+
+<p><a href="{% url 'content:lecture_list' %}">← Все лекции</a></p>
+{% endblock %}

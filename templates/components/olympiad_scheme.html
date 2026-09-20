@@ -1,0 +1,63 @@
+{% comment %}
+Схема проведения олимпиады на главной.
+
+Три вложенных фона показывают структуру без единой лишней строки текста:
+
+    вся олимпиада
+        отборочный тур
+            первый уровень: очный и дистанционный
+            второй тур
+        финал
+
+Самый насыщенный фон — у первых двух этапов, они равнозначны и проходят
+в одной группе. Чем внешнее область, тем светлее.
+
+Стрелки стоят только там, где порядок действительно есть: между первым
+уровнем и вторым туром, между вторым туром и финалом. Между очным и
+дистанционным стрелки нет намеренно — это не последовательность,
+участвовать можно в обоих.
+
+Данные приходят из core.views.scheme_stages: названия, даты и место
+живут в базе (Сезоны → Этапы), вёрстка их не дублирует.
+{% endcomment %}
+
+{% if scheme.primary or scheme.qualifying or scheme.final %}
+<section class="scheme" aria-label="Этапы олимпиады">
+  <div class="scheme-all">
+
+    <div class="scheme-qualifying">
+      <p class="scheme-label">Отборочный тур</p>
+
+      <div class="scheme-qualifying-row">
+        <div class="scheme-primary">
+          <div class="scheme-primary-cards">
+            {% for card in scheme.primary %}
+              {% include "components/_stage_card.html" %}
+            {% endfor %}
+          </div>
+          <p class="scheme-note">Можно участвовать в одном или обоих этапах</p>
+        </div>
+
+        {% if scheme.qualifying %}
+          <span class="scheme-arrow" aria-hidden="true"></span>
+          <div class="scheme-second">
+            {% for card in scheme.qualifying %}
+              {% include "components/_stage_card.html" %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if scheme.final %}
+      <span class="scheme-arrow" aria-hidden="true"></span>
+      <div class="scheme-final">
+        {% for card in scheme.final %}
+          {% include "components/_stage_card.html" %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+  </div>
+</section>
+{% endif %}

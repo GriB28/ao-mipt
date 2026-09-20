@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Проверка: {{ submission.problem.title }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{{ back|default:'/online/review/' }}">← К очереди проверки</a></p>
+
+<h1>{{ submission.problem.number }}. {{ submission.problem.title }}</h1>
+<p class="lead">
+  {% if submission.user.profile %}{{ submission.user.profile.full_name }}{% else %}{{ submission.user.email }}{% endif %}
+  {% if submission.user.profile.grade %} · {{ submission.user.profile.grade }} класс{% endif %}
+  {% if submission.user.profile.school %} · {{ submission.user.profile.school }}{% endif %}
+</p>
+<p class="muted">
+  Отправлено {{ submission.created_at|date:"d.m.Y H:i" }}
+  {% if submission.is_late %}<span class="badge warn">после дедлайна</span>{% endif %}
+</p>
+
+<div class="review-grid">
+  <div>
+    <h2>Решение</h2>
+    {% if submission.answer %}
+      <p><strong>Ответ:</strong> {{ submission.answer }}</p>
+    {% endif %}
+    {% if submission.comment %}
+      <div class="prose">{{ submission.comment|linebreaks }}</div>
+    {% endif %}
+
+    <ul class="file-list">
+      {% for f in submission.files.all %}
+        <li><a href="{{ f.file.url }}" download>{{ f.file.name|cut:"solutions/" }}</a></li>
+      {% empty %}
+        <li class="muted">Файлов нет.</li>
+      {% endfor %}
+    </ul>
+
+    {% if history %}
+      {% comment %}
+        Старые попытки не удаляются: при спорах важно видеть,
+        что и когда участник отправлял.
+      {% endcomment %}
+      <h3>Предыдущие попытки</h3>
+      <ul class="muted">
+        {% for old in history %}
+          <li>{{ old.created_at|date:"d.m.Y H:i" }} —
+            {% for f in old.files.all %}<a href="{{ f.file.url }}">файл {{ forloop.counter }}</a> {% endfor %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+
+  <div>
+    <h2>Оценка</h2>
+    <form method="post" class="form-narrow">
+      {% csrf_token %}
+      <input type="hidden" name="back" value="{{ back }}">
+      {{ form.as_p }}
+      <button class="btn" type="submit">Сохранить оценку</button>
+    </form>
+    {% if grade.reviewer %}
+      <p class="muted">Последним проверял: {{ grade.reviewer }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

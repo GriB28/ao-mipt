@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Дистанционный тур{% endblock %}
+{% block content %}
+<h1>Дистанционный тур</h1>
+
+{% include "contest/_organizer_bar.html" %}
+{% if stage %}
+  <h2>{{ stage.title }}</h2>
+  <p class="lead">Приём решений до {{ stage.ends_at|date:"d.m.Y H:i" }} (МСК).</p>
+  {% if offline_twin %}
+    <p class="note">
+      Первый отборочный этап идёт в двух форматах: здесь дистанционно и очно
+      на площадке ({{ offline_twin.starts_at|date:"d.m" }}–{{ offline_twin.ends_at|date:"d.m.Y" }}).
+      Можно участвовать в обоих — засчитается лучший результат.
+      <a href="{% url 'venues:map' %}">Посмотреть площадки →</a>
+    </p>
+  {% endif %}
+  {% if not stage.is_open %}
+    <p class="badge warn">Приём решений закрыт</p>
+    <p class="muted">Этап идёт с {{ stage.starts_at|date:"d.m.Y" }} по {{ stage.ends_at|date:"d.m.Y" }}.</p>
+  {% endif %}
+
+  {% if stage.platform_url %}
+    {% comment %}
+      Этап с прокторингом проходит не у нас: задачи и приём работ —
+      на платформе МФТИ, здесь только анонс и ссылка.
+    {% endcomment %}
+    <p class="note">
+      Этот тур проходит на платформе МФТИ, а не на этом сайте.
+      <a class="btn btn-small" href="{{ stage.platform_url }}" rel="noopener">
+        Перейти на {{ stage.platform_url|cut:"https://" }}</a>
+    </p>
+  {% endif %}
+
+  {% if not stage.platform_url %}
+  <table>
+    <thead><tr><th>№</th><th>Задача</th>{% if not user.is_manager %}<th>Моё решение</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for problem in problems %}
+      <tr>
+        <td>{{ problem.number }}</td>
+        <td><a href="{% url 'contest:problem_detail' problem.pk %}">{{ problem.title }}</a></td>
+        {% if not user.is_manager %}
+        <td>
+          {% if problem.pk in my_submissions %}
+            <span class="badge ok">сдано</span>
+          {% else %}
+            <span class="badge none">не сдано</span>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% empty %}
+      <tr><td colspan="3" class="muted">Задачи появятся после начала этапа.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% else %}
+  <p class="lead">Дистанционный тур ещё не объявлен.</p>
+{% endif %}
+
+{% if practice and not user.is_manager %}
+  <h2>Проверить, что всё работает</h2>
+  <p class="muted prose">
+    Тренировочная задача открыта всегда и на результаты не влияет.
+    Загрузите в неё любой файл, чтобы убедиться, что решение доходит.
+  </p>
+  <p><a class="btn btn-small" href="{% url 'contest:problem_detail' practice.pk %}">{{ practice.title }} →</a></p>
+{% endif %}
+{% endblock %}

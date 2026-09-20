@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{% if is_archive %}Архив лекций{% else %}Лекции{% endif %}{% endblock %}
+{% block content %}
+<h1>{% if is_archive %}Архив лекций{% else %}Лекции{% if season %} — {{ season.title }}{% endif %}{% endif %}</h1>
+<p class="muted">
+  {% if is_archive %}<a href="{% url 'content:lecture_list' %}">← Лекции текущего сезона</a>
+  {% else %}<a href="{% url 'content:lecture_archive' %}">Архив прошлых лет →</a>{% endif %}
+</p>
+
+{% if user.is_manager %}
+  {% comment %}
+    Панель организатора — как на вкладках туров: инструменты лежат там,
+    где человек их ищет, а не в админке.
+  {% endcomment %}
+  <aside class="organizer-bar">
+    <p class="organizer-bar-title">Организатору</p>
+    <ul>
+      <li><a href="{% url 'content:lecture_new' %}">Добавить лекцию</a></li>
+      <li><a href="{% url 'content:lecture_manage' %}">Мои лекции</a></li>
+    </ul>
+  </aside>
+{% endif %}
+
+{% if playlists %}
+  <h2>Плейлисты прошлых лет</h2>
+  <p class="muted prose">Курсы лекций целиком — смотрите подряд.</p>
+  <div class="playlist-grid">
+    {% for playlist in playlists %}
+      <a class="playlist-card platform-{{ playlist.platform }}" href="{{ playlist.url }}" rel="noopener">
+        <span class="playlist-cover">
+          {% if playlist.cover %}
+            <img src="{{ playlist.cover.url }}" alt="" loading="lazy">
+          {% else %}
+            {# Превью нет (ВКонтакте его не отдаёт) — рисуем иконку плейлиста. #}
+            <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+              <rect x="6" y="9" width="28" height="3" rx="1.5"/>
+              <rect x="6" y="17" width="28" height="3" rx="1.5"/>
+              <rect x="6" y="25" width="17" height="3" rx="1.5"/>
+              <path d="M29 24 L42 31 L29 38 Z"/>
+            </svg>
+          {% endif %}
+          <span class="playlist-play" aria-hidden="true"></span>
+        </span>
+
+        <span class="playlist-body">
+          <span class="playlist-meta">
+            <span class="playlist-platform">{{ playlist.platform_title }}</span>
+            {% if playlist.season %}
+              <span class="playlist-season">{{ playlist.season.subtitle|default:playlist.season.year }}</span>
+            {% endif %}
+          </span>
+          <strong>{{ playlist.title }}</strong>
+          {% if playlist.description %}<span class="playlist-note">{{ playlist.description }}</span>{% endif %}
+        </span>
+      </a>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if lectures %}<h2>{% if is_archive %}Отдельные лекции{% else %}Лекции сезона{% endif %}</h2>{% endif %}
+<div class="grid">
+{% for lecture in lectures %}
+  <div class="card">
+    <h3><a href="{{ lecture.get_absolute_url }}">{{ lecture.title }}</a></h3>
+    <p class="muted">
+      {% if is_archive %}{{ lecture.season.title }} · {% endif %}
+      {{ lecture.lecturer }}{% if lecture.held_at %} · {{ lecture.held_at|date:"d.m.Y" }}{% endif %}
+    </p>
+    <p>{{ lecture.description|truncatewords:22 }}</p>
+    {% if lecture.video_url %}<span class="badge">{{ lecture.platform_title }}</span>{% endif %}
+    {% if lecture.slides %}<span class="badge">слайды</span>{% endif %}
+  </div>
+{% empty %}
+  {% if not playlists %}
+    {% if is_archive %}
+      <p class="muted">Пока пусто.</p>
+    {% else %}
+      <p class="muted prose">
+        Лекции этого сезона ещё не начались. Записи будут выкладываться
+        во ВКонтакте и появляться здесь по одной.
+        А пока посмотрите <a href="{% url 'content:lecture_archive' %}">лекции прошлых лет</a>.
+      </p>
+    {% endif %}
+  {% endif %}
+{% endfor %}
+</div>
+{% endblock %}

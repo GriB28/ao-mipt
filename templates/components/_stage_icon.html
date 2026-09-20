@@ -1,0 +1,34 @@
+{% comment %}
+Иконка этапа. Простые линейные SVG, без картинок и деталей:
+школа, ноутбук, сеть из компьютеров, здание кампуса.
+
+Название этапа уже есть текстом рядом, поэтому aria-hidden.
+{% endcomment %}
+<svg class="stage-card-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor"
+     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {% if icon == "school" %}
+    {# Школа: здание с флагом на крыше #}
+    <path d="M4 28h24"/>
+    <path d="M6 28V14l10-6 10 6v14"/>
+    <path d="M16 8V3"/><path d="M16 3h5v3h-5"/>
+    <rect x="13" y="19" width="6" height="9"/>
+    <path d="M10 16h2"/><path d="M20 16h2"/>
+  {% elif icon == "laptop" %}
+    {# Ноутбук: экран и подставка #}
+    <rect x="7" y="7" width="18" height="13" rx="1.5"/>
+    <path d="M3 24h26"/><path d="M13 24l-1 2h8l-1-2"/>
+  {% elif icon == "network" %}
+    {# Сеть: три монитора, соединённые линиями #}
+    <rect x="12" y="3" width="9" height="7" rx="1"/>
+    <rect x="3" y="20" width="9" height="7" rx="1"/>
+    <rect x="21" y="20" width="9" height="7" rx="1"/>
+    <path d="M16.5 10v4"/>
+    <path d="M7.5 20v-3h18v3"/>
+  {% elif icon == "campus" %}
+    {# Кампус: здание с колоннами #}
+    <path d="M3 28h26"/>
+    <path d="M16 4l12 6H4l12-6"/>
+    <path d="M6 12v14"/><path d="M12 12v14"/><path d="M20 12v14"/><path d="M26 12v14"/>
+    <path d="M4 12h24"/>
+  {% endif %}
+</svg>

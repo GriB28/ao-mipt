@@ -1,0 +1,10 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {% if send_url %}
+    <li>
+      <a href="{{ send_url }}" class="addlink" style="background:#4060e4">Отправить рассылку</a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

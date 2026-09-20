@@ -1,0 +1,6 @@
+Django>=5.2,<5.3
+django-environ>=0.11
+Pillow>=10.0          # обработка картинок (ImageField)
+whitenoise>=6.6       # раздача статики без отдельного сервера
+gunicorn>=22.0        # прод-сервер
+psycopg2-binary>=2.9  # драйвер PostgreSQL

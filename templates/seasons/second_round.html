@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ stage.title }}{% endblock %}
+{% block content %}
+<h1>{{ stage.title }}</h1>
+<p class="lead">{{ stage.short_note }}</p>
+
+<div class="note prose">
+  <p>
+    Второй тур проходит <strong>дистанционно, с прокторингом</strong> — работа
+    выполняется под наблюдением через камеру.
+  </p>
+  {% if stage.platform_url %}
+    <p>
+      Тур идёт не на этом сайте, а на платформе МФТИ:
+      <a href="{{ stage.platform_url }}" rel="noopener">{{ stage.platform_url|cut:"https://" }}</a>.
+      Задачи и приём работ — там.
+    </p>
+  {% endif %}
+  <p>
+    <strong>Подробности и приглашения будут позже.</strong> Участников второго
+    тура определяют по результатам первого отбора — неважно, писали вы очно
+    или дистанционно. Приглашение придёт на почту, указанную при регистрации.
+  </p>
+</div>
+
+{% if stage.description %}
+  <div class="prose">{{ stage.description|linebreaks }}</div>
+{% endif %}
+
+<h2>Что делать сейчас</h2>
+<ul class="prose">
+  <li>Пройти <a href="{% url 'contest:problem_list' %}">первый отбор</a> —
+      дистанционно или <a href="{% url 'venues:map' %}">очно на площадке</a>.</li>
+  <li>Проверить, что почта в <a href="{% url 'accounts:profile' %}">кабинете</a>
+      указана верно и подтверждена: приглашение придёт на неё.</li>
+  <li>Следить за <a href="{% url 'content:news_list' %}">новостями</a>{% if TELEGRAM_URL %}
+      и <a href="{{ TELEGRAM_URL }}" rel="noopener">телеграм-каналом</a>{% endif %}.</li>
+</ul>
+{% endblock %}

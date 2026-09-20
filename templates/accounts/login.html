@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Вход{% endblock %}
+{% block content %}
+<h1>Вход</h1>
+<form method="post" class="form-narrow">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn" type="submit">Войти</button>
+</form>
+<p class="muted"><a href="{% url 'accounts:password_reset' %}">Забыли пароль?</a> ·
+  Нет аккаунта? <a href="{% url 'accounts:signup' %}">Зарегистрироваться</a></p>
+{% endblock %}

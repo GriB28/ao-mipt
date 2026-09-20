@@ -1,0 +1,19 @@
+{% comment %}
+Карточка этапа на схеме.
+
+Это ссылка целиком, а не div с обработчиком: так работают Tab, средняя
+кнопка мыши и «открыть в новой вкладке».
+
+Даты берутся из поля «даты на схеме» этапа (Сезоны → Этапы), а не зашиты
+в вёрстку: иначе они разойдутся с расписанием при первом же переносе.
+{% endcomment %}
+<a class="stage-card" href="{% url card.url_name %}">
+  {% include "components/_stage_icon.html" with icon=card.icon %}
+  <span class="stage-card-title">{{ card.stage.title }}</span>
+  {% if card.stage.short_note %}
+    <span class="stage-card-dates">{{ card.stage.short_note }}</span>
+  {% endif %}
+  {% if card.stage.place %}
+    <span class="stage-card-place">{{ card.stage.place }}</span>
+  {% endif %}
+</a>

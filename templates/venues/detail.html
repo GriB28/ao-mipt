@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ venue.title }}{% endblock %}
+{% block content %}
+<h1>{{ venue.title }}</h1>
+<p class="lead prose">{{ venue.region }}, {{ venue.city }}, {{ venue.address }}</p>
+{% if venue.description %}<div class="prose">{{ venue.description|linebreaks }}</div>{% endif %}
+
+{% if venue.contact_name %}
+  <table style="max-width:520px">
+    <tr><th>Контактное лицо</th><td>{{ venue.contact_name }}</td></tr>
+    {% if venue.contact_phone %}<tr><th>Телефон</th><td>{{ venue.contact_phone }}</td></tr>{% endif %}
+    {% if venue.contact_telegram %}<tr><th>Telegram</th><td>{{ venue.contact_telegram }}</td></tr>{% endif %}
+    {% if venue.contact_email %}<tr><th>Почта</th><td>{{ venue.contact_email }}</td></tr>{% endif %}
+  </table>
+{% endif %}
+
+{% if stage %}
+  <h2>{{ stage.title }}</h2>
+  <p class="muted">
+    {{ stage.starts_at|date:"d.m.Y" }} — {{ stage.ends_at|date:"d.m.Y" }}.
+    Записалось: {{ venue.booked_count }}.
+  </p>
+
+  {% if user.is_manager %}
+    {% comment %}
+      Организатор и администратор на площадки не записываются — они их ведут.
+      Вместо кнопки записи показываем ведомость, если площадка его.
+    {% endcomment %}
+    {% if can_manage %}
+      <p>
+        <a class="btn" href="{% url 'venues:participants' venue.pk %}">Участники и баллы</a>
+        <a class="btn btn-secondary" href="{% url 'venues:results' venue.pk %}">Итоговая таблица</a>
+        <a class="btn btn-secondary" href="{% url 'venues:edit' venue.pk %}">Редактировать</a>
+        <a class="btn btn-secondary" href="{% url 'venues:mail' venue.pk %}">Написать участникам</a>
+      </p>
+    {% else %}
+      <p class="muted">Эту площадку ведут другие организаторы.</p>
+    {% endif %}
+  {% elif not user.is_authenticated %}
+    <p><a class="btn" href="{% url 'accounts:login' %}?next={{ request.path }}">Войдите, чтобы записаться</a></p>
+  {% elif booked_here %}
+    <p class="badge ok">Вы записаны на эту площадку</p>
+    <form method="post" action="{% url 'venues:cancel_booking' venue.pk %}" class="inline-form">
+      {% csrf_token %}
+      <button type="submit" class="link-button">Отменить запись</button>
+    </form>
+  {% elif not stage.registration_is_open %}
+    <p class="badge warn">Запись закрыта</p>
+    <p class="muted">
+      Запись открыта с {{ stage.registration_opens_at|default:stage.starts_at|date:"d.m.Y" }}
+      по {{ stage.registration_closes_at|default:stage.ends_at|date:"d.m.Y" }}.
+    </p>
+  {% else %}
+    {% if my_booking %}
+      {% comment %}
+        Запись одна на этап: показываем, что выбор площадки сменится,
+        чтобы человек не думал, что записывается на вторую.
+      {% endcomment %}
+      <p class="muted">
+        Сейчас вы записаны на «{{ my_booking.venue.title }}».
+        Запись перенесётся сюда.
+      </p>
+    {% endif %}
+    <form method="post" action="{% url 'venues:book' venue.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn">
+        {% if my_booking %}Перенести запись сюда{% else %}Записаться{% endif %}
+      </button>
+    </form>
+  {% endif %}
+{% else %}
+  <p class="muted">Очный тур пока не объявлен.</p>
+{% endif %}
+{% endblock %}

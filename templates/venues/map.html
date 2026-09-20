@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Очный тур — площадки{% endblock %}
+{% block content %}
+<h1>Очный тур</h1>
+{% if stage %}
+  <p class="lead prose">
+    {{ stage.starts_at|date:"d.m.Y" }} — {{ stage.ends_at|date:"d.m.Y" }}.
+    Запись {% if stage.registration_is_open %}открыта до
+    {{ stage.registration_closes_at|default:stage.ends_at|date:"d.m.Y" }}{% else %}закрыта{% endif %}.
+  </p>
+  {% if my_booking and not user.is_manager %}
+    <p class="badge ok">Вы записаны: {{ my_booking.venue.title }}</p>
+    <p class="muted"><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку или отменить запись →</a></p>
+  {% endif %}
+{% endif %}
+{% if online_twin %}
+  <p class="note">
+    Первый отборочный этап идёт в двух форматах: очно на площадке и дистанционно
+    ({{ online_twin.starts_at|date:"d.m" }}–{{ online_twin.ends_at|date:"d.m.Y" }}).
+    Можно участвовать в обоих — засчитается лучший результат.
+    <a href="{% url 'contest:problem_list' %}">Дистанционный тур →</a>
+  </p>
+{% endif %}
+
+<p class="muted prose">Выберите точку на карте, чтобы посмотреть адрес и записаться.
+  Не нашли свой город — участвуйте дистанционно, это равноценный вариант.</p>
+
+{% include "venues/_organizer_bar.html" %}
+
+{% include "venues/_map.html" %}
+{% endblock %}

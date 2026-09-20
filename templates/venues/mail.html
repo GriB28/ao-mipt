@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Письмо участникам{% endblock %}
+{% block content %}
+<p class="muted"><a href="{% url 'venues:participants' venue.pk %}">← Участники площадки</a></p>
+
+<h1>Письмо участникам площадки</h1>
+<p class="lead">{{ venue.title }}</p>
+
+{% if recipients %}
+  <p class="muted">Получателей: {{ recipients|length }}.</p>
+  <details>
+    <summary>Кому уйдёт</summary>
+    <ul class="muted">
+      {% for user in recipients %}
+        <li>{% if user.profile %}{{ user.profile.full_name }} — {% endif %}{{ user.email }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+
+  <form method="post" class="form-wide">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn" type="submit">Отправить</button>
+  </form>
+  <p class="muted">
+    Письма уходят по одному на каждого получателя; повторная отправка того же
+    письма никому не придёт дважды.
+  </p>
+{% else %}
+  <p class="muted">На площадку пока никто не записался — писать некому.</p>
+{% endif %}
+{% endblock %}

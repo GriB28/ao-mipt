@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Мои решения{% endblock %}
+{% block content %}
+<h1>Мои решения</h1>
+
+{% if scores %}
+  <h2>Результаты</h2>
+  <p class="muted">Итоговые баллы по опубликованным этапам.</p>
+  <table>
+    <thead><tr><th>Этап</th><th>Задача</th><th>Где писал</th><th>Балл</th></tr></thead>
+    <tbody>
+    {% for s in scores %}
+      <tr>
+        <td class="muted">{{ s.problem.stage.title }}</td>
+        <td>{{ s.problem.number }}. {{ s.problem.title }}</td>
+        <td class="muted">{{ s.venue.title|default:"дистанционно" }}</td>
+        <td>{% if s.points is None %}—{% else %}{{ s.points|floatformat:"-2" }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+      <tr><th colspan="3">Сумма</th><th>{{ total|floatformat:"-2" }}</th></tr>
+    </tbody>
+  </table>
+{% endif %}
+
+<h2>Отправленные решения</h2>
+<table>
+  <thead><tr><th>Задача</th><th>Отправлено</th><th>Статус</th><th>Балл</th></tr></thead>
+  <tbody>
+  {% for s in submissions %}
+    <tr>
+      <td><a href="{% url 'contest:problem_detail' s.problem.pk %}">{{ s.problem }}</a></td>
+      <td>{{ s.created_at|date:"d.m.Y H:i" }}{% if s.is_late %} <span class="badge warn">после дедлайна</span>{% endif %}</td>
+      <td>{% if s.grade %}{{ s.grade.get_status_display }}{% else %}<span class="badge none">не проверено</span>{% endif %}</td>
+      <td>
+        {% if s.problem.stage.results_published and s.grade and s.grade.score is not None %}
+          {{ s.grade.score|floatformat:"-2" }}
+        {% elif s.grade and s.grade.score is not None %}
+          <span class="muted" title="Результаты этапа ещё не опубликованы">скоро</span>
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="4" class="muted">Вы пока ничего не отправляли.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

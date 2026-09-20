@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ stage.title }}{% endblock %}
+{% block content %}
+<h1>{{ stage.title }}</h1>
+<p class="lead">
+  {{ stage.short_note }}{% if stage.place %} · {{ stage.place }}{% endif %}
+</p>
+
+{% if stage.description %}
+  <div class="prose">{{ stage.description|linebreaks }}</div>
+{% else %}
+  {% comment %}
+    Текст про то, как проходил финал, пишется в админке:
+    Сезоны → Этапы → Финал → «описание». Пока его нет, показываем
+    короткую заглушку, а не пустую страницу.
+  {% endcomment %}
+  <p class="muted prose">
+    Финал проходит очно на кампусе МФТИ в Долгопрудном. Подробное описание
+    того, как он устроен, появится здесь позже.
+  </p>
+  {% if user.is_staff %}
+    <p class="note">
+      Текст этой страницы редактируется в админке:
+      <a href="{% url 'admin:seasons_stage_change' stage.pk %}">Этапы → {{ stage.title }} → описание</a>.
+      Фотографии добавляются в разделе «Фотографии».
+    </p>
+  {% endif %}
+{% endif %}
+
+<h2>Финалы прошлых лет</h2>
+{% if photos %}
+  <div class="photo-grid">
+    {% for photo in photos %}
+      <figure class="photo">
+        {% comment %}
+          Снимок — ссылка на сам файл: так его можно открыть крупнее или
+          сохранить, не подключая ради этого отдельную галерею на JS.
+        {% endcomment %}
+        <a href="{{ photo.image.url }}" target="_blank" rel="noopener">
+          <img src="{{ photo.image.url }}" alt="{{ photo.caption }}" loading="lazy">
+        </a>
+        {% if photo.caption or photo.year_label %}
+          <figcaption>
+            {% if photo.year_label %}<span class="photo-year">{{ photo.year_label }}</span>{% endif %}
+            {{ photo.caption }}
+          </figcaption>
+        {% endif %}
+      </figure>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="muted prose">
+    Фотографии появятся здесь.
+    {% if user.is_staff %}
+      Добавить: админка → <a href="{% url 'admin:content_photo_changelist' %}">Фотографии</a>,
+      год ставится полем «сезон».
+    {% endif %}
+  </p>
+{% endif %}
+{% endblock %}

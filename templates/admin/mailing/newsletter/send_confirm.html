@@ -1,0 +1,38 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Отправить рассылку?</h1>
+
+<div style="max-width:720px">
+  <p><strong>Тема:</strong> {{ newsletter.subject }}</p>
+  <p><strong>Кому:</strong> {{ newsletter.get_audience_display }}
+     {% if newsletter.season %}({{ newsletter.season }}){% endif %}</p>
+
+  {% if count %}
+    <p style="font-size:18px">
+      Письмо получат <strong>{{ count }}</strong> человек. Это действие нельзя отменить.
+    </p>
+
+    <h2>Первые получатели</h2>
+    <ul>{% for u in sample %}<li>{{ u.email }}</li>{% endfor %}
+      {% if count > 10 %}<li>…и ещё {{ count|add:"-10" }}</li>{% endif %}
+    </ul>
+
+    <h2>Как будет выглядеть письмо</h2>
+    <pre style="background:#f4f6fd;padding:16px;border-radius:8px;white-space:pre-wrap">{{ preview }}</pre>
+
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="default" style="padding:10px 20px">
+        Да, отправить {{ count }} письмам
+      </button>
+      <a href="{% url 'admin:mailing_newsletter_change' newsletter.pk %}"
+         style="margin-left:16px">Отмена</a>
+    </form>
+  {% else %}
+    <p style="color:#b3261e"><strong>Получателей не найдено.</strong>
+      Проверьте выбранную аудиторию и сезон.</p>
+    <p><a href="{% url 'admin:mailing_newsletter_change' newsletter.pk %}">Вернуться</a></p>
+  {% endif %}
+</div>
+{% endblock %}

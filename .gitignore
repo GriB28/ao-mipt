@@ -1,0 +1,22 @@
+# окружение
+.venv/
+venv/
+.env
+*.pyc
+__pycache__/
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+/media/
+/staticfiles/
+*.log
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+.ruff_cache/
+
+# статический экспорт демо
+dist/

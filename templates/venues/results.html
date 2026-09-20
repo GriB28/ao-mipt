@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Итоги — {{ venue.title }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{% url 'venues:participants' venue.pk %}">← Ведомость</a></p>
+
+<h1>Итоговая таблица</h1>
+<p class="lead">{{ venue.title }}{% if stage %} · {{ stage.title }}{% endif %}</p>
+
+<div class="table-scroll">
+  <table class="score-table">
+    <thead>
+      <tr>
+        <th>Место</th><th>Участник</th><th>Класс</th>
+        {% for p in problems %}<th title="{{ p.title }}">{{ p.number }}</th>{% endfor %}
+        <th>Сумма</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{{ forloop.counter }}</td>
+        <td>
+          {% if row.booking.registration.user.profile %}
+            {{ row.booking.registration.user.profile.full_name }}
+          {% else %}{{ row.booking.registration.user.email }}{% endif %}
+        </td>
+        <td class="muted">{{ row.booking.registration.user.profile.grade|default:"—" }}</td>
+        {% for value in row.values %}
+          <td>{% if value is None %}<span class="muted">—</span>{% else %}{{ value|floatformat:"-2" }}{% endif %}</td>
+        {% endfor %}
+        <td><strong>{{ row.total|floatformat:"-2" }}</strong></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="{{ problems|length|add:4 }}" class="muted">Пока никого.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="muted">Таблицу видят только организаторы площадки и администраторы.</p>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Добавить площадку{% endblock %}
+{% block content %}
+<h1>Добавить площадку очного тура</h1>
+<p class="lead prose">Заполните данные и отметьте точку на карте.
+  Площадка появится на сайте после проверки администратором.</p>
+<form method="post" class="form-wide">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <p class="muted">Кликните по карте, чтобы отметить положение школы:</p>
+  {% include "venues/_map.html" with picker=True %}
+  <p id="map-hint" class="muted">Точка пока не отмечена.</p>
+  <p style="margin-top:var(--space-4)"><button class="btn" type="submit">Отправить</button></p>
+</form>
+{% endblock %}

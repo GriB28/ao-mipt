@@ -1,0 +1,37 @@
+{% comment %}
+Панель организатора на вкладке «Очный тур».
+
+Здесь только про площадки. Списки участников и баллы не вынесены сюда
+ссылками: за ними идут через саму площадку, иначе строка с названием
+превращается в набор ссылок, в котором не видно главного — названия.
+{% endcomment %}
+
+{% if user.is_manager %}
+<aside class="organizer-bar">
+  <p class="organizer-bar-title">Организатору</p>
+  <ul>
+    <li><a href="{% url 'venues:apply' %}">Добавить площадку</a></li>
+    {% if user.is_staff %}<li><a href="{% url 'admin:index' %}">Админка</a></li>{% endif %}
+  </ul>
+
+  {% if my_venues %}
+    <p class="organizer-bar-title">Мои площадки</p>
+    <table class="venue-table">
+      <thead><tr><th>Площадка</th><th>Город</th><th>Статус</th><th>Записалось</th></tr></thead>
+      <tbody>
+      {% for venue in my_venues %}
+        <tr>
+          <td><a href="{% url 'venues:detail' venue.pk %}">{{ venue.title }}</a></td>
+          <td class="muted">{{ venue.city }}</td>
+          <td>
+            <span class="badge {% if venue.is_public %}ok{% else %}warn{% endif %}">{{ venue.get_status_display }}</span>
+            {% if venue.moderation_comment %}<span class="muted">{{ venue.moderation_comment }}</span>{% endif %}
+          </td>
+          <td>{{ venue.booked_count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</aside>
+{% endif %}

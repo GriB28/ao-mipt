@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div class="hero-main">
+    {% if season %}
+      <h1>{{ season.title }}</h1>
+      {% if season.subtitle %}<p class="lead">{{ season.subtitle }}</p>{% endif %}
+      {% if status %}
+        {% comment %}
+          Статус олимпиады: что идёт прямо сейчас или что будет дальше.
+          Даты берутся из этапа, поэтому строка не врёт после переноса сроков.
+        {% endcomment %}
+        <p class="deadline">
+          {% if status.state == "running" %}
+            Сейчас идёт <strong>{{ status.stage.title|lower }}</strong> —
+            до {{ status.when|date:"j E Y" }} включительно
+          {% else %}
+            <strong>{{ status.stage.title }}</strong>
+            начнётся {{ status.when|date:"j E Y" }}
+          {% endif %}
+        </p>
+      {% endif %}
+    {% else %}
+      <h1>Аэрокосмическая олимпиада МФТИ</h1>
+      <p class="lead">Активный сезон ещё не настроен. Создайте его в админке.</p>
+    {% endif %}
+  </div>
+  {% if season and not user.is_authenticated %}
+    <a class="btn" href="{% url 'accounts:signup' %}">Зарегистрироваться</a>
+  {% endif %}
+</section>
+
+{% include "components/olympiad_scheme.html" %}
+
+{% comment %}
+  Карточек разделов здесь нет намеренно: на схеме выше уже есть ссылки
+  на все этапы, а остальное лежит в верхнем меню. Ниже — только новости.
+{% endcomment %}
+
+{% if news %}
+<h2>Новости</h2>
+<div class="grid">
+  {% for item in news %}
+    <div class="card">
+      <h3><a href="{{ item.get_absolute_url }}">{{ item.title }}</a></h3>
+      <p class="muted">{{ item.published_at|date:"d.m.Y" }}</p>
+      <p>{{ item.summary }}</p>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

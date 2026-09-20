@@ -1,0 +1,3 @@
+-r requirements.txt
+ruff>=0.6             # линтер и форматтер
+django-debug-toolbar>=4.4

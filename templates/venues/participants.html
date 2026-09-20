@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Участники — {{ venue.title }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{% url 'venues:detail' venue.pk %}">← {{ venue.title }}</a></p>
+
+<h1>Участники площадки</h1>
+<p class="lead">{{ venue.title }}{% if stage %} · {{ stage.title }}{% endif %}</p>
+<p class="muted">
+  <a href="{% url 'venues:edit' venue.pk %}">Редактировать площадку</a> ·
+  <a href="{% url 'venues:mail' venue.pk %}">Написать участникам</a>
+</p>
+
+{% if results_published %}
+  <p class="badge ok">Результаты опубликованы — участники видят свои баллы</p>
+{% else %}
+  <p class="badge warn">Результаты скрыты — баллы видны только организаторам</p>
+{% endif %}
+
+{% if user.is_admin and stage %}
+  <form method="post" action="{% url 'venues:publish_results' venue.pk %}" class="inline-form">
+    {% csrf_token %}
+    <button class="btn {% if results_published %}btn-secondary{% endif %}" type="submit">
+      {% if results_published %}Скрыть результаты{% else %}Опубликовать результаты участникам{% endif %}
+    </button>
+  </form>
+  <p class="muted">Кнопка открывает баллы по всему этапу, а не только по этой площадке.</p>
+{% endif %}
+
+{% if rows %}
+  <h2>Ведомость</h2>
+  <p class="muted prose">
+    Впишите баллы по каждой задаче. Пустая клетка означает, что задача не
+    сдавалась или ещё не проверена. Дробные баллы пишите через точку или запятую.
+  </p>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="table-scroll">
+      <table class="score-table">
+        <thead>
+          <tr>
+            <th>Участник</th>
+            <th>Класс</th>
+            {% for p in problems %}<th title="{{ p.title }}">Задача {{ p.number }}</th>{% endfor %}
+            <th>Сумма</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              {% if row.booking.registration.user.profile %}
+                {{ row.booking.registration.user.profile.full_name }}
+              {% else %}{{ row.booking.registration.user.email }}{% endif %}
+            </td>
+            <td class="muted">{{ row.booking.registration.user.profile.grade|default:"—" }}</td>
+            {% for cell in row.cells %}
+              <td><input type="text" inputmode="decimal" name="{{ cell.name }}"
+                         value="{{ cell.value|default_if_none:'' }}" size="4"></td>
+            {% endfor %}
+            <td><strong>{{ row.total|floatformat:"-2" }}</strong></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <button class="btn" type="submit">Сохранить баллы</button>
+      <a class="btn btn-secondary" href="{% url 'venues:results' venue.pk %}">Итоговая таблица</a>
+      <a class="btn btn-secondary" href="{% url 'venues:mail' venue.pk %}">Написать участникам</a>
+    </p>
+  </form>
+{% else %}
+  <p class="muted">На эту площадку пока никто не записался.</p>
+{% endif %}
+
+{% if not problems %}
+  <p class="muted">У этапа нет одобренных задач — ведомость появится, когда их заведут.</p>
+{% endif %}
+{% endblock %}

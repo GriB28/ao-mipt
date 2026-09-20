@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Архив задач{% endblock %}
+{% block content %}
+<h1>Архив задач</h1>
+<p class="lead prose">Условия, разборы и данные всех прошедших сезонов олимпиады.</p>
+
+<nav class="muted" style="margin-bottom:var(--space-5)">
+  {% for s in seasons %}
+    {% if s == selected %}
+      <strong>{{ s.year }}</strong>
+    {% else %}
+      <a href="?year={{ s.year }}">{{ s.year }}</a>
+    {% endif %}
+    {% if not forloop.last %} · {% endif %}
+  {% endfor %}
+</nav>
+
+{% if selected %}
+  <h2>{{ selected.title }}</h2>
+
+  {% if problems %}
+    <h3>Задачи</h3>
+    <table>
+      <thead><tr><th>Этап</th><th>№</th><th>Задача</th><th>Условие</th><th>Разбор</th></tr></thead>
+      <tbody>
+      {% for p in problems %}
+        <tr>
+          <td class="muted">{{ p.stage.title }}</td>
+          <td>{{ p.number }}</td>
+          <td>{{ p.title }}</td>
+          <td>{% if p.statement_pdf %}<a href="{{ p.statement_pdf.url }}">PDF</a>{% else %}—{% endif %}</td>
+          <td>{% if p.solution_is_public %}<a href="{{ p.solution_pdf.url }}">PDF</a>{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% for stage_title, kinds in materials_by_stage %}
+    <h3>{{ stage_title }}</h3>
+    {% for kind_title, items in kinds %}
+      <h4 class="muted">{{ kind_title }}</h4>
+      <ul>
+        {% for m in items %}
+          <li>
+            <a href="{{ m.url }}"{% if not m.is_hosted %} rel="noopener" target="_blank"{% endif %}>{{ m.display_name }}</a>
+            {% if m.problem_number %}<span class="badge">задача {{ m.problem_number }}</span>{% endif %}
+            {% if m.size_display %}<span class="muted">{{ m.size_display }}</span>{% endif %}
+            {% if not m.is_hosted %}<span class="badge warn">на Яндекс.Диске</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endfor %}
+  {% empty %}
+    {% if not problems %}<p class="muted">Материалы этого сезона пока не выложены.</p>{% endif %}
+  {% endfor %}
+{% else %}
+  <p class="muted">Архив пока пуст.</p>
+{% endif %}
+{% endblock %}

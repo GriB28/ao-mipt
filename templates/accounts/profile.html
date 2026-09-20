@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Личный кабинет{% endblock %}
+{% block content %}
+<h1>Личный кабинет</h1>
+<p class="muted">{{ user.email }} · {{ user.get_role_display }}</p>
+
+{% if not user.email_confirmed %}
+  <p class="message warning">
+    Почта не подтверждена. Мы отправили письмо со ссылкой на {{ user.email }} —
+    проверьте входящие и папку «Спам».
+    <a href="{% url 'accounts:resend_confirmation' %}">Отправить письмо ещё раз</a>.
+  </p>
+{% endif %}
+
+{% if my_booking %}
+  <p class="badge ok">Очный тур: {{ my_booking.venue.title }}</p>
+{% endif %}
+
+<div class="grid">
+  <div class="card"><h3>Мои решения</h3><a href="{% url 'contest:my_submissions' %}">Посмотреть →</a></div>
+  <div class="card"><h3>Очный тур</h3><a href="{% url 'venues:map' %}">Выбрать площадку →</a></div>
+
+</div>
+
+<h2>Анкета</h2>
+<form method="post" class="form-narrow">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn" type="submit">Сохранить</button>
+</form>
+{% endblock %}

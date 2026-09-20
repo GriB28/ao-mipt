@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{% if problem %}{{ problem.title }}{% else %}Новая задача{% endif %}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{% url 'contest:problem_manage' %}">← Ко всем задачам</a></p>
+
+<h1>{% if problem %}Задача: {{ problem.title }}{% else %}Новая задача{% endif %}</h1>
+
+{% if problem %}
+  <p class="muted">Статус: <strong>{{ problem.get_status_display }}</strong></p>
+  {% if problem.moderation_comment %}
+    <p class="message warning">Комментарий администратора: {{ problem.moderation_comment }}</p>
+  {% endif %}
+{% endif %}
+
+<div class="note">
+  <p><strong>Формулы.</strong> Пишите в долларах: <code>$v_0 = \sqrt{2gh}$</code> внутри строки,
+  <code>$$ ... $$</code> — отдельной строкой по центру. Это обычный LaTeX.</p>
+  <p><strong>Рисунок.</strong> Одна схема или график к условию — поле «рисунок к условию».
+  Если файлов с данными несколько, их добавляют в админке как материалы к задаче.</p>
+  <p><strong>Баллы.</strong> Максимум за задачу участникам не показывается и здесь не задаётся —
+  шкалу выставляют при проверке.</p>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="form-wide">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn btn-secondary" type="submit" name="save_draft">Сохранить черновик</button>
+  <button class="btn" type="submit" name="submit_for_review">Отправить на одобрение</button>
+</form>
+{% endblock %}

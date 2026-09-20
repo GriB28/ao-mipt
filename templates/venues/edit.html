@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Правка площадки{% endblock %}
+{% block content %}
+<p class="muted"><a href="{% url 'venues:detail' venue.pk %}">← {{ venue.title }}</a></p>
+
+<h1>Правка площадки</h1>
+<p class="lead prose">
+  Описание видят участники на странице площадки — напишите, как пройти,
+  какой вход и во сколько сбор.
+</p>
+<p class="muted">Статус: <strong>{{ venue.get_status_display }}</strong>. Правка его не меняет.</p>
+
+<form method="post" class="form-wide">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <p class="muted">Кликните по карте, чтобы передвинуть точку:</p>
+  {% include "venues/_map.html" with picker=True %}
+  <p id="map-hint" class="muted">Текущая точка: {{ venue.latitude }}, {{ venue.longitude }}.</p>
+  <p style="margin-top:var(--space-4)"><button class="btn" type="submit">Сохранить</button></p>
+</form>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% comment %}
+Панель организатора на вкладке «Дистанционный тур».
+
+Здесь только про задачи: площадки живут на вкладке «Очный тур», и
+смешивать их в одном месте незачем — это разные туры и разная работа.
+{% endcomment %}
+
+{% if user.is_manager %}
+<aside class="organizer-bar">
+  <p class="organizer-bar-title">Организатору</p>
+  <ul>
+    <li><a href="{% url 'contest:problem_new' %}">Добавить задачу</a></li>
+    <li><a href="{% url 'contest:problem_manage' %}">Мои задачи</a></li>
+    <li><a href="{% url 'contest:review_list' %}">Проверить решения</a></li>
+    {% if user.is_staff %}<li><a href="{% url 'admin:index' %}">Админка</a></li>{% endif %}
+  </ul>
+</aside>
+{% endif %}

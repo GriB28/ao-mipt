@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Кабинет организатора{% endblock %}
+{% block content %}
+<h1>Кабинет организатора</h1>
+<p class="muted">{{ user.email }}</p>
+
+<h2>Мои площадки</h2>
+<div class="grid">
+  {% for venue in user.managed_venues.all %}
+    <div class="card">
+      <h3>{{ venue.title }}</h3>
+      <p class="muted">{{ venue.city }}, {{ venue.address }}</p>
+      <p>
+        {% if venue.status == 'approved' %}<span class="badge ok">одобрена</span>
+        {% elif venue.status == 'pending' %}<span class="badge warn">на модерации</span>
+        {% elif venue.status == 'rejected' %}<span class="badge err">отклонена</span>
+        {% else %}<span class="badge none">черновик</span>{% endif %}
+      </p>
+      <p>Записалось: {{ venue.booked_count }}</p>
+      {% if venue.moderation_comment %}
+        <p class="muted">Комментарий: {{ venue.moderation_comment }}</p>
+      {% endif %}
+    </div>
+  {% empty %}
+    <div class="card">
+      <h3>Площадок пока нет</h3>
+      <p class="muted">Добавьте площадку, чтобы принять очный тур.</p>
+      <a href="{% url 'venues:apply' %}">Добавить площадку →</a>
+    </div>
+  {% endfor %}
+</div>
+
+<h2>Анкета</h2>
+<form method="post" class="form-narrow">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn" type="submit">Сохранить</button>
+</form>
+{% endblock %}

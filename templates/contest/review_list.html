@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Проверка решений{% endblock %}
+{% block content %}
+<h1>Проверка решений</h1>
+<p class="lead">Не проверено: {{ todo_count }}.</p>
+
+<form method="get" class="filter-bar">
+  <label>
+    Задача
+    <select name="problem" onchange="this.form.submit()">
+      <option value="">все задачи</option>
+      {% for p in problems %}
+        <option value="{{ p.pk }}" {% if selected_problem == p.pk|stringformat:"s" %}selected{% endif %}>
+          {{ p.stage.title }} — {{ p.number }}. {{ p.title }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Показать
+    <select name="status" onchange="this.form.submit()">
+      <option value="todo" {% if status == "todo" %}selected{% endif %}>непроверенные</option>
+      <option value="graded" {% if status == "graded" %}selected{% endif %}>проверенные</option>
+      <option value="all" {% if status == "all" %}selected{% endif %}>все</option>
+    </select>
+  </label>
+  <noscript><button class="btn btn-small" type="submit">Показать</button></noscript>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Задача</th><th>Участник</th><th>Отправлено</th><th>Статус</th><th>Балл</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for s in submissions %}
+    <tr>
+      <td>{{ s.problem.number }}. {{ s.problem.title }}</td>
+      <td>
+        {% if s.user.profile %}{{ s.user.profile.full_name }}{% else %}{{ s.user.email }}{% endif %}
+        {% if s.user.profile.grade %}<span class="muted">{{ s.user.profile.grade }} кл.</span>{% endif %}
+      </td>
+      <td>{{ s.created_at|date:"d.m.Y H:i" }}{% if s.is_late %}
+        <span class="badge warn">после дедлайна</span>{% endif %}</td>
+      <td>
+        {% if s.grade %}{{ s.grade.get_status_display }}
+        {% else %}<span class="badge none">не проверено</span>{% endif %}
+      </td>
+      <td>{% if s.grade and s.grade.score is not None %}{{ s.grade.score|floatformat:"-2" }}{% else %}—{% endif %}</td>
+      <td><a href="{% url 'contest:review_detail' s.pk %}?back={{ request.get_full_path|urlencode }}">Проверить →</a></td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="6" class="muted">
+      {% if status == "todo" %}Всё проверено.{% else %}Решений пока нет.{% endif %}
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

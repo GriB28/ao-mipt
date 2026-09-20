@@ -1,0 +1,195 @@
+{% comment %}
+Карта площадок.
+
+Два движка: Яндекс.Карты, если в .env задан YANDEX_MAPS_API_KEY,
+иначе OpenStreetMap через Leaflet (работает без ключа, но в некоторых
+сетях его тайлы недоступны).
+
+Данные в обоих случаях берутся из одного GeoJSON-эндпоинта, поэтому
+переключение движка не требует правок на сервере.
+
+Параметры включения:
+  picker=True — режим выбора точки: клик ставит метку и заполняет
+  скрытые поля формы с координатами (используется при добавлении площадки).
+  В этом режиме Яндекс дополнительно определяет адрес по координатам и
+  сверяет его с выбранным регионом — это ловит промах по карте.
+{% endcomment %}
+
+<div id="map" data-source="{% url 'venues:geojson' %}"
+     {% if picker %}data-picker="1" data-lat-field="id_latitude" data-lon-field="id_longitude"{% endif %}></div>
+
+<noscript>
+  <p class="muted">Для карты нужен JavaScript. Список площадок есть в таблице ниже.</p>
+</noscript>
+
+{% if YANDEX_MAPS_API_KEY %}
+  <script src="https://api-maps.yandex.ru/2.1/?apikey={{ YANDEX_MAPS_API_KEY }}&lang=ru_RU"></script>
+  <script>
+    (function () {
+      var el = document.getElementById('map');
+      if (!el || !window.ymaps) return;
+
+      ymaps.ready(function () {
+        var map = new ymaps.Map(el, {
+          center: [55.75, 37.62],
+          zoom: 4,
+          controls: ['zoomControl', 'geolocationControl', 'searchControl']
+        });
+
+        if (el.dataset.picker) {
+          initPicker(map);
+        } else {
+          loadVenues(map);
+        }
+      });
+
+      function loadVenues(map) {
+        fetch(el.dataset.source)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var collection = new ymaps.GeoObjectCollection(null, {
+              preset: 'islands#blueEducationIcon'
+            });
+
+            data.features.forEach(function (f) {
+              var p = f.properties;
+              // GeoJSON хранит [долгота, широта], Яндекс ждёт [широта, долгота].
+              var coords = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
+              collection.add(new ymaps.Placemark(coords, {
+                balloonContentHeader: p.title,
+                balloonContentBody:
+                  p.address + '<br>Записалось: ' + p.booked +
+                  '<br><a href="' + p.url + '">Подробнее и записаться</a>',
+                hintContent: p.city
+              }));
+            });
+
+            map.geoObjects.add(collection);
+            if (data.features.length) {
+              map.setBounds(collection.getBounds(), { checkZoomRange: true, zoomMargin: 40 });
+            }
+          });
+      }
+
+      function initPicker(map) {
+        var latField = document.getElementById(el.dataset.latField);
+        var lonField = document.getElementById(el.dataset.lonField);
+        var regionField = document.getElementById('id_region');
+        var cityField = document.getElementById('id_city');
+        var hint = document.getElementById('map-hint');
+        var mark = null;
+
+        map.events.add('click', function (e) {
+          var coords = e.get('coords');
+          if (mark) map.geoObjects.remove(mark);
+          mark = new ymaps.Placemark(coords, {}, { preset: 'islands#redDotIcon' });
+          map.geoObjects.add(mark);
+          if (latField) latField.value = coords[0].toFixed(6);
+          if (lonField) lonField.value = coords[1].toFixed(6);
+          checkAddress(coords);
+        });
+
+        // Обратное геокодирование: по точке получаем регион и город и
+        // сверяем с тем, что выбрано в форме. Промах по карте иначе
+        // всплывёт только когда школьник приедет не в тот город.
+        function checkAddress(coords) {
+          if (!hint) return;
+          hint.textContent = 'Определяем адрес…';
+          hint.className = 'muted';
+
+          ymaps.geocode(coords, { results: 1 }).then(function (res) {
+            var found = res.geoObjects.get(0);
+            if (!found) {
+              hint.textContent = 'Адрес по этой точке определить не удалось — проверьте её сами.';
+              return;
+            }
+            var area = found.getAdministrativeAreaName() || '';
+            var locality = found.getLocalityName() || '';
+            var full = found.getAddressLine();
+            var chosenRegion = regionField ? regionField.value : '';
+            var chosenCity = cityField ? cityField.value : '';
+
+            if (mismatch(area, chosenRegion) || mismatch(locality, chosenCity)) {
+              hint.className = 'map-hint-warn';
+              hint.textContent = 'По карте это ' + [area, locality].filter(Boolean).join(', ')
+                + ' — не совпадает с тем, что выбрано выше. Проверьте точку или поля.';
+            } else {
+              hint.className = 'muted';
+              hint.textContent = 'По карте: ' + full;
+            }
+          }, function () {
+            hint.textContent = 'Адрес по точке проверить не вышло — проверьте её сами.';
+          });
+        }
+
+        // Сравниваем мягко: «Москва» и «Город Москва», «Республика
+        // Татарстан» и «Татарстан» — это одно и то же. Ругаемся только
+        // когда ничего общего нет.
+        function mismatch(fromMap, chosen) {
+          if (!fromMap || !chosen) return false;
+          var a = normalize(fromMap), b = normalize(chosen);
+          return a.indexOf(b) === -1 && b.indexOf(a) === -1;
+        }
+
+        function normalize(value) {
+          return value.toLowerCase()
+            .replace(/[ёе]/g, 'е')
+            .replace(/республика|область|край|автономный округ|городской округ|город|г\.|—|-/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
+      }
+    })();
+  </script>
+{% else %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    (function () {
+      var el = document.getElementById('map');
+      if (!el || !window.L) return;
+
+      var map = L.map(el).setView([55.75, 37.62], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+
+      if (el.dataset.picker) {
+        // Сверки адреса с выбранным регионом здесь нет: она делается
+        // геокодером Яндекса, а эта ветка работает как раз без ключа.
+        var latField = document.getElementById(el.dataset.latField);
+        var lonField = document.getElementById(el.dataset.lonField);
+        var hint = document.getElementById('map-hint');
+        var mark = null;
+        map.on('click', function (e) {
+          if (mark) mark.remove();
+          mark = L.marker(e.latlng).addTo(map);
+          if (latField) latField.value = e.latlng.lat.toFixed(6);
+          if (lonField) lonField.value = e.latlng.lng.toFixed(6);
+          if (hint) hint.textContent = 'Точка отмечена: ' + e.latlng.lat.toFixed(5)
+            + ', ' + e.latlng.lng.toFixed(5);
+        });
+        return;
+      }
+
+      fetch(el.dataset.source)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var layer = L.geoJSON(data, {
+            onEachFeature: function (feature, lyr) {
+              var p = feature.properties;
+              lyr.bindPopup(
+                '<strong>' + p.title + '</strong><br>' + p.address +
+                '<br>Записалось: ' + p.booked +
+                '<br><a href="' + p.url + '">Подробнее и записаться</a>'
+              );
+            }
+          }).addTo(map);
+          if (data.features.length) {
+            map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+          }
+        });
+    })();
+  </script>
+{% endif %}

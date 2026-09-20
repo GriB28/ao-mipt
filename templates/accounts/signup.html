@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Регистрация{% endblock %}
+{% block content %}
+<h1>Регистрация участника</h1>
+<p class="lead prose">После регистрации вы сможете сдавать задачи и записаться на очный тур.</p>
+
+<form method="post" class="form-wide">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn" type="submit">Зарегистрироваться</button>
+</form>
+{% endblock %}

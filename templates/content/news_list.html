@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Новости{% endblock %}
+{% block content %}
+<h1>Новости</h1>
+<div class="grid">
+{% for item in news %}
+  <div class="card">
+    <h3><a href="{{ item.get_absolute_url }}">{{ item.title }}</a></h3>
+    <p class="muted">{{ item.published_at|date:"d.m.Y" }}</p>
+    <p>{{ item.summary }}</p>
+  </div>
+{% empty %}
+  <p class="muted">Новостей пока нет.</p>
+{% endfor %}
+</div>
+{% endblock %}

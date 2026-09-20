@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ problem.title }}{% endblock %}
+{% block content %}
+<h1>{{ problem.number }}. {{ problem.title }}</h1>
+<p class="muted">{{ problem.stage.title }}</p>
+
+{% if problem.statement_pdf %}
+  <p><a class="btn btn-secondary" href="{{ problem.statement_pdf.url }}">Скачать условие (PDF)</a></p>
+{% endif %}
+
+{% if problem.statement_html %}
+  {% comment %}
+    Класс math включает разбор формул: KaTeX ищет $…$ и $$…$$
+    только внутри него, чтобы не трогать остальной текст страницы.
+  {% endcomment %}
+  <div class="card prose math">{{ problem.statement_html|safe }}</div>
+{% endif %}
+
+{% if problem.figure %}
+  <figure class="problem-figure">
+    <img src="{{ problem.figure.url }}" alt="{{ problem.figure_caption|default:'Рисунок к задаче' }}">
+    {% if problem.figure_caption %}<figcaption>{{ problem.figure_caption }}</figcaption>{% endif %}
+  </figure>
+{% endif %}
+
+{% if problem.attachments.all %}
+  <h2>Материалы к задаче</h2>
+  <ul>{% for a in problem.attachments.all %}<li><a href="{{ a.file.url }}">{{ a }}</a></li>{% endfor %}</ul>
+{% endif %}
+
+{% if problem.solution_is_public %}
+  <h2>Разбор</h2>
+  <p><a class="btn btn-secondary" href="{{ problem.solution_pdf.url }}">Скачать разбор (PDF)</a></p>
+{% endif %}
+
+{% if user.is_manager %}
+  {% comment %}
+    Организатор и администратор задачи не сдают — им нужны инструменты.
+    Показываем правку и проверку вместо формы загрузки решения.
+  {% endcomment %}
+  <aside class="organizer-bar">
+    <p class="organizer-bar-title">Организатору</p>
+    <ul>
+      {% if can_edit %}<li><a href="{% url 'contest:problem_edit' problem.pk %}">Редактировать задачу</a></li>{% endif %}
+      {% if can_review %}<li><a href="{% url 'contest:review_list' %}?problem={{ problem.pk }}">Проверить решения ({{ submission_count }})</a></li>{% endif %}
+      {% if not can_edit and not can_review %}<li class="muted">Вы не назначены проверяющим по этой задаче.</li>{% endif %}
+    </ul>
+  </aside>
+{% else %}
+  <h2>Сдать решение</h2>
+  {% if not user.is_authenticated %}
+    <p><a class="btn" href="{% url 'accounts:login' %}?next={{ request.path }}">Войдите, чтобы сдать решение</a></p>
+  {% elif not problem.accepts_submissions %}
+    <p class="badge warn">Приём решений по этой задаче закрыт</p>
+  {% else %}
+    {% if last_submission %}
+      <p class="muted">Последняя попытка: {{ last_submission.created_at|date:"d.m.Y H:i" }}.
+        Новая загрузка заменит её.</p>
+    {% endif %}
+    <form method="post" enctype="multipart/form-data" action="{% url 'contest:submit' problem.pk %}" class="form-narrow">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn" type="submit">Отправить</button>
+    </form>
+    <p class="muted">Принимаются PDF, фото, код (.py, .cpp, .ipynb), данные (.txt, .csv) и .zip.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}{% include "_katex.html" %}{% endblock %}
