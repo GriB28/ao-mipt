@@ -49,6 +49,7 @@ if DEBUG or TESTING:
 # --- Приложения -----------------------------------------------------------
 
 DJANGO_APPS = [
+    'whitenoise.runserver_nostatic',      # тестовый деплой: runserver при DEBUG=false
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -221,11 +222,11 @@ YANDEX_MAPS_API_KEY = env("YANDEX_MAPS_API_KEY", default="")
 
 # --- Безопасность (включается только в проде) -----------------------------
 
-if not DEBUG and not TESTING:
-    SECURE_SSL_REDIRECT = True
+if not DEBUG and not TESTING:   # тестовый деплой: runserver при DEBUG=false
+    # SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000
+    # SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     X_FRAME_OPTIONS = "DENY"
