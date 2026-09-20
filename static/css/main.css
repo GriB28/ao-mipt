@@ -758,3 +758,27 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
     clip-path: polygon(35% 0, 35% 55%, 0 55%, 50% 100%, 100% 55%, 65% 55%, 65% 0);
   }
 }
+
+/* --- Архив лекций -------------------------------------------------------- */
+
+/* Полсотни записей: заголовок темы держит строку взгляда, сам список —
+   плотный, чтобы раздел целиком умещался на экране. */
+.topic-title {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--color-space-700);
+}
+
+.lecture-list { list-style: none; margin: 0; padding: 0; }
+
+.lecture-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.lecture-list a { font-weight: var(--weight-medium); }

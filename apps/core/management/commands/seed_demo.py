@@ -7,15 +7,15 @@
 Команда идемпотентна — повторный запуск ничего не дублирует.
 """
 
-from datetime import timedelta
 from decimal import Decimal
 
 from django.core.files.base import ContentFile
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from apps.accounts.models import OrganizerProfile, ParticipantProfile, User
-from apps.content.models import Lecture, News, Page, Playlist
+from apps.content.models import News, Page, Playlist
 from apps.contest.models import Problem, Submission, SubmissionFile
 from apps.core.legal_templates import CONSENT_TEXT, PRIVACY_POLICY, RULES_TEXT
 from apps.mailing.models import Newsletter
@@ -125,8 +125,13 @@ class Command(BaseCommand):
         for venue in Venue.objects.all():
             venue.seasons.add(season)
 
-        # Названия и годы взяты из самих роликов (канал «ФАКТ МФТИ — SPACE»).
-        # Плейлисты, для которых год неизвестен, проставьте в админке.
+        # Каталог лекций прошлых лет — темы, лекции и плейлисты сезонов.
+        # Лежит в apps/content/lecture_catalog.py, собран из таблицы
+        # организаторов (см. import_lectures).
+        call_command("seed_lectures", verbosity=0)
+
+        # Плейлисты, которых нет в таблице сезонов: курс по Python идёт
+        # вне сезонов, у двух ВК-плейлистов год не определить.
         playlists = [
             ("Лекции сезона 2021/22", 2022,
              "https://www.youtube.com/watch?v=Z5rYrIb1ER0&list=PLncYbc2UAdLEAZeQOiW2lOEslj-DzC2w8",
@@ -155,24 +160,9 @@ class Command(BaseCommand):
                 },
             )
 
-        # Лекции этого сезона выкладываются во ВКонтакте. Ссылки — на
-        # конкретные видео, а не на плейлисты: только из таких собирается
-        # проигрыватель на странице лекции.
-        season_lectures = [
-            ("lecture-1", "Лекция 1",
-             "https://vkvideo.ru/video-17906_456239207?pl=-17906_48144875&t=18s", 14),
-            ("lecture-2", "Лекция 2",
-             "https://vkvideo.ru/video-17906_456239245?pl=-17906_48144877&t=1s", 7),
-        ]
-        for slug, title, url, days_ago in season_lectures:
-            Lecture.objects.get_or_create(
-                season=season, slug=slug,
-                defaults={"title": title,
-                          "held_at": now - timedelta(days=days_ago),
-                          "status": Lecture.Status.APPROVED,
-                          "video_url": url,
-                          "description": "Запись лекции подготовительного курса."},
-            )
+        # Лекции текущего сезона ещё не читались: в разделе «Лекции»
+        # пока пусто, и это правда, а не недоработка. Записи прошлых лет
+        # лежат в архиве лекций.
         News.objects.get_or_create(
             slug="registration-open",
             defaults={"season": season, "title": "Открыта регистрация на АО VII",

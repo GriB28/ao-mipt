@@ -48,6 +48,37 @@ class News(TimeStampedModel):
         return reverse("content:news_detail", args=[self.slug])
 
 
+class Topic(TimeStampedModel):
+    """
+    Тема лекции: «Небесная механика», «Основы Python».
+
+    Зачем отдельная модель, а не поле с выбором: тем со временем
+    становится больше, и добавлять их должен администратор, а не
+    программист миграцией. Раздел (физика или программирование) живёт
+    здесь же — одна тема не может быть одновременно и тем и другим.
+    """
+
+    class Section(models.TextChoices):
+        PHYSICS = "physics", "Физика"
+        PROGRAMMING = "programming", "Программирование"
+        COMMON = "common", "Общее"
+
+    slug = models.SlugField("код", unique=True)
+    title = models.CharField("название", max_length=120)
+    section = models.CharField("раздел", max_length=12, choices=Section.choices,
+                               default=Section.PHYSICS)
+    description = models.CharField("пояснение", max_length=250, blank=True)
+    order = models.PositiveSmallIntegerField("порядок", default=100)
+
+    class Meta:
+        verbose_name = "тема лекций"
+        verbose_name_plural = "темы лекций"
+        ordering = ["section", "order", "title"]
+
+    def __str__(self):
+        return f"{self.get_section_display()} — {self.title}"
+
+
 class LectureQuerySet(models.QuerySet):
     def published(self):
         """Лекции, которые видят участники: только одобренные."""
@@ -85,6 +116,9 @@ class Lecture(TimeStampedModel):
     title = models.CharField("название", max_length=250)
     slug = models.SlugField("адрес")
     lecturer = models.CharField("лектор", max_length=150, blank=True)
+    topic = models.ForeignKey(Topic, on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name="lectures", verbose_name="тема",
+                              help_text="По ней лекции группируются в архиве")
     description = models.TextField("описание", blank=True)
 
     held_at = models.DateTimeField("дата проведения", null=True, blank=True)

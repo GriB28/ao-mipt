@@ -125,10 +125,14 @@ class PlaylistTest(TestCase):
         self.assertIn("platform-youtube", html)
 
     def test_current_season_page_shows_lectures_not_playlists(self):
-        """На основной странице — лекции этого сезона, без плейлистов прошлых лет."""
+        """На основной странице — лекции этого сезона, без плейлистов прошлых лет.
+
+        Лекций сезона ещё нет, и страница честно говорит об этом, а не
+        подсовывает записи прошлых лет.
+        """
         html = self.client.get("/lectures/").content.decode()
         self.assertNotIn("playlist-card", html)
-        self.assertIn("Лекция 1", html)
+        self.assertIn("ещё не начались", html)
 
     def test_unpublished_playlist_hidden(self):
         from apps.content.models import Playlist
@@ -156,13 +160,13 @@ class LectureEmbedTest(TestCase):
         self.assertNotIn("<iframe", html)
         self.assertIn("Смотреть в ВКонтакте", html)
 
-    def test_season_lecture_plays_on_the_page(self):
-        """Лекции этого сезона лежат во ВКонтакте и должны проигрываться."""
+    def test_vk_lecture_plays_on_the_page(self):
+        """Записи во ВКонтакте должны проигрываться прямо на сайте."""
         from apps.content.models import Lecture
 
-        lecture = Lecture.objects.get(slug="lecture-1")
+        lecture = Lecture.objects.filter(video_url__contains="vkvideo.ru/video").first()
         html = self.client.get(lecture.get_absolute_url()).content.decode()
-        self.assertIn("vk.com/video_ext.php?oid=-17906&amp;id=456239207", html)
+        self.assertIn("vk.com/video_ext.php", html)
 
     def test_youtube_lecture_embeds_player(self):
         from apps.content.models import Lecture
@@ -446,3 +450,88 @@ class FinalPhotosTest(TestCase):
             )
         years = [p.season.year for p in Photo.objects.published()]
         self.assertEqual(years, sorted(years))
+
+
+class LectureCatalogTest(TestCase):
+    """Каталог лекций: разделы, темы и разбор названий."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+
+        call_command("seed_demo", verbosity=0)
+
+    def test_catalog_is_loaded(self):
+        from apps.content.models import Lecture, Topic
+
+        self.assertGreater(Lecture.objects.count(), 50)
+        self.assertGreater(Topic.objects.count(), 10)
+
+    def test_every_lecture_has_a_topic(self):
+        """Лекция без темы проваливается в «Прочее» и теряется."""
+        from apps.content.models import Lecture
+
+        self.assertEqual(Lecture.objects.filter(topic__isnull=True).count(), 0)
+
+    def test_sections_come_in_the_declared_order(self):
+        """Физика, программирование, общее — а не по алфавиту кодов."""
+        html = self.client.get("/lectures/archive/").content.decode()
+        positions = [html.index(name) for name in ("Физика", "Программирование", "Общее")]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_topics_group_the_lectures(self):
+        html = self.client.get("/lectures/archive/").content.decode()
+        for topic in ("Основы Python", "Небесная механика и баллистика", "Оптика и излучение"):
+            with self.subTest(topic=topic):
+                self.assertIn(topic, html)
+
+    def test_section_filter_narrows_the_list(self):
+        response = self.client.get("/lectures/archive/?section=programming")
+        titles = [name for name, _, _ in response.context["sections"]]
+        self.assertEqual(titles, ["Программирование"])
+
+    def test_topic_filter_narrows_the_list(self):
+        response = self.client.get("/lectures/archive/?topic=python")
+        for lecture in response.context["lectures"]:
+            with self.subTest(lecture=lecture.title):
+                self.assertEqual(lecture.topic.slug, "python")
+
+    def test_seed_is_idempotent(self):
+        """Повторный запуск seed_demo не задваивает лекции."""
+        from django.core.management import call_command
+
+        from apps.content.models import Lecture
+
+        before = Lecture.objects.count()
+        call_command("seed_demo", verbosity=0)
+        self.assertEqual(Lecture.objects.count(), before)
+
+
+class TopicMatchingTest(TestCase):
+    """Разбор названий по темам: правила проверяются сверху вниз."""
+
+    def test_python_lecture_about_odes_goes_to_numerical(self):
+        """Частное правило должно побеждать общее «python»."""
+        from apps.content.management.commands.import_lectures import match_topic
+
+        self.assertEqual(match_topic("Знакомство с Python. Решение ОДУ"), "numerical")
+        self.assertEqual(match_topic("Знакомство с Python. Функции"), "python")
+
+    def test_mixed_lecture_goes_to_its_main_subject(self):
+        from apps.content.management.commands.import_lectures import match_topic
+
+        self.assertEqual(
+            match_topic("Вращательное движение. Закон Гука. Тепловое расширение"),
+            "mechanics",
+        )
+
+    def test_problem_reviews_are_separated(self):
+        from apps.content.management.commands.import_lectures import match_topic
+
+        self.assertEqual(match_topic("Разбор заданий теор. тура"), "solutions")
+
+    def test_unknown_title_is_left_without_a_topic(self):
+        """Лучше показать «без темы», чем засунуть лекцию не туда."""
+        from apps.content.management.commands.import_lectures import match_topic
+
+        self.assertIsNone(match_topic("Что-то совершенно новое"))

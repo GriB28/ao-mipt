@@ -8,7 +8,7 @@ from apps.contest.models import Problem
 from apps.seasons.models import Season
 
 from .forms import LectureForm
-from .models import ArchiveMaterial, Lecture, News, Page, Playlist
+from .models import ArchiveMaterial, Lecture, News, Page, Playlist, Topic
 
 
 def news_list(request):
@@ -35,16 +35,70 @@ def lecture_list(request):
 
 
 def lecture_archive(request):
-    """Лекции и плейлисты прошлых сезонов."""
+    """
+    Лекции и плейлисты прошлых сезонов.
+
+    Полсотни записей списком — это стена, в которой ничего не найти,
+    поэтому они разложены по разделам (физика, программирование) и темам
+    внутри них. Фильтры по разделу, теме и сезону сужают выборку.
+    """
     season = Season.objects.active()
-    lectures = Lecture.objects.published().select_related("season")
+    lectures = (Lecture.objects.published()
+                .select_related("season", "topic")
+                .order_by("topic__section", "topic__order", "-season__year", "title"))
     playlists = Playlist.objects.published().select_related("season")
     if season:
         lectures = lectures.exclude(season=season)
         playlists = playlists.exclude(season=season)
+
+    chosen = {
+        "section": request.GET.get("section", ""),
+        "topic": request.GET.get("topic", ""),
+        "year": request.GET.get("year", ""),
+    }
+    if chosen["section"]:
+        lectures = lectures.filter(topic__section=chosen["section"])
+    if chosen["topic"]:
+        lectures = lectures.filter(topic__slug=chosen["topic"])
+    if chosen["year"]:
+        lectures = lectures.filter(season__year=chosen["year"])
+
     return render(request, "content/lecture_list.html", {
-        "lectures": lectures, "playlists": playlists, "season": None, "is_archive": True,
+        "sections": _group_by_topic(lectures),
+        "lectures": lectures,
+        "playlists": playlists if not any(chosen.values()) else [],
+        "season": None,
+        "is_archive": True,
+        "topics": Topic.objects.filter(lectures__in=lectures).distinct(),
+        "years": sorted({lecture.season.year for lecture in lectures}, reverse=True),
+        "chosen": chosen,
+        "section_choices": Topic.Section.choices,
     })
+
+
+def _group_by_topic(lectures):
+    """Раскладывает лекции: раздел → тема → лекции.
+
+    Группируем в Python, а не запросами: полсотни записей уже загружены,
+    и лишние обращения к базе тут ничего не ускорят.
+    """
+    sections = {}
+    for lecture in lectures:
+        topic = lecture.topic
+        section = topic.section if topic else ""
+        section_title = topic.get_section_display() if topic else "Прочее"
+        sections.setdefault((section, section_title), {}) \
+                .setdefault(topic.title if topic else "Без темы", []).append(lecture)
+
+    # Порядок разделов — как объявлено в модели: физика, программирование,
+    # общее. По коду раздела сортировка дала бы алфавит, и «Общее»
+    # оказалось бы первым.
+    priority = {value: number for number, (value, _) in enumerate(Topic.Section.choices)}
+    ordered = sorted(sections.items(), key=lambda item: priority.get(item[0][0], 99))
+    return [
+        (title, list(topics.items()), sum(len(v) for v in topics.values()))
+        for (_, title), topics in ordered
+    ]
 
 
 def lecture_detail(request, season_slug, slug):

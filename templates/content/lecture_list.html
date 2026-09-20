@@ -57,31 +57,85 @@
   </div>
 {% endif %}
 
-{% if lectures %}<h2>{% if is_archive %}Отдельные лекции{% else %}Лекции сезона{% endif %}</h2>{% endif %}
-<div class="grid">
-{% for lecture in lectures %}
-  <div class="card">
-    <h3><a href="{{ lecture.get_absolute_url }}">{{ lecture.title }}</a></h3>
-    <p class="muted">
-      {% if is_archive %}{{ lecture.season.title }} · {% endif %}
-      {{ lecture.lecturer }}{% if lecture.held_at %} · {{ lecture.held_at|date:"d.m.Y" }}{% endif %}
-    </p>
-    <p>{{ lecture.description|truncatewords:22 }}</p>
-    {% if lecture.video_url %}<span class="badge">{{ lecture.platform_title }}</span>{% endif %}
-    {% if lecture.slides %}<span class="badge">слайды</span>{% endif %}
-  </div>
-{% empty %}
-  {% if not playlists %}
-    {% if is_archive %}
-      <p class="muted">Пока пусто.</p>
-    {% else %}
-      <p class="muted prose">
-        Лекции этого сезона ещё не начались. Записи будут выкладываться
-        во ВКонтакте и появляться здесь по одной.
-        А пока посмотрите <a href="{% url 'content:lecture_archive' %}">лекции прошлых лет</a>.
-      </p>
+{% if is_archive %}
+  {% comment %}
+    Полсотни лекций списком — стена, в которой ничего не найти. Поэтому
+    фильтры сверху и группировка «раздел → тема» ниже.
+  {% endcomment %}
+  <form method="get" class="filter-bar">
+    <label>
+      Раздел
+      <select name="section" onchange="this.form.submit()">
+        <option value="">все разделы</option>
+        {% for value, label in section_choices %}
+          <option value="{{ value }}" {% if chosen.section == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Тема
+      <select name="topic" onchange="this.form.submit()">
+        <option value="">все темы</option>
+        {% for topic in topics %}
+          <option value="{{ topic.slug }}" {% if chosen.topic == topic.slug %}selected{% endif %}>{{ topic.title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Сезон
+      <select name="year" onchange="this.form.submit()">
+        <option value="">все годы</option>
+        {% for year in years %}
+          <option value="{{ year }}" {% if chosen.year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button class="btn btn-small" type="submit">Показать</button></noscript>
+    {% if chosen.section or chosen.topic or chosen.year %}
+      <a class="btn btn-small btn-secondary" href="{% url 'content:lecture_archive' %}">Сбросить</a>
     {% endif %}
-  {% endif %}
-{% endfor %}
-</div>
+  </form>
+
+  {% for section, topics_in_section, count in sections %}
+    <h2>{{ section }} <span class="muted">{{ count }}</span></h2>
+    {% for topic_title, topic_lectures in topics_in_section %}
+      <h3 class="topic-title">{{ topic_title }}</h3>
+      <ul class="lecture-list">
+        {% for lecture in topic_lectures %}
+          <li>
+            <a href="{{ lecture.get_absolute_url }}">{{ lecture.title }}</a>
+            <span class="muted">{{ lecture.season.subtitle|default:lecture.season.year }}</span>
+            {% if lecture.lecturer %}<span class="muted">{{ lecture.lecturer }}</span>{% endif %}
+            {% if lecture.video_url %}<span class="badge">{{ lecture.platform_title }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endfor %}
+  {% empty %}
+    {% if not playlists %}<p class="muted">По этим условиям ничего не нашлось.</p>{% endif %}
+  {% endfor %}
+
+{% else %}
+  {% if lectures %}<h2>Лекции сезона</h2>{% endif %}
+  <div class="grid">
+  {% for lecture in lectures %}
+    <div class="card">
+      <h3><a href="{{ lecture.get_absolute_url }}">{{ lecture.title }}</a></h3>
+      <p class="muted">
+        {{ lecture.lecturer }}{% if lecture.held_at %} · {{ lecture.held_at|date:"d.m.Y" }}{% endif %}
+      </p>
+      <p>{{ lecture.description|truncatewords:22 }}</p>
+      {% if lecture.video_url %}<span class="badge">{{ lecture.platform_title }}</span>{% endif %}
+      {% if lecture.slides %}<span class="badge">слайды</span>{% endif %}
+    </div>
+  {% empty %}
+    <p class="muted prose">
+      Лекции этого сезона ещё не начались. Записи будут выкладываться
+      во ВКонтакте и появляться здесь по одной.
+      А пока посмотрите <a href="{% url 'content:lecture_archive' %}">лекции прошлых лет</a>
+      — их больше полусотни, разложены по темам.
+    </p>
+  {% endfor %}
+  </div>
+{% endif %}
 {% endblock %}

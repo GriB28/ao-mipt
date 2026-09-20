@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import ArchiveMaterial, Lecture, News, Page, Photo, Playlist
+from .models import ArchiveMaterial, Lecture, News, Page, Photo, Playlist, Topic
 
 
 @admin.register(News)
@@ -29,9 +29,9 @@ class LectureAdmin(admin.ModelAdmin):
     Ошибиться ссылкой на видео легко, а лекции — лицо раздела.
     """
 
-    list_display = ("title", "season", "lecturer", "platform_title", "held_at",
-                    "status", "created_by")
-    list_filter = ("season", "status")
+    list_display = ("title", "topic", "season", "lecturer", "platform_title",
+                    "held_at", "status")
+    list_filter = ("season", "status", "topic__section", "topic")
     prepopulated_fields = {"slug": ("title",)}
     search_fields = ("title", "lecturer")
     autocomplete_fields = ("created_by",)
@@ -82,3 +82,17 @@ class PhotoAdmin(admin.ModelAdmin):
         if not obj.image:
             return "—"
         return format_html('<img src="{}" style="height:48px;border-radius:4px">', obj.image.url)
+
+
+@admin.register(Topic)
+class TopicAdmin(admin.ModelAdmin):
+    """Темы лекций. Раздел задаётся здесь, лекция наследует его от темы."""
+
+    list_display = ("title", "section", "order", "lecture_count")
+    list_filter = ("section",)
+    list_editable = ("section", "order")
+    prepopulated_fields = {"slug": ("title",)}
+
+    @admin.display(description="лекций")
+    def lecture_count(self, obj):
+        return obj.lectures.count()

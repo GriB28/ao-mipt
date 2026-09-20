@@ -1,3 +1,4 @@
 -r requirements.txt
 ruff>=0.6             # линтер и форматтер
 django-debug-toolbar>=4.4
+openpyxl>=3.1           # чтение таблицы лекций (manage.py import_lectures)

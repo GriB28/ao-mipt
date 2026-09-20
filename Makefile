@@ -4,16 +4,28 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help install dev migrations migrate seed superuser test lint fmt clean up down logs
+.PHONY: help start install dev migrations migrate seed superuser test lint fmt clean up down logs
 
 help:  ## показать список команд
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+start:  ## всё сразу: зависимости, база, демо-данные, сервер
+	@$(MAKE) install
+	@$(MAKE) migrate
+	@$(MAKE) seed
+	@echo ""
+	@echo "Готово. Сайт: http://127.0.0.1:8000"
+	@echo "Вход: admin@example.ru / olymp12345"
+	@echo "Остановить: Ctrl+C"
+	@echo ""
+	@$(MAKE) dev
 
 install:  ## создать venv и поставить зависимости
 	python3 -m venv .venv
 	$(PIP) install -q --upgrade pip
 	$(PIP) install -q -r requirements-dev.txt
-	@test -f .env || (cp .env.example .env && echo "Создан .env — впишите DEBUG=True для локальной работы")
+	@test -f .env || (sed 's/^DEBUG=False/DEBUG=True/' .env.example > .env && \
+		echo "Создан .env для локальной работы (DEBUG=True)")
 
 dev:  ## запустить сервер разработки на http://127.0.0.1:8000
 	$(PY) manage.py runserver
