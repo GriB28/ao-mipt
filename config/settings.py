@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -17,10 +18,23 @@ env = environ.Env(
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("SECRET_KEY", default="dev-insecure-key-change-me")
 # Под тестами не включаем прод-защиту: SSL-редирект ломает тестовый клиент.
 TESTING = "test" in sys.argv
 DEBUG = env("DEBUG")
+
+# Ключ подписи сессий и токенов. В .env.example он пустой — чтобы никто
+# случайно не выкатил на сервер ключ из репозитория. Поэтому:
+#   локально — подставляем одноразовый, чтобы сайт просто запустился;
+#   на сервере — падаем сразу, а не отдаём всем один и тот же ключ.
+SECRET_KEY = env("SECRET_KEY", default="").strip()
+if not SECRET_KEY:
+    if DEBUG or TESTING:
+        SECRET_KEY = "dev-insecure-key-not-for-production"
+    else:
+        raise ImproperlyConfigured(
+            "SECRET_KEY пуст, а DEBUG=False. Сгенерируйте ключ и впишите в .env:\n"
+            '    python -c "import secrets; print(secrets.token_urlsafe(50))"'
+        )
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 
@@ -84,11 +98,15 @@ TEMPLATES = [
 # --- База данных ----------------------------------------------------------
 # Локально по умолчанию SQLite (чтобы стартовать без Docker),
 # на сервере — DATABASE_URL=postgres://user:pass@host:5432/dbname
+#
+# Пустую строку считаем «не задано»: в .env.example переменная объявлена
+# без значения, и без этой проверки Django пытался бы подключиться к базе
+# с пустым драйвером и падал на первой же команде.
 
+_database_url = env("DATABASE_URL", default="").strip()
 DATABASES = {
-    "default": env.db_url(
-        "DATABASE_URL",
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+    "default": env.db_url_config(
+        _database_url or f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
     )
 }
 
@@ -123,7 +141,9 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = env("MEDIA_ROOT", default=str(BASE_DIR / "media"))
+# Тоже терпим пустое значение: пустой MEDIA_ROOT означал бы корень
+# файловой системы, и загрузки полетели бы мимо проекта.
+MEDIA_ROOT = env("MEDIA_ROOT", default="").strip() or str(BASE_DIR / "media")
 
 # В проде статика раздаётся whitenoise с хешами в именах файлов (кеш навсегда),
 # но это требует collectstatic — поэтому локально и в тестах используем простой бэкенд.

@@ -8,6 +8,7 @@
 """
 
 from decimal import Decimal
+from pathlib import Path
 
 from django.core.files.base import ContentFile
 from django.core.management import call_command
@@ -129,6 +130,12 @@ class Command(BaseCommand):
         # Лежит в apps/content/lecture_catalog.py, собран из таблицы
         # организаторов (см. import_lectures).
         call_command("seed_lectures", verbosity=0)
+
+        # Фотографии финалов лежат в репозитории папкой albums/ — грузим
+        # их здесь, чтобы у того, кто склонировал проект, галерея была
+        # сразу, без отдельной команды.
+        if Path("albums").is_dir():
+            call_command("import_photos", "albums", verbosity=0)
 
         # Плейлисты, которых нет в таблице сезонов: курс по Python идёт
         # вне сезонов, у двух ВК-плейлистов год не определить.
