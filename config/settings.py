@@ -190,7 +190,7 @@ EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_TIMEOUT = 10  # чтобы регистрация не висела, если SMTP не отвечает
 
-if EMAIL_HOST and not TESTING:
+if EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and not (TESTING or DEBUG):
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
