@@ -11,8 +11,8 @@ urlpatterns = [
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("profile/", views.profile, name="profile"),
     # Подтверждение почты: ссылка из письма и кнопка «отправить ещё раз».
-    path("confirm/<str:token>/", views.confirm_email, name="confirm_email"),
     path("confirm/resend/", views.resend_confirmation, name="resend_confirmation"),
+    path("confirm/<str:token>/", views.confirm_email, name="confirm_email"),
     # Восстановление пароля — готовые view Django, нужны только шаблоны.
     path("password-reset/", auth_views.PasswordResetView.as_view(
         template_name="accounts/password_reset_form.html",

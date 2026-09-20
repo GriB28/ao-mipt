@@ -55,5 +55,5 @@ def send_confirmation(request, user) -> None:
         recipient_list=[user.email],
         # Регистрация не должна падать из-за недоступного SMTP:
         # человек уже создан, письмо можно переотправить из кабинета.
-        fail_silently=True,
+        fail_silently=False,
     )
