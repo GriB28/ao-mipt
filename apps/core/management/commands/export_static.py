@@ -24,6 +24,11 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.test import Client
 
+# Что из media/ попадает в снимок. Всё остальное (в первую очередь
+# solutions/ — работы участников) в публичную выгрузку не уходит.
+PUBLIC_MEDIA = ["photos", "playlists", "lectures", "problems", "seasons"]
+PUBLIC_MEDIA_RE = "|".join(PUBLIC_MEDIA)
+
 BANNER = """
 <div style="background:#19246a;color:#fff;padding:10px 16px;font-size:14px;
             text-align:center;font-family:sans-serif">
@@ -135,6 +140,15 @@ class Command(BaseCommand):
         for css in ("main.css", "tokens.css"):
             shutil.copy(Path(settings.BASE_DIR) / "static" / "css" / css, out / "css" / css)
 
+        # GitHub Pages по умолчанию прогоняет файлы через Jekyll, а тот
+        # выбрасывает всё, что начинается с подчёркивания. Пустой файл
+        # .nojekyll это отключает.
+        (out / ".nojekyll").write_text("")
+
+        copied = self._copy_media(out)
+        if copied:
+            self.stdout.write(f"  перенесено файлов media: {copied}")
+
         geojson = self._render("/offline/venues.geojson", None)
         if geojson:
             (out / "venues.geojson").write_text(geojson, encoding="utf-8")
@@ -160,6 +174,19 @@ class Command(BaseCommand):
         )
         return f"<ul>{rows}</ul>"
 
+    def _copy_media(self, out):
+        """Переносит публичные картинки в снимок. Возвращает их число."""
+        media_root = Path(settings.MEDIA_ROOT)
+        copied = 0
+        for folder in PUBLIC_MEDIA:
+            source = media_root / folder
+            if not source.is_dir():
+                continue
+            target = out / "media" / folder
+            shutil.copytree(source, target, dirs_exist_ok=True)
+            copied += sum(1 for path in target.rglob("*") if path.is_file())
+        return copied
+
     def _rewrite(self, html):
         """Переписывает серверные адреса на имена файлов."""
         # Ссылки на архив по годам приходят как href="?year=2023"
@@ -177,9 +204,12 @@ class Command(BaseCommand):
         # она закрыта паролем и показывается вживую. Убираем сам пункт меню.
         html = re.sub(r'<a href="/admin/"[^>]*>[^<]*</a>', "", html)
 
-        # Загруженные файлы (решения, обложки) в снимок не кладём: это
-        # чужие работы и лишние мегабайты. Имя файла остаётся видно,
-        # сама ссылка никуда не ведёт.
+        # Публичные картинки (фотографии финалов, обложки плейлистов)
+        # переезжают в снимок вместе со страницами — без них галерея
+        # выглядит сломанной. Решения участников не переносим никогда:
+        # это чужие работы и персональные данные.
+        html = re.sub(r'(href|src)="/media/(' + PUBLIC_MEDIA_RE + r')/([^"]*)"',
+                      r'\1="media/\2/\3"', html)
         html = re.sub(r'(href|src)="/media/[^"]*"', r'\1="#" data-demo-file', html)
 
         # Формы никуда не ведут — пусть не создают ложных ожиданий.

@@ -1,0 +1,92 @@
+# Сборка демонстрационной версии сайта и публикация на GitHub Pages.
+#
+# Что здесь происходит: на чистой машине поднимается сам сайт (база,
+# демо-данные, фотографии), после чего страницы выгружаются в статические
+# HTML и уезжают на Pages. Поэтому демо всегда соответствует коду в main,
+# а не тому, что кто-то однажды выложил руками.
+#
+# ВАЖНО, ЧЕГО ЗДЕСЬ НЕ БУДЕТ: Pages отдаёт только готовые файлы, без
+# сервера и базы. Регистрация, загрузка решений, запись на площадку и
+# админка на Pages не работают — для них нужен настоящий сервер
+# (см. docs/deploy.md).
+
+name: Демо на GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Кнопка «Run workflow» на вкладке Actions — пересобрать вручную.
+  workflow_dispatch:
+
+# Разрешения ровно те, что нужны публикации Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Две сборки подряд не толкаются: новая ждёт, пока закончится текущая.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Поставить зависимости
+        run: pip install -r requirements.txt
+
+      - name: Настройки для сборки
+        # Ключ здесь одноразовый и ничего не защищает: сайт собирается
+        # и выбрасывается, сессий и паролей в нём нет. Настоящий SECRET_KEY
+        # живёт только в .env на сервере.
+        run: |
+          cat > .env <<'ENV'
+          DEBUG=True
+          SECRET_KEY=build-only-not-a-secret
+          ALLOWED_HOSTS=testserver,localhost
+          CONTACT_EMAIL=ao-mipt@yandex.ru
+          SUPPORT_EMAIL=ao-mipt@yandex.ru
+          TELEGRAM_URL=https://t.me/asolymp
+          ENV
+
+      - name: Наполнить базу
+        run: |
+          python manage.py migrate --noinput
+          python manage.py seed_demo
+          python manage.py import_photos albums/
+
+      - name: Обложки плейлистов
+        # Тянутся с YouTube. Недоступен — плейлисты покажутся с иконкой.
+        run: python manage.py fetch_playlist_covers || echo "обложки пропущены"
+
+      - name: Подтянуть архив прошлых лет
+        # Только ссылки, без скачивания: 150 МБ качать на каждую сборку
+        # незачем. Если Яндекс.Диск недоступен, демо собирается без архива,
+        # а не падает целиком.
+        run: python manage.py import_archive --no-download || echo "архив пропущен"
+
+      - name: Собрать статические страницы
+        run: python manage.py export_static --out dist
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

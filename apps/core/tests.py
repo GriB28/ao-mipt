@@ -97,3 +97,50 @@ class ExportStaticTest(TestCase):
         html = (out / "offline.html").read_text(encoding="utf-8")
         self.assertNotIn("leaflet", html.lower())
         self.assertIn("интерактивная карта", html)
+
+
+class ExportMediaTest(TestCase):
+    """Картинки в снимке: галерея должна работать, решения — не утекать."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.files.base import ContentFile
+        from django.core.management import call_command
+
+        from apps.content.models import Photo
+        from apps.seasons.models import Season
+
+        call_command("seed_demo", verbosity=0)
+        Photo.objects.create(
+            season=Season.objects.get(year=2026), caption="Финалисты",
+            image=ContentFile(b"\x89PNG\r\n\x1a\n", name="export-test.png"),
+        )
+
+    def _export(self):
+        import tempfile
+        from io import StringIO
+        from pathlib import Path
+
+        from django.core.management import call_command
+
+        out = Path(tempfile.mkdtemp()) / "dist"
+        call_command("export_static", out=str(out), stdout=StringIO())
+        return out
+
+    def test_public_photos_are_carried_over(self):
+        out = self._export()
+        html = (out / "final.html").read_text(encoding="utf-8")
+        self.assertIn('src="media/photos/', html)
+        self.assertTrue(list((out / "media" / "photos").rglob("*.png")))
+
+    def test_solutions_never_leave_the_server(self):
+        """Работы участников — персональные данные, в публичный снимок нельзя."""
+        out = self._export()
+        self.assertFalse((out / "media" / "solutions").exists())
+        for page in out.glob("*.html"):
+            with self.subTest(page=page.name):
+                self.assertNotIn('src="media/solutions', page.read_text(encoding="utf-8"))
+
+    def test_nojekyll_is_written(self):
+        """Без него GitHub Pages прогоняет снимок через Jekyll."""
+        self.assertTrue((self._export() / ".nojekyll").exists())
