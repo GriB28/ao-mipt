@@ -38,6 +38,14 @@ if not SECRET_KEY:
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 
+if DEBUG or TESTING:
+    # Локально сайт всегда открывают с localhost, а в .env обычно лежат
+    # боевые домены, скопированные из примера. Без этой добавки первый
+    # же запрос упирается в «Invalid HTTP_HOST header».
+    ALLOWED_HOSTS = list(dict.fromkeys(
+        list(ALLOWED_HOSTS) + ["localhost", "127.0.0.1", "[::1]", "testserver"]
+    ))
+
 # --- Приложения -----------------------------------------------------------
 
 DJANGO_APPS = [
