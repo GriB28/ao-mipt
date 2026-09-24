@@ -200,6 +200,8 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     doc_number = models.CharField("номер", max_length=30, blank=True)
     doc_issued_at = models.DateField("дата выдачи", null=True, blank=True)
     doc_issued_by = models.CharField("кем выдан", max_length=300, blank=True)
+    doc_division_code = models.CharField("код подразделения", max_length=7, blank=True,
+                                         help_text="Только для паспорта РФ")
     reg_address = models.CharField("адрес регистрации", max_length=500, blank=True,
                                    help_text="Как в паспорте, с индексом")
 
@@ -214,6 +216,8 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     parent_doc_number = models.CharField("номер (представитель)", max_length=30, blank=True)
     parent_doc_issued_at = models.DateField("дата выдачи (представитель)", null=True, blank=True)
     parent_doc_issued_by = models.CharField("кем выдан (представитель)", max_length=300, blank=True)
+    parent_doc_division_code = models.CharField("код подразделения (представитель)", max_length=7,
+                                                blank=True)
     parent_reg_address = models.CharField("адрес регистрации (представитель)", max_length=500,
                                           blank=True)
 
@@ -229,10 +233,11 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     #: загрузки скана, подписанное согласие перестаёт им соответствовать.
     CONSENT_FIELDS = ("last_name", "first_name", "middle_name", "birth_date",
                       "doc_type", "doc_series", "doc_number", "doc_issued_at",
-                      "doc_issued_by", "reg_address",
+                      "doc_issued_by", "doc_division_code", "reg_address",
                       "parent_last_name", "parent_first_name", "parent_middle_name",
                       "parent_doc_type", "parent_doc_series", "parent_doc_number",
-                      "parent_doc_issued_at", "parent_doc_issued_by", "parent_reg_address")
+                      "parent_doc_issued_at", "parent_doc_issued_by", "parent_doc_division_code",
+                      "parent_reg_address")
 
     class Meta:
         verbose_name = "анкета участника"
@@ -274,10 +279,14 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
         missing = [n for n in self.REQUIRED_FIELDS if not getattr(self, n)]
         if self.doc_type in DOC_TYPES_WITH_SERIES and not self.doc_series:
             missing.append("doc_series")
+        if self.doc_type == DocumentType.PASSPORT_RF and not self.doc_division_code:
+            missing.append("doc_division_code")
         if self.is_minor:
             missing += [n for n in self.PARENT_REQUIRED_FIELDS if not getattr(self, n)]
             if self.parent_doc_type in DOC_TYPES_WITH_SERIES and not self.parent_doc_series:
                 missing.append("parent_doc_series")
+            if self.parent_doc_type == DocumentType.PASSPORT_RF and not self.parent_doc_division_code:
+                missing.append("parent_doc_division_code")
         return [self._meta.get_field(n).verbose_name for n in missing]
 
     @property

@@ -64,13 +64,14 @@ def profile_data(**extra):
         "birth_date_day": "1", "birth_date_month": "5", "birth_date_year": "2010",
         "doc_type": "passport_rf", "doc_series": "4510", "doc_number": "123456",
         "doc_issued_at_day": "1", "doc_issued_at_month": "6", "doc_issued_at_year": "2024",
-        "doc_issued_by": "ГУ МВД России по г. Москве",
+        "doc_issued_by": "ГУ МВД России по г. Москве", "doc_division_code": "770001",
         "reg_address": "101000, Москва, ул. Мира, 1", "grade": "10", "school": "Школа № 1",
         "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "",
         "parent_last_name": "Пупкина", "parent_first_name": "Мария", "parent_middle_name": "",
         "parent_doc_type": "passport_rf", "parent_doc_series": "4500", "parent_doc_number": "654321",
         "parent_doc_issued_at_day": "1", "parent_doc_issued_at_month": "1",
         "parent_doc_issued_at_year": "2012", "parent_doc_issued_by": "ОВД Тверской",
+        "parent_doc_division_code": "770-002",
         "parent_reg_address": "101000, Москва, ул. Мира, 1",
     } | extra
 
@@ -116,6 +117,16 @@ class ParticipationStepsTest(TestCase):
         self._save_profile(doc_series="45 10", doc_number="123 456")
         profile = ParticipantProfile.objects.get(user=self.user)
         self.assertEqual((profile.doc_series, profile.doc_number), ("4510", "123456"))
+
+    def test_division_code_for_passport(self):
+        self._save_profile()
+        self.assertEqual(ParticipantProfile.objects.get(user=self.user).doc_division_code, "770-001")
+        response = self._save_profile(doc_division_code="77")
+        self.assertFormError(response.context["form"], "doc_division_code",
+                             "Код подразделения — 6 цифр, например 770-001.")
+        response = self._save_profile(doc_division_code="")
+        self.assertFormError(response.context["form"], "doc_division_code",
+                             "Обязательное поле для паспорта РФ.")
 
     def test_birth_certificate_is_accepted(self):
         """У семиклассника паспорта нет — только свидетельство о рождении."""
@@ -255,38 +266,55 @@ class ConsentAccessTest(TestCase):
 
 
 class ConsentPdfTest(TestCase):
-    def _text(self, **fields):
-        from . import consent_pdf
+    """Бланк по шаблону оргкомитета: данные из анкеты, от руки — только подписи."""
+
+    def _kid(self, **fields):
         from .testing import make_eligible
 
-        kid = make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"), **fields)
-        return kid, consent_pdf.fill(consent_pdf.template_text(minor=kid.profile.is_minor),
-                                     consent_pdf.values_for(kid.profile))
+        return make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"), **fields)
 
-    def test_minor_blank_is_filled_with_parent_data(self):
-        """От руки в бланке — только подписи: данные представителя из анкеты."""
+    def test_values_come_from_the_profile(self):
         from . import consent_pdf
 
-        kid, text = self._text(last_name="О'Нил")
-        self.assertIn("О&#x27;Нил", text)  # данные экранированы для разметки reportlab
-        self.assertIn("серия 0000 № 000000", text)
-        self.assertIn("Я, Тестова Анна", text)
-        self.assertIn("серия 0000 № 000001", text)
+        values = consent_pdf.values_for(self._kid(last_name="О'Нил").profile)
+        self.assertEqual(values["participant_name"], "О'Нил Пётр")
+        self.assertIn("серия 0000 № 000001", values["parent_document"])
+        self.assertIn("код подразделения 770-002", values["parent_document"])
+
+    def test_minor_text_is_about_the_child_and_both_sign(self):
+        from . import consent_pdf
+
+        kid = self._kid()
+        text = " ".join(consent_pdf._blocks(consent_pdf.fill(
+            consent_pdf.template_text(minor=True), consent_pdf.values_for(kid.profile))))
+        self.assertIn("несовершеннолетнего ребенка (подопечного)", text)
+        self.assertIn("– гражданство.", text)
+        self.assertIn("117303, г. Москва", text)  # адрес оператора
         self.assertNotIn("{{", text)
-        self.assertNotIn("_____", text)
         self.assertTrue(consent_pdf.build(kid.profile).startswith(b"%PDF"))
+
+    def test_blank_fits_one_page_even_with_long_addresses(self):
+        """Скан загружается одним файлом — вторая страница с подписями потерялась бы."""
+        from . import consent_pdf
+
+        long = "141701, Московская область, городской округ Долгопрудный, г. Долгопрудный, " * 3
+        kid = self._kid(reg_address=long, parent_reg_address=long, doc_issued_by=long,
+                        parent_doc_issued_by=long)
+        _, pages = consent_pdf._render(kid.profile, consent_pdf._Styles(consent_pdf.FONT_SIZES[-1]))
+        self.assertEqual(pages, 1)
 
     def test_unknown_placeholder_becomes_a_blank_line(self):
         from . import consent_pdf
 
-        self.assertEqual(consent_pdf.fill("Я, {{ parent_name }}.", {}),
+        self.assertEqual(consent_pdf.fill("Я, {{ nobody }}.", {}),
                          f"Я, {consent_pdf.legal_templates.BLANK}.")
 
-    def test_adult_blank_has_no_parent(self):
-        from datetime import date
+    def test_adult_text_has_no_representative(self):
+        from . import consent_pdf
 
-        _, text = self._text(birth_date=date(2000, 1, 1))
-        self.assertNotIn("законного представителя", text)
+        text = consent_pdf.template_text(minor=False)
+        self.assertNotIn("несовершеннолетнего", text)
+        self.assertIn("предоставляю свое согласие", text)
 
 
 class EmailConfirmTest(TestCase):

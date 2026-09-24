@@ -1,13 +1,14 @@
 """
-Бланк согласия на обработку ПД в PDF.
+Бланк согласия на обработку ПД в PDF — по шаблону оргкомитета.
 
-Собирается из данных анкеты: школьник скачивает его, печатает,
-подписывает и загружает скан обратно. Если участнику нет 18, согласие
-даёт законный представитель — его данные тоже из анкеты, — а подписывают
-бланк двое: представитель и участник. От руки — только подписи и дата.
+Собирается из анкеты: школьник скачивает его, печатает, подписывает и
+загружает скан обратно. Сверху — данные участника (и законного
+представителя, если участнику нет 18) в строках с подписями под ними,
+как в бумажном шаблоне; дальше — текст согласия; внизу — ФИО, подпись и
+дата каждого, кто подписывает. От руки — только подписи и даты.
 
-Текст берётся со страницы consent-form-minor / consent-form-adult,
-если её завели в админке, иначе — из apps/core/legal_templates.py.
+Текст берётся со страницы consent-form-minor / consent-form-adult, если
+её завели в админке, иначе — из apps/core/legal_templates.py.
 Подстановки {{ имя }} заменяются простой заменой строк, а не шаблонами
 Django: текст пишут в админке, и исполнять в нём ничего не нужно.
 """
@@ -25,11 +26,19 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from apps.core import legal_templates
 
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
+PAGE_WIDTH = 175 * mm  # A4 минус поля
 _fonts_ready = False
 
 
@@ -46,25 +55,23 @@ def _register_fonts():
 
 
 def _date(value):
-    return value.strftime("%d.%m.%Y") if value else "________"
+    return value.strftime("%d.%m.%Y") if value else ""
 
 
-def _document(profile, prefix=""):
-    """«паспорт РФ серия 4510 № 123456, выдан 01.02.2020, ГУ МВД …» — внутри фразы, со строчной.
-
-    prefix="parent_" — документ законного представителя.
-    """
-    kind = getattr(profile, f"{prefix}doc_type")
-    if not kind:
-        return legal_templates.BLANK
-    label = getattr(profile, f"get_{prefix}doc_type_display")()
-    label = label[:1].lower() + label[1:]
+def _passport_line(profile, prefix):
+    """«серия 4510 № 123456, выдан 01.02.2020, ГУ МВД …, код подразделения 770-001»."""
     series = getattr(profile, f"{prefix}doc_series")
-    series = f"серия {series} " if series else ""
-    issued = "выдано" if kind == "birth_cert" else "выдан"
-    return (f"{label} {series}№ {getattr(profile, f'{prefix}doc_number')}, {issued} "
-            f"{_date(getattr(profile, f'{prefix}doc_issued_at'))}, "
-            f"{getattr(profile, f'{prefix}doc_issued_by')}")
+    parts = [f"серия {series} № {getattr(profile, f'{prefix}doc_number')}" if series
+             else f"№ {getattr(profile, f'{prefix}doc_number')}"]
+    kind = getattr(profile, f"{prefix}doc_type")
+    parts.append(f"{'выдано' if kind == 'birth_cert' else 'выдан'} "
+                 f"{_date(getattr(profile, f'{prefix}doc_issued_at'))}, "
+                 f"{getattr(profile, f'{prefix}doc_issued_by')}")
+    code = getattr(profile, f"{prefix}doc_division_code")
+    if code:
+        parts.append(f"код подразделения {code}")
+    label = getattr(profile, f"get_{prefix}doc_type_display")()
+    return f"{label}: " + ", ".join(parts)
 
 
 def template_text(minor: bool) -> str:
@@ -90,19 +97,19 @@ def fill(text: str, values: dict) -> str:
 
 
 def values_for(profile) -> dict:
-    user = profile.user
+    """Подстановки для текста согласия (все — строки)."""
     return {
         "participant_name": profile.full_name,
         "participant_birth_date": _date(profile.birth_date),
-        "participant_document": _document(profile),
+        "participant_document": _passport_line(profile, "") if profile.doc_type else "",
         "participant_address": profile.reg_address,
-        "parent_name": profile.parent_full_name or legal_templates.BLANK,
-        "parent_document": _document(profile, "parent_"),
-        "parent_address": profile.parent_reg_address or legal_templates.BLANK,
+        "parent_name": profile.parent_full_name,
+        "parent_document": _passport_line(profile, "parent_") if profile.parent_doc_type else "",
+        "parent_address": profile.parent_reg_address,
         "operator": legal_templates.CONSENT_OPERATOR,
         "contact_email": settings.CONTACT_EMAIL,
         "today": _date(timezone.localdate()),
-        "email": user.email,
+        "email": profile.user.email,
     }
 
 
@@ -110,65 +117,167 @@ def _blocks(text):
     """HTML из админки → абзацы для reportlab.
 
     Reportlab понимает только <b>, <i>, <br/> внутри абзаца, поэтому
-    сначала оставляем безопасный минимум, потом режем по абзацам.
+    сначала оставляем безопасный минимум, потом режем по абзацам. Пункт
+    списка становится абзацем с тире — как в бумажном шаблоне.
     """
-    text = nh3.clean(text, tags={"p", "b", "strong", "i", "em", "br", "li", "h2", "h3"},
+    text = nh3.clean(text, tags={"p", "b", "strong", "i", "em", "br", "li", "ul", "ol", "h2", "h3"},
                      attributes={})
     text = re.sub(r"<(/?)strong>", r"<\1b>", text)
     text = re.sub(r"<(/?)em>", r"<\1i>", text)
     text = re.sub(r"<br\s*/?>", "<br/>", text)
+    text = re.sub(r"</?[uo]l>", "", text)
+    text = re.sub(r"<li>", "<li>– ", text)
     parts = re.split(r"</?(?:p|li|h2|h3)>", text)
     return [re.sub(r"\s+", " ", p).strip() for p in parts if p.strip()]
 
 
+class _Styles:
+    def __init__(self, size=8.8):
+        self.title = ParagraphStyle("title", fontName="DejaVu-Bold", fontSize=11.5, leading=15,
+                                    alignment=1)
+        self.body = ParagraphStyle("body", fontName="DejaVu", fontSize=size, leading=size * 1.25,
+                                   spaceAfter=3, alignment=4)  # 4 — по ширине
+        self.item = ParagraphStyle("item", parent=self.body, spaceAfter=0, alignment=0)
+        self.value = ParagraphStyle("value", fontName="DejaVu", fontSize=min(size, 9),
+                                    leading=min(size, 9) * 1.22)
+        self.caption = ParagraphStyle("caption", fontName="DejaVu", fontSize=7, leading=9,
+                                      alignment=1, textColor="#555555")
+        self.small = ParagraphStyle("small", fontName="DejaVu", fontSize=7.5, leading=9.5,
+                                    textColor="#555555")
+
+
+def _fields(rows, styles):
+    """Строки «значение над чертой, подпись под чертой», как в бумажном бланке.
+
+    rows — список строк; строка — список пар (подпись, значение, доля ширины).
+    """
+    story = []
+    for row in rows:
+        widths = [PAGE_WIDTH * share for _, _, share in row]
+        values = [Paragraph(html.escape(value or ""), styles.value) for _, value, _ in row]
+        captions = [Paragraph(caption, styles.caption) for caption, _, _ in row]
+        table = Table([values, captions], colWidths=widths)
+        table.setStyle(TableStyle([
+            ("LINEBELOW", (0, 0), (-1, 0), 0.6, "#000000"),
+            ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2 * mm),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2 * mm),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 1),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 3),
+        ]))
+        story.append(table)
+    return story
+
+
+def _signatures(signers, styles):
+    """ФИО | подпись | дата — для каждого, кто подписывает."""
+    rows, style = [], [
+        ("LEFTPADDING", (0, 0), (-1, -1), 2 * mm),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2 * mm),
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+    ]
+    for i, (name, caption) in enumerate(signers):
+        top = i * 2
+        rows.append([Paragraph(html.escape(name), styles.value), "", ""])
+        rows.append([Paragraph(caption, styles.caption), Paragraph("подпись", styles.caption),
+                     Paragraph("дата", styles.caption)])
+        style += [("LINEBELOW", (0, top), (-1, top), 0.6, "#000000"),
+                  ("TOPPADDING", (0, top), (-1, top), 12),
+                  ("BOTTOMPADDING", (0, top + 1), (-1, top + 1), 6)]
+    table = Table(rows, colWidths=[PAGE_WIDTH * 0.55, PAGE_WIDTH * 0.27, PAGE_WIDTH * 0.18])
+    table.setStyle(TableStyle(style))
+    return table
+
+
+#: Размеры основного шрифта, которые пробуем по очереди.
+FONT_SIZES = (8.8, 8.4, 8.0, 7.6, 7.2)
+
+
 def build(profile) -> bytes:
-    """PDF-бланк для этой анкеты. Для несовершеннолетнего — от представителя."""
+    """PDF-бланк для этой анкеты. Для несовершеннолетнего — вместе с представителем.
+
+    Бланк должен уместиться на одну страницу: скан загружается одним
+    файлом, и вторая страница с подписями потерялась бы. Длинный адрес или
+    «кем выдан» могут столкнуть подписи вниз — тогда собираем заново
+    шрифтом чуть мельче.
+    """
+    _register_fonts()
+    for size in FONT_SIZES:
+        pdf, pages = _render(profile, _Styles(size))
+        if pages == 1:
+            break
+    return pdf
+
+
+def _render(profile, styles):
+    """Собрать PDF; вернуть (байты, число страниц)."""
     _register_fonts()
     minor = profile.is_minor
     values = values_for(profile)
 
-    body = ParagraphStyle("body", fontName="DejaVu", fontSize=10, leading=13.5,
-                          spaceAfter=5, alignment=4)  # 4 — по ширине
-    small = ParagraphStyle("small", parent=body, fontSize=8, leading=10, textColor="#555555",
-                           alignment=0)
+    story = [Paragraph("СОГЛАСИЕ", styles.title),
+             Paragraph("на обработку персональных данных", styles.title),
+             Spacer(1, 3 * mm)]
 
-    title = ParagraphStyle("title", parent=body, fontSize=11.5, leading=15, alignment=1,
-                           spaceAfter=10)
-    # Строки для заполнения от руки: интервал шире, чтобы уместился почерк.
-    handwritten = ParagraphStyle("handwritten", parent=body, leading=21, alignment=0)
-    blocks = _blocks(fill(template_text(minor), values))
-    story = []
-    for i, block in enumerate(blocks):
-        # Первый абзац — заголовок бланка: по центру, а не по ширине.
-        style = title if i == 0 else handwritten if "______" in block else body
-        # Подсказка под строкой — «(кем выдан)» — мелко, чтобы не спорила с почерком.
-        block = re.sub(r"(^|<br/>)\s*(\([^()<]{3,80}\))\s*(?=<br/>|$)",
-                       r'\1<font size="7" color="#666666">\2</font>', block)
-        story.append(Paragraph(block, style))
-    story.append(Spacer(1, 6 * mm))
+    story += _fields([
+        [("ФИО", profile.full_name, 0.72), ("Дата рождения", _date(profile.birth_date), 0.28)],
+        [("Тип документа", profile.get_doc_type_display(), 0.34),
+         ("Серия", profile.doc_series, 0.18), ("Номер", profile.doc_number, 0.22),
+         ("Дата выдачи", _date(profile.doc_issued_at), 0.26)],
+        [("Кем выдан", profile.doc_issued_by, 0.76),
+         ("Код подразделения", profile.doc_division_code, 0.24)],
+        [("Адрес регистрации", profile.reg_address, 1.0)],
+    ], styles)
 
-    # Подписывают оба: участник и, если ему нет 18, законный представитель.
-    rows = []
     if minor:
-        rows.append(["Законный представитель:", "______________", f"/ {profile.parent_full_name} /"])
-    rows.append(["Участник:", "______________", f"/ {profile.full_name} /"])
-    rows.append(["Дата:", "«____» ____________ 20____ г.", ""])
-    sign = Table(rows, colWidths=[55 * mm, 45 * mm, 75 * mm])
-    sign.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "DejaVu"),
-                              ("FONTSIZE", (0, 0), (-1, -1), 10),
-                              ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-                              ("SPAN", (1, -1), (2, -1))]))
-    story.append(sign)
-    story.append(Spacer(1, 6 * mm))
-    story.append(Paragraph(
-        f"Бланк сформирован на сайте олимпиады {values['today']} для учётной записи "
-        f"{html.escape(values['email'])} (№ {profile.user_id}). Распечатайте, подпишите "
-        "и загрузите скан или фото в личном кабинете.", small))
+        story.append(Paragraph("И законный представитель Субъекта персональных данных "
+                               "на основании п. 1 ст. 64 Семейного кодекса РФ", styles.body))
+        story += _fields([
+            [("ФИО представителя", profile.parent_full_name, 1.0)],
+            [("Паспортные данные: серия, номер, кем и когда выдан, код подразделения",
+              values["parent_document"], 1.0)],
+            [("Адрес места постоянной регистрации", profile.parent_reg_address, 1.0)],
+        ], styles)
+    story.append(Spacer(1, 2 * mm))
+
+    # Пункты списка подряд собираем в две колонки: бланк должен уместиться
+    # на одну страницу — скан загружается одним файлом.
+    items = []
+    for block in _blocks(fill(template_text(minor), values)) + [""]:
+        if block.startswith("– "):
+            items.append(Paragraph(block, styles.item))
+            continue
+        if items:
+            half = (len(items) + 1) // 2
+            left, right = items[:half], items[half:] + [""] * (2 * half - len(items))
+            columns = Table(list(zip(left, right, strict=True)), colWidths=[PAGE_WIDTH / 2] * 2)
+            columns.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 4 * mm),
+                                         ("TOPPADDING", (0, 0), (-1, -1), 0),
+                                         ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
+                                         ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+            story += [columns, Spacer(1, 1.5 * mm)]
+            items = []
+        if block:
+            story.append(Paragraph(block, styles.body))
+
+    signers = [(profile.full_name, "ФИО Субъекта персональных данных")]
+    if minor:
+        signers.append((profile.parent_full_name, "ФИО законного представителя"))
+    story.append(KeepTogether([
+        Spacer(1, 3 * mm),
+        _signatures(signers, styles),
+        Spacer(1, 5 * mm),
+        Paragraph(
+            f"Бланк сформирован на сайте олимпиады {values['today']} для учётной записи "
+            f"{html.escape(values['email'])} (№ {profile.user_id}). Распечатайте, подпишите "
+            "и загрузите скан или фото в личном кабинете.", styles.small),
+    ]))
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=15 * mm,
-                            topMargin=12 * mm, bottomMargin=12 * mm,
+                            topMargin=10 * mm, bottomMargin=10 * mm,
                             title="Согласие на обработку персональных данных",
                             author="Аэрокосмическая олимпиада МФТИ")
     doc.build(story)
-    return buffer.getvalue()
+    return buffer.getvalue(), doc.page

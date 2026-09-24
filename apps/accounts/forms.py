@@ -135,11 +135,13 @@ class ProfileForm(forms.ModelForm):
         model = ParticipantProfile
         fields = [
             "last_name", "first_name", "middle_name", "birth_date",
-            "doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by", "reg_address",
+            "doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by",
+            "doc_division_code", "reg_address",
             "grade", "school", "city", "region", "phone", "telegram",
             "parent_last_name", "parent_first_name", "parent_middle_name",
             "parent_doc_type", "parent_doc_series", "parent_doc_number",
-            "parent_doc_issued_at", "parent_doc_issued_by", "parent_reg_address",
+            "parent_doc_issued_at", "parent_doc_issued_by", "parent_doc_division_code",
+            "parent_reg_address",
         ]
         labels = {
             "doc_issued_by": "Кем выдан",
@@ -147,11 +149,14 @@ class ProfileForm(forms.ModelForm):
             "parent_middle_name": "Отчество", "parent_doc_type": "Документ",
             "parent_doc_series": "Серия", "parent_doc_number": "Номер",
             "parent_doc_issued_at": "Дата выдачи", "parent_doc_issued_by": "Кем выдан",
+            "parent_doc_division_code": "Код подразделения",
             "parent_reg_address": "Адрес регистрации",
         }
         help_texts = {
             "doc_type": "До 14 лет — свидетельство о рождении",
             "doc_issued_by": "Как написано в документе",
+            "doc_division_code": "Только для паспорта РФ, например 770-001",
+            "parent_doc_division_code": "Только для паспорта РФ, например 770-001",
             "reg_address": "Как в паспорте, с индексом. Для свидетельства — адрес, где вы прописаны",
             "school": "Полное название, например: МБОУ «Лицей № 1»",
             "phone": "Для связи перед очным туром и финалом",
@@ -168,18 +173,24 @@ class ProfileForm(forms.ModelForm):
             "parent_doc_issued_by": forms.Textarea(attrs={"rows": 2}),
             "parent_doc_series": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "4510"}),
             "parent_doc_number": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "123456"}),
+            "doc_division_code": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "770-001",
+                                                        "inputmode": "numeric"}),
+            "parent_doc_division_code": forms.TextInput(attrs={"autocomplete": "off",
+                                                               "placeholder": "770-001",
+                                                               "inputmode": "numeric"}),
         }
 
     #: Группы полей — так они и показываются на странице.
     SECTIONS = (
         ("Участник", ("last_name", "first_name", "middle_name", "birth_date")),
         ("Документ, удостоверяющий личность",
-         ("doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by", "reg_address")),
+         ("doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by",
+          "doc_division_code", "reg_address")),
         ("Учёба и связь", ("grade", "school", "city", "region", "phone", "telegram")),
         ("Родитель или законный представитель",
          ("parent_last_name", "parent_first_name", "parent_middle_name", "parent_doc_type",
           "parent_doc_series", "parent_doc_number", "parent_doc_issued_at",
-          "parent_doc_issued_by", "parent_reg_address")),
+          "parent_doc_issued_by", "parent_doc_division_code", "parent_reg_address")),
     )
     #: Раздел, который нужен только несовершеннолетним.
     PARENT_SECTION = "Родитель или законный представитель"
@@ -258,6 +269,18 @@ class ProfileForm(forms.ModelForm):
             self.add_error(f"{prefix}doc_series", "Обязательное поле.")
         cleaned[f"{prefix}doc_series"] = series
         cleaned[f"{prefix}doc_number"] = number
+
+        # Код подразделения — только у паспорта РФ: «770-001».
+        code_field = f"{prefix}doc_division_code"
+        digits = re.sub(r"\D", "", cleaned.get(code_field) or "")
+        if kind == DocumentType.PASSPORT_RF:
+            if not digits:
+                self.add_error(code_field, "Обязательное поле для паспорта РФ.")
+            elif len(digits) != 6:
+                self.add_error(code_field, "Код подразделения — 6 цифр, например 770-001.")
+            cleaned[code_field] = f"{digits[:3]}-{digits[3:]}" if len(digits) == 6 else digits
+        else:
+            cleaned[code_field] = ""
 
 
 class LoginForm(AuthenticationForm):
