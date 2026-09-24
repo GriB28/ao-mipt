@@ -24,7 +24,30 @@
 <form method="post" enctype="multipart/form-data" class="form-wide">
   {% csrf_token %}
   {{ form.as_p }}
-  <button class="btn btn-secondary" type="submit" name="save_draft">Сохранить черновик</button>
-  <button class="btn" type="submit" name="submit_for_review">Отправить на одобрение</button>
+
+  {% if is_admin %}
+    {% comment %}
+      Администратор одобряет задачу прямо здесь, заодно поправив условие,
+      если нужно. Отклонение без комментария не принимается: автору
+      должно быть понятно, что исправить.
+    {% endcomment %}
+    <fieldset class="moderation">
+      <legend>Решение администратора</legend>
+      <p>
+        <label for="id_moderation_comment">Комментарий автору (нужен, если возвращаете на доработку)</label>
+        <textarea name="moderation_comment" id="id_moderation_comment" rows="3">{{ problem.moderation_comment|default:"" }}</textarea>
+      </p>
+      <p class="actions">
+        <button class="btn" type="submit" name="approve">Сохранить и одобрить</button>
+        {% if problem %}<button class="btn btn-secondary" type="submit" name="reject">Вернуть на доработку</button>{% endif %}
+        {% if problem %}<button class="btn btn-secondary" type="submit" name="save">Только сохранить</button>{% endif %}
+      </p>
+    </fieldset>
+  {% else %}
+    <p class="actions">
+      <button class="btn btn-secondary" type="submit" name="save_draft">Сохранить черновик</button>
+      <button class="btn" type="submit" name="submit_for_review">Отправить на одобрение</button>
+    </p>
+  {% endif %}
 </form>
 {% endblock %}

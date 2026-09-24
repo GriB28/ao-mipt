@@ -144,3 +144,18 @@ class ExportMediaTest(TestCase):
     def test_nojekyll_is_written(self):
         """Без него GitHub Pages прогоняет снимок через Jekyll."""
         self.assertTrue((self._export() / ".nojekyll").exists())
+
+
+class HealthzTest(TestCase):
+    """По /healthz/ Docker и мониторинг решают, жив ли сайт."""
+
+    def test_answers_ok_when_database_is_reachable(self):
+        response = self.client.get(reverse("core:healthz"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"ok")
+
+    def test_answers_503_when_database_is_down(self):
+        from unittest.mock import patch
+
+        with patch("apps.core.views.connection.cursor", side_effect=Exception("down")):
+            self.assertEqual(self.client.get(reverse("core:healthz")).status_code, 503)

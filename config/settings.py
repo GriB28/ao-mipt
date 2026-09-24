@@ -153,6 +153,12 @@ MEDIA_URL = "/media/"
 # файловой системы, и загрузки полетели бы мимо проекта.
 MEDIA_ROOT = env("MEDIA_ROOT", default="").strip() or str(BASE_DIR / "media")
 
+# Решения участников закрыты от посторонних: их отдаёт представление
+# contest:submission_file после проверки прав. На сервере сам файл
+# передаёт nginx по X-Accel-Redirect — здесь указывается его internal-location
+# (см. deploy/nginx.conf). Пусто — файл отдаёт Django (локальная работа).
+PROTECTED_MEDIA_ACCEL_PREFIX = env("PROTECTED_MEDIA_ACCEL_PREFIX", default="").strip()
+
 # В проде статика раздаётся whitenoise с хешами в именах файлов (кеш навсегда),
 # но это требует collectstatic — поэтому локально и в тестах используем простой бэкенд.
 STORAGES = {
@@ -221,14 +227,24 @@ YANDEX_MAPS_API_KEY = env("YANDEX_MAPS_API_KEY", default="")
 
 # --- Безопасность (включается только в проде) -----------------------------
 
+# USE_HTTPS=False нужен ровно в двух случаях: первый запуск на сервере,
+# пока сертификат ещё не выпущен, и проверка Docker-сборки у себя на
+# компьютере по http://localhost. Во всех остальных — True.
+USE_HTTPS = env.bool("USE_HTTPS", default=True)
+
+# За nginx: он сообщает, пришёл ли запрос по https.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 if not DEBUG and not TESTING:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     X_FRAME_OPTIONS = "DENY"
+    if USE_HTTPS:
+        SECURE_SSL_REDIRECT = True
+        # Проверка здоровья ходит в контейнер напрямую по http.
+        SECURE_REDIRECT_EXEMPT = [r"^healthz/$"]
+        SESSION_COOKIE_SECURE = True
+        CSRF_COOKIE_SECURE = True
+        SECURE_HSTS_SECONDS = 31536000
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 # --- Логи -----------------------------------------------------------------
 

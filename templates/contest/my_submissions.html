@@ -6,32 +6,37 @@
 {% if scores %}
   <h2>Результаты</h2>
   <p class="muted">Итоговые баллы по опубликованным этапам.</p>
-  <table>
+  <table class="table-stack">
     <thead><tr><th>Этап</th><th>Задача</th><th>Где писал</th><th>Балл</th></tr></thead>
     <tbody>
     {% for s in scores %}
       <tr>
-        <td class="muted">{{ s.problem.stage.title }}</td>
-        <td>{{ s.problem.number }}. {{ s.problem.title }}</td>
-        <td class="muted">{{ s.venue.title|default:"дистанционно" }}</td>
-        <td>{% if s.points is None %}—{% else %}{{ s.points|floatformat:"-2" }}{% endif %}</td>
+        <td data-label="Этап" class="muted">{{ s.problem.stage.title }}</td>
+        <td data-label="Задача">{{ s.problem.number }}. {{ s.problem.title }}</td>
+        <td data-label="Где писал" class="muted">{{ s.venue.title|default:"дистанционно" }}</td>
+        <td data-label="Балл">{% if s.points is None %}—{% else %}{{ s.points|floatformat:"-2" }}{% endif %}</td>
       </tr>
     {% endfor %}
-      <tr><th colspan="3">Сумма</th><th>{{ total|floatformat:"-2" }}</th></tr>
+      <tr class="table-total"><th colspan="3">Сумма</th><th>{{ total|floatformat:"-2" }}</th></tr>
     </tbody>
   </table>
 {% endif %}
 
 <h2>Отправленные решения</h2>
-<table>
-  <thead><tr><th>Задача</th><th>Отправлено</th><th>Статус</th><th>Балл</th></tr></thead>
+<p class="muted">По каждой задаче — последняя версия, она и идёт в проверку.
+  Все прошлые версии видны на странице задачи.</p>
+<table class="table-stack">
+  <thead><tr><th>Задача</th><th>Отправлено</th><th>Файлы</th><th>Статус</th><th>Балл</th></tr></thead>
   <tbody>
   {% for s in submissions %}
     <tr>
-      <td><a href="{% url 'contest:problem_detail' s.problem.pk %}">{{ s.problem }}</a></td>
-      <td>{{ s.created_at|date:"d.m.Y H:i" }}{% if s.is_late %} <span class="badge warn">после дедлайна</span>{% endif %}</td>
-      <td>{% if s.grade %}{{ s.grade.get_status_display }}{% else %}<span class="badge none">не проверено</span>{% endif %}</td>
-      <td>
+      <td data-label="Задача"><a href="{% url 'contest:problem_detail' s.problem.pk %}#my-solution">{{ s.problem }}</a></td>
+      <td data-label="Отправлено">{{ s.created_at|date:"d.m.Y H:i" }}{% if s.is_late %} <span class="badge warn">после дедлайна</span>{% endif %}</td>
+      <td data-label="Файлы" class="cell-files">
+        {% for f in s.files.all %}<a href="{{ f.get_absolute_url }}" target="_blank" rel="noopener">{{ f.filename }}</a>{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}
+      </td>
+      <td data-label="Статус">{% if s.grade %}{{ s.grade.get_status_display }}{% else %}<span class="badge none">не проверено</span>{% endif %}</td>
+      <td data-label="Балл">
         {% if s.problem.stage.results_published and s.grade and s.grade.score is not None %}
           {{ s.grade.score|floatformat:"-2" }}
         {% elif s.grade and s.grade.score is not None %}
@@ -40,7 +45,7 @@
       </td>
     </tr>
   {% empty %}
-    <tr><td colspan="4" class="muted">Вы пока ничего не отправляли.</td></tr>
+    <tr><td colspan="5" class="muted">Вы пока ничего не отправляли.</td></tr>
   {% endfor %}
   </tbody>
 </table>

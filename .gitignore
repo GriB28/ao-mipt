@@ -21,6 +21,10 @@ db.sqlite3-journal
 # статический экспорт демо
 dist/
 
+# бэкапы с сервера (docker compose, сервис backup)
+backups/
+.last-deployed
+
 # рабочие таблицы организаторов: данные из них попадают в репозиторий
 # разобранными (apps/content/lecture_catalog.py), сами файлы — нет
 *.xlsx

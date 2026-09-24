@@ -6,8 +6,11 @@
 выгрузка в Excel остаётся кнопкой, а не источником истины.
 """
 
+from pathlib import Path
+
 from django.conf import settings
 from django.db import models
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.core.models import TimeStampedModel
@@ -28,10 +31,16 @@ def solution_upload_path(instance, filename):
 
 class ProblemQuerySet(models.QuerySet):
     def visible(self):
-        """Задача видна участникам: одобрена и наступило время публикации."""
+        """Задача видна участникам: одобрена, этап начался и наступило время публикации.
+
+        Проверка начала этапа — страховка: задачи заводят и одобряют
+        заранее, и без неё одобренная задача без «опубликовать в»
+        оказалась бы у участников за недели до старта тура.
+        """
         now = timezone.now()
         return self.filter(
             stage__is_published=True,
+            stage__starts_at__lte=now,
             status=Problem.Status.APPROVED,
         ).filter(models.Q(publish_at__isnull=True) | models.Q(publish_at__lte=now))
 
@@ -198,11 +207,32 @@ class Submission(TimeStampedModel):
             # Прошлые попытки по этой задаче перестают быть текущими.
             Submission.objects.filter(user=self.user, problem=self.problem).exclude(pk=self.pk).update(is_latest=False)
 
+    def can_be_viewed_by(self, user) -> bool:
+        """Кто вправе открыть файлы решения: сам участник и проверяющие задачи."""
+        if not user.is_authenticated:
+            return False
+        return self.user_id == user.pk or self.problem.can_be_reviewed_by(user)
+
+    @property
+    def visible_grade(self):
+        """Оценка, которую уже можно показать участнику, или None.
+
+        Пока результаты этапа не опубликованы, участник видит только
+        статус проверки: балл и комментарий появляются вместе со всеми.
+        """
+        grade = getattr(self, "grade", None)
+        if grade and self.problem.stage.results_published:
+            return grade
+        return None
+
 
 class SubmissionFile(TimeStampedModel):
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE,
                                    related_name="files", verbose_name="решение")
     file = models.FileField("файл", upload_to=solution_upload_path, validators=[validate_solution_file])
+    # Хранилище переименовывает файл при совпадении (reshenie_a1B2c3.pdf),
+    # а участник должен видеть ровно то имя, с которым загружал.
+    original_name = models.CharField("исходное имя", max_length=255, blank=True)
 
     class Meta:
         verbose_name = "файл решения"
@@ -210,6 +240,20 @@ class SubmissionFile(TimeStampedModel):
 
     def __str__(self):
         return self.file.name
+
+    def save(self, *args, **kwargs):
+        if not self.original_name and self.file:
+            self.original_name = Path(self.file.name).name[:255]
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        # Решения не лежат в открытом /media/: адрес ведёт через проверку прав.
+        return reverse("contest:submission_file", args=[self.pk])
+
+    @property
+    def filename(self):
+        """Имя файла, как его загрузил участник, без служебного пути."""
+        return self.original_name or Path(self.file.name).name
 
 
 class Grade(TimeStampedModel):

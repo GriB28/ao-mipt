@@ -10,21 +10,21 @@
 
 <p><a class="btn" href="{% url 'contest:problem_new' %}">Добавить задачу</a></p>
 
-<table>
-  <thead><tr><th>Этап</th><th>№</th><th>Задача</th><th>Статус</th><th>Автор</th><th></th></tr></thead>
+<table class="table-stack">
+  <thead><tr><th>Задача</th><th>Этап</th><th>№</th><th>Статус</th><th>Автор</th><th></th></tr></thead>
   <tbody>
   {% for p in problems %}
     <tr>
-      <td class="muted">{{ p.stage.title }}</td>
-      <td>{{ p.number }}</td>
       <td><a href="{% url 'contest:problem_detail' p.pk %}">{{ p.title }}</a></td>
-      <td>
+      <td data-label="Этап" class="muted">{{ p.stage.title }}</td>
+      <td data-label="№">{{ p.number }}</td>
+      <td data-label="Статус"><div>
         {% if p.status == "approved" %}<span class="badge ok">{{ p.get_status_display }}</span>
         {% elif p.status == "pending" %}<span class="badge warn">{{ p.get_status_display }}</span>
         {% else %}<span class="badge none">{{ p.get_status_display }}</span>{% endif %}
         {% if p.moderation_comment %}<p class="muted">{{ p.moderation_comment }}</p>{% endif %}
-      </td>
-      <td class="muted">{{ p.created_by|default:"—" }}</td>
+      </div></td>
+      <td data-label="Автор" class="muted">{{ p.created_by|default:"—" }}</td>
       <td><a href="{% url 'contest:problem_edit' p.pk %}">Изменить →</a></td>
     </tr>
   {% empty %}

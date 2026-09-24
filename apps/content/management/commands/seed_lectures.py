@@ -54,7 +54,7 @@ class Command(BaseCommand):
             _, was_created = Playlist.objects.get_or_create(
                 url=url,
                 defaults={
-                    "title": f"Лекции сезона {season.subtitle or season.year}",
+                    "title": f"Лекции сезона {season.years_label}",
                     "season": season,
                     "description": "Все записи сезона одним плейлистом",
                     "order": year,

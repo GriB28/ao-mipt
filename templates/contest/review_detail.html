@@ -26,7 +26,9 @@
 
     <ul class="file-list">
       {% for f in submission.files.all %}
-        <li><a href="{{ f.file.url }}" download>{{ f.file.name|cut:"solutions/" }}</a></li>
+        <li><a href="{{ f.get_absolute_url }}" target="_blank" rel="noopener">{{ f.filename }}</a>
+          <span class="muted">{{ f.file.size|filesizeformat }}</span>
+          <a class="file-download" href="{{ f.get_absolute_url }}?download=1">скачать</a></li>
       {% empty %}
         <li class="muted">Файлов нет.</li>
       {% endfor %}
@@ -41,7 +43,7 @@
       <ul class="muted">
         {% for old in history %}
           <li>{{ old.created_at|date:"d.m.Y H:i" }} —
-            {% for f in old.files.all %}<a href="{{ f.file.url }}">файл {{ forloop.counter }}</a> {% endfor %}
+            {% for f in old.files.all %}<a href="{{ f.get_absolute_url }}" target="_blank" rel="noopener">{{ f.filename }}</a> {% endfor %}
           </li>
         {% endfor %}
       </ul>

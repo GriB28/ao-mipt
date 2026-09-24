@@ -1,3 +1,5 @@
+from django.db import connection
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -78,3 +80,17 @@ def home(request):
         "status": stage_status(season),
     }
     return render(request, "core/home.html", context)
+
+
+def healthz(request):
+    """Жив ли сайт: отвечает ли Django и доступна ли база.
+
+    Дёргает Docker (healthcheck) и внешний мониторинг. Никаких данных
+    не отдаёт, только «ok» или 503.
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception:
+        return HttpResponse("db unavailable", status=503, content_type="text/plain")
+    return HttpResponse("ok", content_type="text/plain")

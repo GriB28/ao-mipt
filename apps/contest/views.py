@@ -1,8 +1,16 @@
+import mimetypes
+from pathlib import Path
+from urllib.parse import quote
+
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
 
 from apps.core.validators import validate_solution_file
 from apps.seasons.models import Season, Stage
@@ -47,22 +55,51 @@ def _practice_problem(season):
 def problem_list(request):
     season = Season.objects.active()
     stage = _online_stage(season)
-    problems = Problem.objects.visible().filter(stage=stage) if stage else Problem.objects.none()
+    problems = list(Problem.objects.visible().filter(stage=stage)) if stage else []
 
-    my_submissions = {}
+    # К каждой задаче — последняя попытка участника, чтобы в списке
+    # было видно не только «сдано», но и когда.
     if request.user.is_authenticated and stage:
-        my_submissions = {
+        latest = {
             s.problem_id: s
             for s in Submission.objects.filter(user=request.user, problem__stage=stage, is_latest=True)
         }
+        for problem in problems:
+            problem.my_submission = latest.get(problem.pk)
 
     from apps.venues.models import Venue
 
     return render(request, "contest/problem_list.html", {
         "season": season, "stage": stage, "problems": problems,
-        "my_submissions": my_submissions, "practice": _practice_problem(season),
+        "practice": _practice_problem(season),
         "my_venues": Venue.objects.managed_by(request.user),
         "offline_twin": _twin_stage(stage, Stage.Kind.OFFLINE),
+    })
+
+
+def _problem_page(request, problem, form=None):
+    """Страница задачи. Общая для просмотра и для повторного показа формы с ошибкой."""
+    user = request.user
+    attempts = Submission.objects.none()
+    if user.is_authenticated and not user.is_manager:
+        attempts = (Submission.objects
+                    .filter(user=user, problem=problem)
+                    .select_related("problem__stage", "grade")
+                    .prefetch_related("files")
+                    .order_by("-created_at"))
+    attempts = list(attempts)
+
+    can_review = user.is_authenticated and problem.can_be_reviewed_by(user)
+    return render(request, "contest/problem_detail.html", {
+        "problem": problem, "form": form or SubmissionForm(),
+        # Последняя попытка — та, что пойдёт в проверку; остальные
+        # показываем свёрнутыми, чтобы участник видел всю историю.
+        "last_submission": attempts[0] if attempts else None,
+        "earlier_submissions": attempts[1:],
+        "can_edit": can_review,
+        "can_review": can_review,
+        "submission_count": (Submission.objects.filter(problem=problem, is_latest=True).count()
+                             if can_review else 0),
     })
 
 
@@ -75,19 +112,7 @@ def problem_detail(request, pk):
             models.Q(pk__in=visible) | models.Q(pk__in=Problem.objects.editable_by(request.user))
         )
     problem = get_object_or_404(visible, pk=pk)
-
-    last = None
-    if request.user.is_authenticated and not request.user.is_manager:
-        last = Submission.objects.filter(user=request.user, problem=problem, is_latest=True).first()
-
-    can_review = request.user.is_authenticated and problem.can_be_reviewed_by(request.user)
-    return render(request, "contest/problem_detail.html", {
-        "problem": problem, "form": SubmissionForm(), "last_submission": last,
-        "can_edit": can_review,
-        "can_review": can_review,
-        "submission_count": (Submission.objects.filter(problem=problem, is_latest=True).count()
-                             if can_review else 0),
-    })
+    return _problem_page(request, problem)
 
 
 @login_required
@@ -105,7 +130,7 @@ def submit(request, pk):
                 validate_solution_file(f)
         except ValidationError as exc:
             messages.error(request, "; ".join(exc.messages))
-            return render(request, "contest/problem_detail.html", {"problem": problem, "form": form})
+            return _problem_page(request, problem, form)
 
         with transaction.atomic():
             submission = form.save(commit=False)
@@ -113,12 +138,59 @@ def submit(request, pk):
             submission.problem = problem
             submission.save()
             SubmissionFile.objects.bulk_create(
-                [SubmissionFile(submission=submission, file=f) for f in files]
+                [SubmissionFile(submission=submission, file=f, original_name=Path(f.name).name[:255])
+                 for f in files]
             )
         messages.success(request, "Решение принято. Можно загрузить новую версию до дедлайна.")
-        return redirect("contest:problem_detail", pk=pk)
+        # Сразу к карточке с только что загруженным решением.
+        return redirect(reverse("contest:problem_detail", args=[pk]) + "#my-solution")
 
-    return render(request, "contest/problem_detail.html", {"problem": problem, "form": form})
+    return _problem_page(request, problem, form)
+
+
+# Эти форматы браузер показывает сам, остальное — только скачиванием.
+_INLINE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".txt", ".csv"}
+
+
+@login_required
+def submission_file(request, pk):
+    """Файл решения — только автору и проверяющим этой задачи.
+
+    Решения лежат вне открытого /media/: иначе любой, кто угадал путь,
+    скачал бы чужую работу. Сам файл в проде отдаёт nginx
+    (X-Accel-Redirect), Django лишь проверяет права — так большие
+    сканы не держат воркер gunicorn.
+    """
+    sf = get_object_or_404(
+        SubmissionFile.objects.select_related("submission__problem"), pk=pk
+    )
+    if not sf.submission.can_be_viewed_by(request.user):
+        # 404, а не 403: не подтверждаем, что такой файл вообще есть.
+        raise Http404
+    if not sf.file or not sf.file.storage.exists(sf.file.name):
+        raise Http404
+
+    inline = Path(sf.filename).suffix.lower() in _INLINE_EXTENSIONS and "download" not in request.GET
+    accel = settings.PROTECTED_MEDIA_ACCEL_PREFIX
+    if accel:
+        response = HttpResponse()
+        response["X-Accel-Redirect"] = accel.rstrip("/") + "/" + quote(sf.file.name)
+        # Тип nginx определит по расширению сам, но пустой заголовок
+        # от Django (text/html) ему мешать не должен.
+        del response["Content-Type"]
+        disposition = "inline" if inline else "attachment"
+        response["Content-Disposition"] = f"{disposition}; filename*=UTF-8''{quote(sf.filename)}"
+    else:
+        content_type, _ = mimetypes.guess_type(sf.filename)
+        response = FileResponse(sf.file.open("rb"), as_attachment=not inline,
+                                filename=sf.filename,
+                                content_type=content_type or "application/octet-stream")
+    # Файл прислал участник: запрещаем браузеру угадывать тип. Открываются
+    # в браузере только PDF, картинки и текст (_INLINE_EXTENSIONS), HTML и
+    # SVG не принимаются вовсе — исполнять в домене сайта нечего.
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 @login_required
@@ -130,7 +202,8 @@ def my_submissions(request):
     """
     subs = (Submission.objects
             .filter(user=request.user, is_latest=True)
-            .select_related("problem", "problem__stage", "grade"))
+            .select_related("problem", "problem__stage", "grade")
+            .prefetch_related("files"))
 
     scores = []
     season = Season.objects.active()
@@ -259,24 +332,46 @@ def problem_new(request):
         problem = form.save(commit=False)
         problem.created_by = request.user
         # Черновик или сразу на одобрение — решает кнопка, которой отправили форму.
-        problem.status = (Problem.Status.PENDING if "submit_for_review" in request.POST
-                          else Problem.Status.DRAFT)
+        # Администратор может одобрить свою задачу сразу.
+        if request.user.is_admin and "approve" in request.POST:
+            problem.status = Problem.Status.APPROVED
+        elif "submit_for_review" in request.POST:
+            problem.status = Problem.Status.PENDING
+        else:
+            problem.status = Problem.Status.DRAFT
         problem.save()
         messages.success(request, _status_message(problem))
         return redirect("contest:problem_edit", pk=problem.pk)
-    return render(request, "contest/problem_form.html", {"form": form, "problem": None})
+    return render(request, "contest/problem_form.html",
+                  {"form": form, "problem": None, "is_admin": request.user.is_admin})
 
 
 @login_required
 def problem_edit(request, pk):
-    """Правка задачи автором или назначенным проверяющим."""
+    """Правка задачи автором, назначенным проверяющим или администратором.
+
+    Администратор здесь же одобряет задачу или возвращает её автору
+    с комментарием — без похода в Django-админку.
+    """
     _require_reviewer(request.user)
     problem = get_object_or_404(Problem.objects.editable_by(request.user), pk=pk)
     form = ProblemForm(request.POST or None, request.FILES or None, instance=problem)
+    is_admin = request.user.is_admin
 
     if request.method == "POST" and form.is_valid():
         problem = form.save(commit=False)
-        if "submit_for_review" in request.POST:
+        comment = request.POST.get("moderation_comment", "").strip()
+        if is_admin and "approve" in request.POST:
+            problem.status = Problem.Status.APPROVED
+            problem.moderation_comment = ""
+        elif is_admin and "reject" in request.POST:
+            if not comment:
+                messages.error(request, "Напишите автору, что исправить: без комментария отклонить нельзя.")
+                return render(request, "contest/problem_form.html",
+                              {"form": form, "problem": problem, "is_admin": is_admin})
+            problem.status = Problem.Status.REJECTED
+            problem.moderation_comment = comment
+        elif "submit_for_review" in request.POST:
             problem.status = Problem.Status.PENDING
         elif problem.status == Problem.Status.REJECTED:
             # Правка отклонённой задачи возвращает её в черновики:
@@ -286,10 +381,18 @@ def problem_edit(request, pk):
         messages.success(request, _status_message(problem))
         return redirect("contest:problem_edit", pk=problem.pk)
 
-    return render(request, "contest/problem_form.html", {"form": form, "problem": problem})
+    return render(request, "contest/problem_form.html",
+                  {"form": form, "problem": problem, "is_admin": is_admin})
 
 
 def _status_message(problem):
+    if problem.status == Problem.Status.APPROVED:
+        if problem.stage.starts_at > timezone.now():
+            return (f"Задача одобрена. Участники увидят её, когда начнётся этап — "
+                    f"{timezone.localtime(problem.stage.starts_at):%d.%m.%Y}.")
+        return "Задача одобрена и видна участникам."
     if problem.status == Problem.Status.PENDING:
         return "Задача отправлена на одобрение администратору."
+    if problem.status == Problem.Status.REJECTED:
+        return "Задача возвращена автору с комментарием."
     return "Задача сохранена как черновик. Участники её пока не видят."

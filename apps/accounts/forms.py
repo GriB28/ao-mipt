@@ -67,7 +67,7 @@ class SignUpForm(ContactRequiredMixin, UserCreationForm):
     telegram = forms.CharField(label="Telegram", max_length=64, required=False,
                                help_text="Например: @ivanov")
 
-    consent = forms.BooleanField(label="")
+    consent = forms.BooleanField(label="", label_suffix="")
 
     class Meta:
         model = User
@@ -77,6 +77,12 @@ class SignUpForm(ContactRequiredMixin, UserCreationForm):
         super().__init__(*args, **kwargs)
         # Ссылки резолвятся во время создания формы, а не импорта модуля.
         self.fields["consent"].label = consent_label()
+        # Стандартная подсказка Django к паролю — список из четырёх пунктов.
+        # В форме-абзаце браузер выносит <ul> наружу из <p>, и на телефоне
+        # он занимает полэкрана обычным шрифтом. Правила те же, короче.
+        self.fields["password1"].help_text = (
+            "Не короче 8 символов, не только цифры и не похож на e-mail или имя."
+        )
 
     def clean_email(self):
         email = self.cleaned_data["email"].strip().lower()

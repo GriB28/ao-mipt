@@ -30,6 +30,11 @@ class SubmissionForm(forms.ModelForm):
         widgets = {"comment": forms.Textarea(attrs={"rows": 3})}
 
 
+def _plain(number):
+    """10.00 → «10», 7.50 → «7.5»: баллы без лишних нулей."""
+    return f"{number.normalize():f}"
+
+
 class GradeForm(forms.ModelForm):
     """Оценка решения организатором.
 
@@ -49,7 +54,7 @@ class GradeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.max_score = max_score
         if max_score is not None:
-            self.fields["score"].help_text = f"Максимум за задачу: {max_score:g}"
+            self.fields["score"].help_text = f"Максимум за задачу: {_plain(max_score)}"
 
     def clean_score(self):
         score = self.cleaned_data.get("score")
@@ -60,7 +65,7 @@ class GradeForm(forms.ModelForm):
         # Балл выше максимума почти всегда опечатка (например, 100 вместо 10)
         # и молча портит итоговую таблицу.
         if self.max_score is not None and score > self.max_score:
-            raise forms.ValidationError(f"Больше максимума за задачу ({self.max_score:g}).")
+            raise forms.ValidationError(f"Больше максимума за задачу ({_plain(self.max_score)}).")
         return score
 
 

@@ -33,17 +33,19 @@
         и в меню они только удлиняли бы строку. Страницы при этом живут
         по своим адресам /second/ и /final/.
       {% endcomment %}
-      <a href="{% url 'content:news_list' %}">Новости</a>
-      <a href="{% url 'venues:map' %}">Очный тур</a>
-      <a href="{% url 'contest:problem_list' %}">Дистанционный тур</a>
-      <a href="{% url 'content:lecture_list' %}">Лекции</a>
-      <a href="{% url 'content:problem_archive' %}">Архив</a>
+      {% with p=request.path %}
+      <a href="{% url 'content:news_list' %}"{% if p|slice:":6" == "/news/" %} aria-current="page"{% endif %}>Новости</a>
+      <a href="{% url 'venues:map' %}"{% if p|slice:":9" == "/offline/" %} aria-current="page"{% endif %}>Очный тур</a>
+      <a href="{% url 'contest:problem_list' %}"{% if p|slice:":8" == "/online/" %} aria-current="page"{% endif %}>Дистанционный тур</a>
+      <a href="{% url 'content:lecture_list' %}"{% if p|slice:":10" == "/lectures/" %} aria-current="page"{% endif %}>Лекции</a>
+      <a href="{% url 'content:problem_archive' %}"{% if p|slice:":10" == "/problems/" %} aria-current="page"{% endif %}>Архив</a>
+      {% endwith %}
     </nav>
     <div class="user-nav">
       {% if user.is_authenticated %}
         <a href="{% url 'accounts:profile' %}">Кабинет</a>
         {% if user.is_manager %}<span class="role-tag">{{ user.get_role_display|lower }}</span>{% endif %}
-        {% if user.is_staff %}<a href="{% url 'admin:index' %}">Админка</a>{% endif %}
+        {% if user.is_staff %}<a href="{% url 'admin:index' %}" class="nav-admin">Админка</a>{% endif %}
         <form method="post" action="{% url 'accounts:logout' %}" class="inline-form">
           {% csrf_token %}<button type="submit" class="link-button">Выйти</button>
         </form>
@@ -101,6 +103,17 @@
     </div>
   </div>
 </footer>
+<script>
+  // На телефоне меню — лента с прокруткой вбок. Если открыт раздел,
+  // который не поместился в экран, подкручиваем ленту к нему.
+  (function () {
+    var nav = document.querySelector(".main-nav");
+    var current = nav && nav.querySelector("[aria-current]");
+    if (current && nav.scrollWidth > nav.clientWidth) {
+      nav.scrollLeft = current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2;
+    }
+  })();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,103 +1,250 @@
 # Развёртывание и эксплуатация
 
-## Что нужно купить
+Сайт на сервере — это шесть контейнеров из `docker-compose.yml`:
 
-| Что | Где | Цена ориентировочно |
-|---|---|---|
-| VPS 2 vCPU / 4 ГБ / 40 ГБ | Timeweb Cloud, Selectel, reg.ru, Beget | 500–900 ₽/мес |
-| Домен `.ru` | reg.ru, nic.ru | 200–1000 ₽/год |
-| TLS-сертификат | Let's Encrypt | бесплатно |
-| SMTP для писем | Яндекс 360, Unisender, SendPulse | от 0 ₽ |
+| Контейнер | Что делает |
+|---|---|
+| `db` | PostgreSQL 16, данные в томе `pgdata` |
+| `web` | Django + gunicorn; при старте сам применяет миграции |
+| `mailer` | раз в минуту отправляет порцию писем из очереди рассылок |
+| `nginx` | принимает http/https, отдаёт загрузки, проксирует в `web` |
+| `certbot` | продлевает сертификат Let's Encrypt |
+| `backup` | раз в сутки кладёт дамп базы и архив загрузок в `./backups` |
 
-Такой конфигурации хватает на несколько тысяч участников. Если МФТИ выделит
-свою виртуалку — всё переносится без изменений, стек в контейнерах.
+Crontab на сервере не нужен: всё периодическое живёт в контейнерах и
+перезапускается вместе с ними (`restart: unless-stopped`), в том числе
+после перезагрузки сервера.
 
-## Первая установка на сервер
+## Что нужно от сервера
+
+* Ubuntu 22.04/24.04 или Debian 12, root-доступ, выход в интернет.
+* 2 vCPU / 4 ГБ RAM / 40 ГБ диска — с запасом на тысячу участников.
+  Диск съедают решения и бэкапы, а не сама база: см. «Пиковая нагрузка».
+* Домен, A-запись которого указывает на IP сервера (без него сайт
+  заработает только по http и по IP).
+* SMTP для писем — см. [contacts.md](contacts.md).
+
+## Первая установка
+
+Всё от root.
+
+**1. Подготовить сервер.** Скрипт ставит Docker, git и фаервол (наружу
+открыты только ssh, 80 и 443), клонирует код в `/srv/olymp` и создаёт
+`.env` со случайными `SECRET_KEY` и паролем базы:
 
 ```bash
-# на сервере, под пользователем с sudo
-sudo apt update && sudo apt install -y docker.io docker-compose-plugin git
-sudo usermod -aG docker $USER   # перелогиниться
+curl -fsSL https://raw.githubusercontent.com/leeiozh/ao-mipt/main/deploy/server-setup.sh | sh
+```
 
-git clone <адрес репозитория> /srv/olymp
+Если репозиторий закрытый — сначала склонировать его руками в `/srv/olymp`
+и запустить `sh /srv/olymp/deploy/server-setup.sh`.
+
+**2. Заполнить `.env`:**
+
+```bash
 cd /srv/olymp
-
-cp .env.example .env
-nano .env     # заполнить SECRET_KEY, ALLOWED_HOSTS, POSTGRES_PASSWORD, SMTP
-
-docker compose up -d --build
-docker compose exec web python manage.py createsuperuser
+nano .env
 ```
 
-Сгенерировать `SECRET_KEY`:
+Обязательно:
+
+| Переменная | Пример |
+|---|---|
+| `DOMAIN` | `olymp.mipt.ru` |
+| `ALLOWED_HOSTS` | `olymp.mipt.ru` |
+| `CSRF_TRUSTED_ORIGINS` | `https://olymp.mipt.ru` |
+| `LETSENCRYPT_EMAIL` | почта, куда Let's Encrypt напишет, если что-то не так |
+| `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | ящик и пароль приложения для писем |
+
+`SECRET_KEY` и `POSTGRES_PASSWORD` уже сгенерированы — не трогайте их
+после первого запуска: смена пароля базы в `.env` не меняет его в
+самой базе.
+
+**3. Запустить:**
 
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+make up          # то же, что docker compose up -d --build
+docker compose ps
 ```
 
-## HTTPS
+Через минуту все контейнеры должны быть `running`, у `web` — `healthy`.
+Сайт уже открывается по `http://DOMAIN` и тут же уводит на https,
+которого ещё нет, — это нормально до следующего шага.
+
+**4. Выпустить сертификат:**
 
 ```bash
-sudo apt install -y certbot
-sudo certbot certonly --standalone -d olymp.example.ru
+make https       # sh deploy/https-init.sh
 ```
 
-Затем в `deploy/nginx.conf` добавить блок `listen 443 ssl;` с путями к
-сертификатам и смонтировать `/etc/letsencrypt` в контейнер nginx.
-Обновление — по cron: `certbot renew --quiet && docker compose restart nginx`.
+Скрипт получает сертификат Let's Encrypt и перезапускает nginx — он сам
+увидит сертификат и включит https. Продлевать ничего не нужно: контейнер
+`certbot` делает это сам, nginx перечитывает сертификат раз в шесть часов.
+
+**5. Наполнить сайт и завести администратора:**
+
+```bash
+docker compose exec web python manage.py setup_site      # сезон, этапы, страницы, лекции
+docker compose exec web python manage.py import_archive  # архив задач прошлых лет (по желанию)
+make admin       # docker compose exec web python manage.py createsuperuser
+```
+
+`setup_site` создаёт только настоящее наполнение: никаких демо-учёток,
+площадок и решений. Повторный запуск ничего не перетирает.
+**`seed_demo` на сервере не запускать** — он заведёт учётку
+`admin@example.ru` с паролем из README; на сервере команда откажется
+работать без `--force`.
+
+Дальше — по [admin-guide.md](admin-guide.md): организаторы, площадки, задачи.
+Площадки заводят сами организаторы через «Очный тур → Добавить площадку»,
+администратор одобряет, и они появляются на карте.
 
 ## Обновление кода
 
 ```bash
 cd /srv/olymp
-git pull
-docker compose up -d --build
-docker compose exec web python manage.py migrate
+make deploy      # бэкап → git pull → пересборка → перезапуск
 ```
 
-Позже это стоит вынести в GitHub Actions: пуш в `main` → сборка → деплой по SSH.
+Что происходит с данными при обновлении: **ничего**. База, загруженные
+файлы и сертификаты лежат в томах Docker, а пересобирается только
+контейнер с кодом. Участники остаются залогиненными (сессии в базе,
+`SECRET_KEY` в `.env` не меняется), регистрации, записи на площадки и
+решения на месте. Миграции применяются при старте контейнера `web`.
+Простой — несколько секунд, пока перезапускается gunicorn.
 
-## Бэкапы — обязательно
+**В день дедлайна код не выкатываем.**
 
-Терять решения участников в день дедлайна нельзя. Ежедневно по cron:
+### Если обновление сломало сайт
+
+`make deploy` перед обновлением делает бэкап и запоминает прежнюю
+версию в файле `.last-deployed`. Вернуть код:
 
 ```bash
-# /etc/cron.daily/olymp-backup
-#!/bin/sh
-cd /srv/olymp
-docker compose exec -T db pg_dump -U olymp olymp | gzip > /backup/db-$(date +%F).sql.gz
-tar czf /backup/media-$(date +%F).tar.gz -C /var/lib/docker/volumes/olymp_media/_data .
-find /backup -mtime +30 -delete
+git checkout $(cat .last-deployed)
+docker compose up -d --build
 ```
 
-Копии выгружать во внешнее хранилище (Яндекс Object Storage, Selectel S3) —
-бэкап на том же сервере не спасает от потери сервера.
+Если новая версия успела изменить базу (была миграция) и старый код с
+ней не работает — восстановить базу из бэкапа, сделанного перед
+обновлением (см. «Восстановление»). Решения, пришедшие между бэкапом и
+откатом, при этом останутся файлами в `media`, но пропадут из базы —
+поэтому откат базы только в крайнем случае, а обновления — в спокойные
+дни. После отката вернуться на основную ветку: `git checkout main`.
+
+## Чего нельзя делать на сервере
+
+| Команда | Что будет |
+|---|---|
+| `docker compose down -v` | `-v` удаляет тома: **база и все загруженные решения пропадут** |
+| `docker volume rm …`, `docker system prune --volumes` | то же самое |
+| `python manage.py seed_demo` | демо-учётки с известным паролем (без `--force` не запустится) |
+| `python manage.py flush` | очищает базу целиком |
+| правка `SECRET_KEY` в `.env` | всех разлогинит, ссылки из писем перестанут работать |
+| правка `POSTGRES_PASSWORD` в `.env` | сайт перестанет подключаться к базе |
+
+Обычный `docker compose down`, `restart`, `up -d --build` и перезагрузка
+сервера данные не трогают.
+
+## Полезные команды
+
+```bash
+docker compose ps                   # что запущено и здорово ли
+make logs                           # логи сайта
+docker compose logs -f nginx        # логи nginx (запросы, ошибки загрузки)
+docker compose logs mailer          # как уходят рассылки
+docker compose exec web python manage.py shell   # консоль Django
+docker compose restart web          # перезапустить сайт
+```
+
+## Решения участников и права доступа
+
+Файлы решений лежат в томе `media`, но по прямому адресу
+`/media/solutions/...` nginx их не отдаёт никому. Ссылки на сайте ведут
+на `/online/file/<id>/`: Django проверяет, что это сам участник или
+проверяющий этой задачи, и поручает отдачу файла nginx
+(`X-Accel-Redirect` на внутренний `/protected-media/`). Так права
+проверяет Django, а большие файлы не занимают процессы gunicorn.
+
+## Бэкапы
+
+Контейнер `backup` каждый день в `BACKUP_HOUR_UTC` (по умолчанию 00 UTC
+= 03:00 МСК) кладёт в `/srv/olymp/backups`:
+
+* `db-ДАТА.dump` — база (`pg_dump -Fc`);
+* `media-ДАТА.tar.gz` — все загрузки, включая решения участников.
+
+Хранятся `BACKUP_KEEP_DAYS` дней (по умолчанию 7). Сделать бэкап
+вне расписания — `make backup`, например перед обновлением.
+
+**Бэкап на том же сервере не спасает от потери сервера.** Копируйте
+`backups/` наружу — в Яндекс Object Storage, Selectel S3 или хотя бы на
+другую машину. Проще всего `rclone`:
+
+```bash
+apt install -y rclone && rclone config          # один раз: подключить хранилище
+# /etc/cron.daily/olymp-offsite
+rclone copy /srv/olymp/backups remote:olymp-backups --max-age 48h
+```
+
+### Восстановление
+
+```bash
+cd /srv/olymp
+docker compose stop web mailer
+# база
+docker compose exec -T db pg_restore -U olymp -d olymp --clean --if-exists < backups/db-ДАТА.dump
+# загрузки
+docker compose run --rm -v "$PWD/backups:/backups" --entrypoint sh web \
+    -c "tar xzf /backups/media-ДАТА.tar.gz -C /app/media"
+docker compose start web mailer
+```
 
 **Раз в сезон проверяйте восстановление** на тестовой машине. Непроверенный
 бэкап — это не бэкап.
 
+## Проверить Docker-сборку у себя
+
+Docker на своём компьютере — чтобы убедиться, что образ собирается и
+сайт в нём работает, до выкладки на сервер:
+
+```bash
+cp .env.example .env
+# в .env: SECRET_KEY=что-угодно, POSTGRES_PASSWORD=что-угодно,
+#         ALLOWED_HOSTS=localhost, USE_HTTPS=False, DOMAIN пустой
+make up
+docker compose exec web python manage.py seed_demo --force   # демо-данные
+```
+
+Сайт — на http://localhost.
+
 ## Мониторинг
 
+* **UptimeRobot** (бесплатно) — проверять `https://DOMAIN/healthz/` раз в
+  5 минут, уведомления в Telegram. Адрес отвечает `ok`, если живы и
+  сайт, и база.
 * **Sentry** — ошибки на проде, бесплатного тарифа хватает.
-* **UptimeRobot** — проверка доступности раз в 5 минут, уведомления в Telegram.
-* `docker compose logs -f web` — оперативный просмотр логов.
 
 ## Чек-лист перед запуском регистрации
 
-- [ ] `DEBUG=False`, `ALLOWED_HOSTS` заполнен реальным доменом
-- [ ] `SECRET_KEY` — случайный, не из примера
+- [ ] `docker compose ps`: все контейнеры запущены, `web` — healthy
 - [ ] HTTPS работает, http редиректит на https
+- [ ] `DEBUG=False`, в `ALLOWED_HOSTS` реальный домен
 - [ ] Письма реально доходят (проверить на Gmail, Яндекс и Mail.ru)
-- [ ] Бэкап отработал хотя бы раз и восстанавливается
+- [ ] `make backup` отработал, архивы лежат в `backups/` и копируются наружу
+- [ ] Восстановление из бэкапа проверено хотя бы раз
 - [ ] Загрузка файла на 20 МБ проходит, на 100 МБ — даёт понятную ошибку
+- [ ] Чужое решение по ссылке `/online/file/<id>/` не открывается
 - [ ] Опубликована политика обработки персональных данных
 - [ ] Создан администратор и заведены учётки организаторов
-- [ ] Sentry и UptimeRobot подключены
+- [ ] UptimeRobot смотрит на `/healthz/`
 
 ## Пиковая нагрузка
 
 Пик предсказуем — последние часы перед дедлайном. За день до него:
 
-* проверить свободное место на диске (`df -h`) — загрузки съедают его быстро;
-* поднять число gunicorn-воркеров (`--workers 5`);
+* проверить свободное место на диске (`df -h`) — загрузки и ежедневные
+  архивы `media-*.tar.gz` съедают его быстрее всего;
+* поднять число процессов: `GUNICORN_WORKERS=5` в `.env`, затем
+  `docker compose up -d web`;
 * не выкатывать код в день дедлайна.

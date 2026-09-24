@@ -199,6 +199,8 @@ class Command(BaseCommand):
 
         for url in sorted(self.url_map, key=len, reverse=True):
             html = html.replace(f'"{url}"', f'"{self.url_map[url]}"')
+            # Якорь на странице (/online/problem/1/#my-solution) сохраняем.
+            html = html.replace(f'"{url}#', f'"{self.url_map[url]}#')
 
         # Ссылка на админку ведёт в Django-админку, которой в снимке нет:
         # она закрыта паролем и показывается вживую. Убираем сам пункт меню.
@@ -211,6 +213,9 @@ class Command(BaseCommand):
         html = re.sub(r'(href|src)="/media/(' + PUBLIC_MEDIA_RE + r')/([^"]*)"',
                       r'\1="media/\2/\3"', html)
         html = re.sub(r'(href|src)="/media/[^"]*"', r'\1="#" data-demo-file', html)
+        # Файлы решений отдаются через проверку прав (/online/file/<id>/) —
+        # в снимок они не попадают так же, как и прямые пути в /media/.
+        html = re.sub(r'href="/online/file/[^"]*"', 'href="#" data-demo-file', html)
 
         # Формы никуда не ведут — пусть не создают ложных ожиданий.
         html = re.sub(r'<form([^>]*)method="post"', r'<form\1onsubmit="return false" data-demo', html)
