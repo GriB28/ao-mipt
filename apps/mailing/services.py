@@ -1,12 +1,12 @@
 """Логика постановки в очередь и отправки. Отдельно от моделей и админки."""
 
 import logging
+import re
 
 from django.conf import settings
 from django.core.mail import get_connection
 from django.core.mail.message import EmailMessage
 from django.db import transaction
-from django.template import Context, Template
 from django.utils import timezone
 
 from .models import Delivery, Newsletter
@@ -35,14 +35,21 @@ def queue_newsletter(newsletter: Newsletter) -> int:
 
 
 def render_body(newsletter: Newsletter, user) -> str:
-    """Подставляет имя получателя в текст письма."""
+    """Подставляет имя получателя в текст письма.
+
+    Простая замена {{ first_name }}, {{ last_name }}, {{ email }}, а не
+    шаблон Django: текст пишут организаторы, и давать им теги шаблонизатора
+    незачем. Заодно письмо остаётся обычным текстом — шаблон Django
+    превращал апостроф в фамилии в &#x27;.
+    """
     profile = getattr(user, "profile", None)
-    context = Context({
+    values = {
         "first_name": getattr(profile, "first_name", "") or "",
         "last_name": getattr(profile, "last_name", "") or "",
         "email": user.email,
-    })
-    return Template(newsletter.body).render(context)
+    }
+    return re.sub(r"\{\{\s*(\w+)\s*\}\}",
+                  lambda m: values.get(m.group(1), m.group(0)), newsletter.body)
 
 
 def send_pending(limit: int = BATCH_SIZE) -> dict:

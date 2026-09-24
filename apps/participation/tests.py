@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.accounts.testing import make_eligible
 from apps.participation.models import Registration, VenueBooking, VenueBookingError
 from apps.seasons.models import Season, Stage
 from apps.venues.models import Venue
@@ -94,7 +95,7 @@ class VenueBookingViewTest(TestCase):
             latitude=55.0, longitude=37.0, status=Venue.Status.APPROVED,
         )
         self.venue.seasons.add(self.season)
-        self.user = User.objects.create_user("kid@b.ru", "olymp12345")
+        self.user = make_eligible(User.objects.create_user("kid@b.ru", "olymp12345"))
 
     def _book(self):
         return self.client.post(reverse("venues:book", args=[self.venue.pk]))
@@ -299,7 +300,7 @@ class BookingRulesTest(TestCase):
         ]
         for venue in self.venues:
             venue.seasons.add(self.season)
-        self.kid = User.objects.create_user("kid8@e.ru", "olymp12345")
+        self.kid = make_eligible(User.objects.create_user("kid8@e.ru", "olymp12345"))
 
     def test_registration_stays_open_after_the_round(self):
         """На площадку приходят без регистрации — их заводят задним числом."""

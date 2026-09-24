@@ -1,0 +1,9 @@
+{% comment %}
+  Вместо кнопки «записаться» / формы отправки, пока участие не открыто.
+  what — что именно недоступно: «записаться на площадку», «сдать решение».
+{% endcomment %}
+<div class="note gate">
+  <p><strong>Чтобы {{ what }}, осталось:</strong></p>
+  <ul>{% for step in user.participation_blockers %}<li>{{ step }}</li>{% endfor %}</ul>
+  <p><a class="btn btn-small" href="{% url 'accounts:profile' %}">Перейти в кабинет →</a></p>
+</div>

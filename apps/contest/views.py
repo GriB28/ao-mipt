@@ -1,19 +1,18 @@
-import mimetypes
 from pathlib import Path
-from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.models import User
+from apps.core.files import protected_file_response
 from apps.core.validators import validate_solution_file
 from apps.seasons.models import Season, Stage
 
@@ -125,6 +124,12 @@ def submit(request, pk):
     if not problem.accepts_submissions:
         messages.error(request, "Приём решений по этой задаче закрыт.")
         return redirect("contest:problem_detail", pk=pk)
+    # Тренировочная задача открыта всем: она для проверки загрузки, а не
+    # для участия. Настоящие — после анкеты и согласия на обработку ПД.
+    if not problem.stage.is_practice and not request.user.can_participate:
+        messages.error(request, "Чтобы сдавать решения, заполните анкету и загрузите "
+                                "согласие на обработку персональных данных.")
+        return redirect("accounts:profile")
 
     form = SubmissionForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
@@ -171,10 +176,6 @@ def submit(request, pk):
     return _problem_page(request, problem, form)
 
 
-# Эти форматы браузер показывает сам, остальное — только скачиванием.
-_INLINE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".txt", ".csv"}
-
-
 @login_required
 def submission_file(request, pk):
     """Файл решения — только автору и проверяющим этой задачи.
@@ -190,30 +191,7 @@ def submission_file(request, pk):
     if not sf.submission.can_be_viewed_by(request.user):
         # 404, а не 403: не подтверждаем, что такой файл вообще есть.
         raise Http404
-    if not sf.file or not sf.file.storage.exists(sf.file.name):
-        raise Http404
-
-    inline = Path(sf.filename).suffix.lower() in _INLINE_EXTENSIONS and "download" not in request.GET
-    accel = settings.PROTECTED_MEDIA_ACCEL_PREFIX
-    if accel:
-        response = HttpResponse()
-        response["X-Accel-Redirect"] = accel.rstrip("/") + "/" + quote(sf.file.name)
-        # Тип nginx определит по расширению сам, но пустой заголовок
-        # от Django (text/html) ему мешать не должен.
-        del response["Content-Type"]
-        disposition = "inline" if inline else "attachment"
-        response["Content-Disposition"] = f"{disposition}; filename*=UTF-8''{quote(sf.filename)}"
-    else:
-        content_type, _ = mimetypes.guess_type(sf.filename)
-        response = FileResponse(sf.file.open("rb"), as_attachment=not inline,
-                                filename=sf.filename,
-                                content_type=content_type or "application/octet-stream")
-    # Файл прислал участник: запрещаем браузеру угадывать тип. Открываются
-    # в браузере только PDF, картинки и текст (_INLINE_EXTENSIONS), HTML и
-    # SVG не принимаются вовсе — исполнять в домене сайта нечего.
-    response["X-Content-Type-Options"] = "nosniff"
-    response["Cache-Control"] = "private, no-store"
-    return response
+    return protected_file_response(request, sf.file, sf.filename)
 
 
 @login_required

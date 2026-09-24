@@ -11,6 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.accounts.testing import make_eligible
 from apps.contest.models import Grade, Problem, Submission, SubmissionFile
 from apps.seasons.models import Season, Stage
 
@@ -462,7 +463,7 @@ class LastSubmissionTest(TestCase):
         )
         self.problem = Problem.objects.create(stage=self.stage, number=1, title="Орбита",
                                               status=Problem.Status.APPROVED)
-        self.kid = User.objects.create_user("kid@e.ru", "olymp12345")
+        self.kid = make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"))
         self.client.force_login(self.kid)
 
     def _send(self, name="reshenie.pdf", answer=""):

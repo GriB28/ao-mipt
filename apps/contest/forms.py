@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 
 from apps.core.sanitize import clean_html
 
@@ -25,6 +26,15 @@ class MultipleFileField(forms.FileField):
 
 class SubmissionForm(forms.ModelForm):
     files = MultipleFileField(label="Файлы решения", required=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Предел для браузера: он сожмёт фото и не даст отправить лишнее.
+        limit = settings.PARTICIPANT_UPLOAD_MAX_MB
+        self.fields["files"].widget.attrs["data-max-mb"] = f"{limit:g}"
+        self.fields["files"].help_text = (
+            f"До {limit:g} МБ на файл. Фото с телефона уменьшатся автоматически."
+        )
 
     class Meta:
         model = Submission

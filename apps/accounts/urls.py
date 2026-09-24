@@ -10,6 +10,10 @@ urlpatterns = [
     path("login/", auth_views.LoginView.as_view(template_name="accounts/login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("profile/", views.profile, name="profile"),
+    # Согласие на обработку ПД: бланк из анкеты, загрузка скана, сам скан.
+    path("consent/blank.pdf", views.consent_blank, name="consent_blank"),
+    path("consent/upload/", views.consent_upload, name="consent_upload"),
+    path("consent/<int:pk>/file/", views.consent_file, name="consent_file"),
     # Подтверждение почты: ссылка из письма и кнопка «отправить ещё раз».
     path("confirm/<str:token>/", views.confirm_email, name="confirm_email"),
     path("confirm/resend/", views.resend_confirmation, name="resend_confirmation"),

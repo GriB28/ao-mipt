@@ -172,14 +172,18 @@ STORAGES = {
     },
 }
 
-# Ограничение на загрузку решений: по умолчанию 20 МБ на файл.
-# Тот же лимит надо продублировать в nginx (client_max_body_size).
+# Предел на файл для организаторов и администраторов (условия, данные
+# к задачам, презентации лекций) — там бывают файлы по 8–10 МБ.
 MAX_UPLOAD_SIZE_MB = env.int("MAX_UPLOAD_SIZE_MB", default=20)
+# Предел на файл для школьников: решения и сканы согласий. Фото браузер
+# сжимает сам перед отправкой, см. static/js/compress.js.
+PARTICIPANT_UPLOAD_MAX_MB = env.float("PARTICIPANT_UPLOAD_MAX_MB", default=2)
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 # Сколько файлов в одной отправке и сколько отправок по одной задаче.
 # Пределы защищают диск сервера; обычному участнику их не достичь.
 MAX_FILES_PER_SUBMISSION = env.int("MAX_FILES_PER_SUBMISSION", default=10)
 MAX_ATTEMPTS_PER_PROBLEM = env.int("MAX_ATTEMPTS_PER_PROBLEM", default=30)
+MAX_CONSENT_UPLOADS = env.int("MAX_CONSENT_UPLOADS", default=10)
 # /healthz/ отвечает 503, если места под загрузки осталось меньше.
 HEALTHZ_MIN_FREE_GB = env.float("HEALTHZ_MIN_FREE_GB", default=2.0)
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024

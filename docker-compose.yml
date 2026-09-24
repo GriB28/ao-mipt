@@ -101,6 +101,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
       BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-00}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
     volumes:
       - ./deploy/backup.sh:/backup.sh:ro
       - media:/media:ro

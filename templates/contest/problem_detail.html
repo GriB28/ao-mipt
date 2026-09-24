@@ -61,6 +61,8 @@
     <p><a class="btn" href="{% url 'accounts:login' %}?next={{ request.path }}">Войдите, чтобы сдать решение</a></p>
   {% elif not problem.accepts_submissions %}
     <p class="badge warn">Приём решений по этой задаче закрыт</p>
+  {% elif not problem.stage.is_practice and not user.can_participate %}
+    {% include "accounts/_participation_gate.html" with what="сдать решение" %}
   {% else %}
     {% if last_submission %}
       <p class="muted">Новая загрузка станет последней версией и пойдёт в проверку вместо текущей.

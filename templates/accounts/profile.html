@@ -2,14 +2,35 @@
 {% block title %}Личный кабинет{% endblock %}
 {% block content %}
 <h1>Личный кабинет</h1>
-<p class="muted">{{ user.email }} · {{ user.get_role_display }}</p>
+<p class="muted">{{ user.email }}</p>
 
-{% if not user.email_confirmed %}
-  <p class="message warning">
-    Почта не подтверждена. Мы отправили письмо со ссылкой на {{ user.email }} —
-    проверьте входящие и папку «Спам».
-    <a href="{% url 'accounts:resend_confirmation' %}">Отправить письмо ещё раз</a>.
-  </p>
+{% if blockers %}
+  {% comment %}
+    Три шага до участия. Показываем их все с отметками, а не только
+    оставшиеся: так понятно, сколько уже сделано и что впереди.
+  {% endcomment %}
+  <section class="card steps">
+    <h2>Чтобы участвовать в олимпиаде</h2>
+    <p class="muted">Записаться на очную площадку, сдавать решения дистанционного тура и
+      пройти во второй тур можно после трёх шагов. Смотреть задачи и лекции можно уже сейчас.</p>
+    <ol class="step-list">
+      <li class="{% if user.email_confirmed %}done{% endif %}">
+        Подтвердить почту по ссылке из письма
+        {% if not user.email_confirmed %}
+          — <a href="{% url 'accounts:resend_confirmation' %}">отправить письмо ещё раз</a>
+          <span class="helptext">Письмо ушло на {{ user.email }}. Проверьте папку «Спам».</span>
+        {% endif %}
+      </li>
+      <li class="{% if profile.is_complete %}done{% endif %}">
+        <a href="#anketa">Заполнить анкету</a>
+      </li>
+      <li class="{% if consent and consent.grants_access %}done{% endif %}">
+        <a href="#consent">Скачать бланк согласия, подписать и загрузить скан</a>
+      </li>
+    </ol>
+  </section>
+{% else %}
+  <p class="message success">Участие открыто: можно записываться на площадку и сдавать решения.</p>
 {% endif %}
 
 {% if my_booking %}
@@ -19,13 +40,104 @@
 <div class="grid">
   <div class="card"><h3>Мои решения</h3><a href="{% url 'contest:my_submissions' %}">Посмотреть →</a></div>
   <div class="card"><h3>Очный тур</h3><a href="{% url 'venues:map' %}">Выбрать площадку →</a></div>
-
 </div>
 
-<h2>Анкета</h2>
-<form method="post" class="form-narrow">
+<h2 id="anketa">Анкета участника</h2>
+<p class="muted prose">Данные нужны для согласия на обработку персональных данных и для
+  дипломов. Их видят только администраторы олимпиады.</p>
+
+{% comment %}
+  Заполненную анкету с загруженным согласием сворачиваем: правка данных
+  документа делает подписанное согласие недействительным, и открывать
+  форму стоит осознанно.
+{% endcomment %}
+{% if profile.is_complete and consent and consent.grants_access and not form.errors %}
+<details class="profile-details">
+  <summary>Анкета заполнена — посмотреть или изменить</summary>
+  <p class="note">Если измените ФИО, дату рождения, документ или адрес — понадобится
+    подписать и загрузить согласие заново. Класс, школу и телефон менять можно свободно.</p>
+{% endif %}
+<form method="post" class="form-narrow profile-form" novalidate>
   {% csrf_token %}
-  {{ form.as_p }}
-  <button class="btn" type="submit">Сохранить</button>
+  {% if form.non_field_errors %}<p class="message error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% for field in form.participant_fields %}{% include "accounts/_field.html" %}{% endfor %}
+
+  <fieldset id="parent-block" class="parent-block">
+    <legend>Родитель или законный представитель</legend>
+    <p class="muted">Нужен, если вам нет 18 лет: согласие на обработку данных подписывает он.</p>
+    {% for field in form.parent_fields %}{% include "accounts/_field.html" %}{% endfor %}
+  </fieldset>
+
+  <button class="btn" type="submit">Сохранить анкету</button>
 </form>
+{% if profile.is_complete and consent and consent.grants_access and not form.errors %}</details>{% endif %}
+
+<h2 id="consent">Согласие на обработку персональных данных</h2>
+{% if not profile.is_complete %}
+  <p class="muted prose">Бланк собирается из анкеты — сначала заполните её целиком.
+    {% with missing=profile.missing_fields %}{% if missing %}
+      Не хватает: {{ missing|join:", " }}.
+    {% endif %}{% endwith %}
+  </p>
+{% else %}
+  {% if consent %}
+    <div class="consent-status consent-{{ consent.status }}">
+      <p><strong>{{ consent.get_status_display }}</strong>
+        <span class="muted">· загружено {{ consent.created_at|date:"j E Y, H:i" }} ·
+          <a href="{{ consent.get_absolute_url }}" target="_blank" rel="noopener">{{ consent.filename }}</a></span></p>
+      {% if consent.status == "pending" %}
+        <p class="muted">Скан проверяется вручную. Участие уже открыто; если понадобится
+          переслать согласие, мы напишем на {{ user.email }}.</p>
+      {% elif consent.status == "rejected" %}
+        <p>Пожалуйста, пришлите согласие заново.{% if consent.review_comment %}
+          Что поправить: {{ consent.review_comment }}{% endif %}</p>
+      {% elif consent.status == "outdated" %}
+        <p>Данные анкеты изменились после загрузки. Скачайте новый бланк, подпишите и загрузите.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if not consent or consent.status != "approved" %}
+    <ol class="consent-steps">
+      <li>
+        <a class="btn btn-secondary" href="{% url 'accounts:consent_blank' %}">Скачать бланк (PDF)</a>
+        <span class="helptext">В бланк уже вписаны данные из анкеты. Проверьте их.</span>
+      </li>
+      <li>Распечатайте и подпишите.
+        {% if profile.is_minor %}Подписывает <strong>родитель или законный представитель</strong>,
+          указанный в анкете.{% else %}Подписываете вы.{% endif %}</li>
+      <li>
+        <form method="post" action="{% url 'accounts:consent_upload' %}" enctype="multipart/form-data" class="form-narrow">
+          {% csrf_token %}
+          {% for field in upload_form %}{% include "accounts/_field.html" %}{% endfor %}
+          <button class="btn" type="submit">Загрузить согласие</button>
+        </form>
+      </li>
+    </ol>
+  {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Блок представителя нужен, только если нет 18. Сервер проверяет то же
+  // самое сам; здесь — чтобы взрослому не показывать лишние поля.
+  (function () {
+    var birth = document.getElementById("id_birth_date");
+    var block = document.getElementById("parent-block");
+    if (!birth || !block) return;
+    function update() {
+      var minor = true;
+      if (birth.value) {
+        var b = new Date(birth.value), now = new Date();
+        var age = now.getFullYear() - b.getFullYear();
+        if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) age--;
+        minor = age < 18;
+      }
+      block.hidden = !minor;
+    }
+    birth.addEventListener("change", update);
+    update();
+  })();
+</script>
 {% endblock %}

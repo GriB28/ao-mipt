@@ -7,6 +7,7 @@
 Команда идемпотентна — повторный запуск ничего не дублирует.
 """
 
+from datetime import date
 from decimal import Decimal
 
 from django.conf import settings
@@ -15,7 +16,13 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.accounts.models import OrganizerProfile, ParticipantProfile, User
+from apps.accounts.models import (
+    ConsentDocument,
+    DocumentType,
+    OrganizerProfile,
+    ParticipantProfile,
+    User,
+)
 from apps.contest.models import Problem, Submission, SubmissionFile
 from apps.mailing.models import Newsletter
 from apps.participation.models import Registration, VenueBooking
@@ -107,14 +114,38 @@ class Command(BaseCommand):
             if created:
                 user.set_password(DEMO_PASSWORD)
                 user.save()
+            if not user.email_confirmed:
+                user.email_confirmed = True
+                user.save(update_fields=["email_confirmed"])
             if role == User.Role.PARTICIPANT:
-                ParticipantProfile.objects.get_or_create(
+                # Анкета заполнена целиком и согласие принято: демо-участник
+                # может записываться на площадку и сдавать решения. Данные
+                # документов выдуманные.
+                profile, _ = ParticipantProfile.objects.update_or_create(
                     user=user,
-                    defaults={"last_name": "Тестов", "first_name": "Пётр", "grade": 10,
-                              "city": "Москва", "region": "Москва", "school": "Школа №1",
-                              "telegram": "@testov", "consent_given": True,
-                              "consent_given_at": now},
+                    defaults={
+                        "last_name": "Тестов", "first_name": "Пётр", "middle_name": "Иванович",
+                        "birth_date": date(2010, 3, 14), "grade": 10,
+                        "city": "Москва", "region": "Москва", "school": "Школа №1",
+                        "phone": "+7 900 000-00-01", "telegram": "@testov",
+                        "doc_type": DocumentType.PASSPORT_RF, "doc_number": "0000 000000",
+                        "doc_issued_at": date(2024, 3, 20), "doc_issued_by": "ГУ МВД России по г. Москве",
+                        "reg_address": "101000, г. Москва, ул. Примерная, д. 1, кв. 1",
+                        "parent_last_name": "Тестова", "parent_first_name": "Анна",
+                        "parent_middle_name": "Сергеевна", "parent_doc_type": DocumentType.PASSPORT_RF,
+                        "parent_doc_number": "0000 000001", "parent_doc_issued_at": date(2015, 6, 1),
+                        "parent_doc_issued_by": "ГУ МВД России по г. Москве",
+                        "parent_reg_address": "101000, г. Москва, ул. Примерная, д. 1, кв. 1",
+                        "consent_given": True, "consent_given_at": now,
+                    },
                 )
+                if not user.consents.exists():
+                    ConsentDocument.objects.create(
+                        user=user, for_minor=True, data=profile.consent_data(),
+                        status=ConsentDocument.Status.APPROVED,
+                        file=ContentFile(b"%PDF-1.4\n% demo consent\n", name="soglasie.pdf"),
+                        original_name="soglasie.pdf",
+                    )
                 # Записываем в текущий сезон, иначе демо-рассылка
                 # по аудитории «участники сезона» найдёт ноль получателей.
                 Registration.objects.get_or_create(user=user, season=season, defaults={"grade": 10})

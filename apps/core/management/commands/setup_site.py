@@ -17,7 +17,13 @@ from django.core.management.base import BaseCommand
 
 from apps.content.models import News, Page, Playlist
 from apps.contest.models import Problem
-from apps.core.legal_templates import CONSENT_TEXT, PRIVACY_POLICY, RULES_TEXT
+from apps.core.legal_templates import (
+    CONSENT_FORM_ADULT,
+    CONSENT_FORM_MINOR,
+    CONSENT_TEXT,
+    PRIVACY_POLICY,
+    RULES_TEXT,
+)
 from apps.seasons.models import Season, Stage
 from apps.seasons.schedule import PRACTICE_STAGE, SEASON_YEAR, STAGES
 
@@ -101,6 +107,18 @@ class Command(BaseCommand):
                 slug=slug,
                 defaults={"title": title, "show_in_menu": in_menu,
                           "menu_order": order, "body": body},
+            )
+
+        # Тексты бланков согласия (PDF в кабинете). Страницы не публикуются —
+        # это заготовки с подстановками {{ … }}, их правят в админке.
+        for slug, title, body in [
+            ("consent-form-minor", "Бланк согласия: законный представитель", CONSENT_FORM_MINOR),
+            ("consent-form-adult", "Бланк согласия: участник старше 18", CONSENT_FORM_ADULT),
+        ]:
+            Page.objects.get_or_create(
+                slug=slug,
+                defaults={"title": title, "body": body, "is_published": False,
+                          "show_in_menu": False, "menu_order": 95},
             )
 
         # Каталог лекций прошлых лет — темы, лекции и плейлисты сезонов.

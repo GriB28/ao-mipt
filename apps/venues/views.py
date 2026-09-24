@@ -93,6 +93,10 @@ def book_venue(request, pk):
     if request.user.is_manager:
         raise PermissionDenied("Организаторы на площадки не записываются.")
     venue = get_object_or_404(Venue.objects.public(), pk=pk)
+    if not request.user.can_participate:
+        messages.error(request, "Чтобы записаться на площадку, заполните анкету и загрузите "
+                                "согласие на обработку персональных данных.")
+        return redirect("accounts:profile")
     season = Season.objects.active()
     stage = _offline_stage(season)
     if not stage:
