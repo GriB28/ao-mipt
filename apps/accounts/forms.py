@@ -132,7 +132,7 @@ class ProfileForm(forms.ModelForm):
     class Meta:
         model = ParticipantProfile
         fields = [
-            "last_name", "first_name", "middle_name", "birth_date",
+            "last_name", "first_name", "middle_name", "birth_date", "birth_place",
             "doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by",
             "doc_division_code", "reg_address",
             "grade", "school", "city", "region", "phone", "telegram",
@@ -160,7 +160,7 @@ class ProfileForm(forms.ModelForm):
 
     #: Группы полей — так они и показываются на странице.
     SECTIONS = (
-        ("Участник", ("last_name", "first_name", "middle_name", "birth_date")),
+        ("Участник", ("last_name", "first_name", "middle_name", "birth_date", "birth_place")),
         ("Документ, удостоверяющий личность",
          ("doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by",
           "doc_division_code", "reg_address")),

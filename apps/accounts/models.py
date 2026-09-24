@@ -183,6 +183,8 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     middle_name = models.CharField("отчество", max_length=100, blank=True)
 
     birth_date = models.DateField("дата рождения", null=True, blank=True)
+    birth_place = models.CharField("место рождения", max_length=250, blank=True,
+                                   help_text="Как в паспорте или свидетельстве о рождении")
     grade = models.PositiveSmallIntegerField("класс", null=True, blank=True)
 
     # Регион выбирается из списка (apps/accounts/regions.py), иначе в базе
@@ -207,12 +209,12 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
 
     #: Без чего анкета участника не считается заполненной.
     #: Серия не входит: у иностранных документов её бывает нет.
-    REQUIRED_FIELDS = ("last_name", "first_name", "birth_date", "grade", "school", "city",
+    REQUIRED_FIELDS = ("last_name", "first_name", "birth_date", "birth_place", "grade", "school", "city",
                        "region", "phone", "telegram", "doc_type", "doc_number", "doc_issued_at",
                        "doc_issued_by", "reg_address")
     #: Данные, которые попадают в бланк согласия. Если их поменять после
     #: загрузки скана, подписанное согласие перестаёт им соответствовать.
-    CONSENT_FIELDS = ("last_name", "first_name", "middle_name", "birth_date",
+    CONSENT_FIELDS = ("last_name", "first_name", "middle_name", "birth_date", "birth_place",
                       "doc_type", "doc_series", "doc_number", "doc_issued_at",
                       "doc_issued_by", "doc_division_code", "reg_address")
 

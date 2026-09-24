@@ -125,7 +125,7 @@ class Command(BaseCommand):
                     user=user,
                     defaults={
                         "last_name": "Тестов", "first_name": "Пётр", "middle_name": "Иванович",
-                        "birth_date": date(2010, 3, 14), "grade": 10,
+                        "birth_date": date(2010, 3, 14), "birth_place": "г. Москва", "grade": 10,
                         "city": "Москва", "region": "Москва", "school": "Школа №1",
                         "phone": "+7 900 000-00-01", "telegram": "@testov",
                         "doc_type": DocumentType.PASSPORT_RF, "doc_series": "0000",

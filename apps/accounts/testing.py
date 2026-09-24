@@ -17,6 +17,7 @@ def make_eligible(user, **profile_fields):
     user.save(update_fields=["email_confirmed"])
     defaults = {
         "last_name": "Тестов", "first_name": "Пётр", "birth_date": date(2010, 1, 1),
+        "birth_place": "г. Москва",
         "grade": 10, "school": "Школа", "city": "Москва", "region": "Москва",
         "phone": "+7 900 000-00-00", "telegram": "@testov", "doc_type": DocumentType.PASSPORT_RF,
         "doc_series": "0000", "doc_number": "000000", "doc_issued_at": date(2024, 1, 10),

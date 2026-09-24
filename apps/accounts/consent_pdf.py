@@ -111,6 +111,7 @@ def values_for(profile) -> dict:
     return {
         "participant_name": profile.full_name,
         "participant_birth_date": _date(profile.birth_date),
+        "participant_birth_place": profile.birth_place,
         "participant_document": _passport_line(profile, "") if profile.doc_type else "",
         "participant_address": profile.reg_address,
         "operator": legal_templates.CONSENT_OPERATOR,
@@ -269,7 +270,8 @@ def _render(profile, styles):
     if minor:
         story.append(Paragraph("Участник олимпиады (субъект персональных данных)", styles.heading))
     story += _fields([
-        [("ФИО", profile.full_name, 0.72), ("Дата рождения", _date(profile.birth_date), 0.28)],
+        [("ФИО", profile.full_name, 0.46), ("Дата рождения", _date(profile.birth_date), 0.18),
+         ("Место рождения", profile.birth_place, 0.36)],
         [(DOCUMENT_CAPTION, values["participant_document"], 1.0)],
         [("Адрес регистрации по паспорту", profile.reg_address, 1.0)],
     ], styles)

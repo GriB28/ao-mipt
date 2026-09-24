@@ -62,6 +62,7 @@ def profile_data(**extra):
     return {
         "last_name": "Пупкин", "first_name": "Василий", "middle_name": "",
         "birth_date_day": "1", "birth_date_month": "5", "birth_date_year": "2010",
+        "birth_place": "г. Москва",
         "doc_type": "passport_rf", "doc_series": "4510", "doc_number": "123456",
         "doc_issued_at_day": "1", "doc_issued_at_month": "6", "doc_issued_at_year": "2024",
         "doc_issued_by": "ГУ МВД России по г. Москве", "doc_division_code": "770001",
@@ -291,7 +292,8 @@ class ConsentPdfTest(TestCase):
         self.assertIn("до достижения целей обработки", text)  # срок действия
         # Перечень — ровно то, что собирает сайт; рекламы нет.
         self.assertIn("– адрес регистрации по паспорту;", text)
-        for extra in ("гражданство", "пол,", "места жительства", "место рождения", "рекламн"):
+        self.assertIn("– дата и место рождения;", text)
+        for extra in ("гражданство", "пол,", "места жительства", "рекламн"):
             self.assertNotIn(extra, text)
         self.assertNotIn("{{", text)
         self.assertTrue(consent_pdf.build(kid.profile).startswith(b"%PDF"))

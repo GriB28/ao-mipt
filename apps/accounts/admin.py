@@ -36,7 +36,7 @@ class AdminsOnly:
 
 
 PROFILE_FIELDSETS = (
-    ("Участник", {"fields": ("last_name", "first_name", "middle_name", "birth_date",
+    ("Участник", {"fields": ("last_name", "first_name", "middle_name", "birth_date", "birth_place",
                              "grade", "school", "city", "region", "phone", "telegram")}),
     ("Документ и адрес", {"fields": ("doc_type", "doc_series", "doc_number", "doc_issued_at",
                                      "doc_issued_by", "doc_division_code", "reg_address")}),
