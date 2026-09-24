@@ -114,6 +114,9 @@ def values_for(profile) -> dict:
         "participant_document": _passport_line(profile, "") if profile.doc_type else "",
         "participant_address": profile.reg_address,
         "operator": legal_templates.CONSENT_OPERATOR,
+        # Где публикуются результаты: правила Роскомнадзора к согласию на
+        # распространение требуют назвать информационный ресурс.
+        "site": f"сайте олимпиады {settings.SITE_URL}" if settings.SITE_URL else "сайте олимпиады",
         "contact_email": settings.CONTACT_EMAIL,
         "today": _date(timezone.localdate()),
         "email": profile.user.email,
@@ -307,9 +310,10 @@ def _render(profile, styles):
         if block:
             story.append(Paragraph(block, styles.body))
 
+    # Первым подписывает участник — согласие даёт он, затем представитель.
     if minor:
-        signers = [("", "ФИО законного представителя"),
-                   (profile.full_name, "ФИО участника (субъекта персональных данных)")]
+        signers = [(profile.full_name, "ФИО участника (субъекта персональных данных)"),
+                   ("", "ФИО законного представителя")]
     else:
         signers = [(profile.full_name, "ФИО участника")]
     story.append(KeepTogether([

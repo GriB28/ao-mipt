@@ -283,7 +283,9 @@ class ConsentPdfTest(TestCase):
         kid = self._kid()
         text = " ".join(consent_pdf._blocks(consent_pdf.fill(
             consent_pdf.template_text(minor=True), consent_pdf.values_for(kid.profile))))
-        self.assertIn("несовершеннолетнего ребенка", text)
+        # Согласие даёт участник, законный представитель присоединяется к нему.
+        self.assertIn("Я, участник олимпиады", text)
+        self.assertIn("Мой законный представитель (родитель)", text)
         self.assertNotIn("подопечн", text)
         self.assertIn("117303, г. Москва", text)  # адрес оператора
         self.assertIn("до достижения целей обработки", text)  # срок действия
@@ -332,8 +334,20 @@ class ConsentPdfTest(TestCase):
                     self.assertIn(part, text)
                 self.assertIn("Федеральным законом от 27.07.2006 № 152-ФЗ", " ".join(text.split()))
                 self.assertNotIn("стать", text)  # ссылка на закон целиком
-        # Данные родителя сайт не обрабатывает — согласия на них в тексте нет.
-        self.assertNotIn("моих персональных данных", legal_templates.CONSENT_FORM_MINOR)
+        # Абзац о представителе — только у несовершеннолетних.
+        self.assertNotIn("законный представитель", legal_templates.CONSENT_FORM_ADULT)
+        # Данные родителя сайт не обрабатывает — согласия на их обработку нет.
+        self.assertNotIn("персональных данных представителя", legal_templates.CONSENT_FORM_MINOR)
+
+    def test_distribution_names_the_site(self):
+        """Правила РКН к согласию на распространение: назвать ресурс публикации."""
+        from . import consent_pdf
+
+        kid = self._kid()
+        with self.settings(SITE_URL="https://aero.example.ru"):
+            text = consent_pdf.fill(consent_pdf.template_text(minor=True),
+                                    consent_pdf.values_for(kid.profile))
+        self.assertIn("на сайте олимпиады https://aero.example.ru", " ".join(text.split()))
 
 
 class EmailConfirmTest(TestCase):
