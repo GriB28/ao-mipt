@@ -329,7 +329,23 @@ class ConsentPdfTest(TestCase):
 
         text = consent_pdf.template_text(minor=False)
         self.assertNotIn("несовершеннолетнего", text)
-        self.assertIn("предоставляю свое согласие", text)
+        self.assertIn("Я, участник олимпиады", text)
+
+    def test_texts_are_first_person_and_complete(self):
+        """Ч. 4 ст. 9 152-ФЗ: цель, действия, срок, отзыв, оператор; публикуется только перечень."""
+        import re
+
+        from apps.core import legal_templates
+
+        for minor, text in ((True, legal_templates.CONSENT_FORM_MINOR),
+                            (False, legal_templates.CONSENT_FORM_ADULT)):
+            with self.subTest(minor=minor):
+                self.assertFalse(re.search(r"\bМы\b", text))
+                for part in ("Цель обработки", "Действия с персональными данными", "уничтожение",
+                             "Согласие действует", "письменным заявлением", "{{ operator }}",
+                             "только следующих", "Остальные персональные данные не распространяются"):
+                    self.assertIn(part, text)
+        self.assertIn("Перечень моих персональных данных", legal_templates.CONSENT_FORM_MINOR)
 
 
 class EmailConfirmTest(TestCase):

@@ -145,14 +145,16 @@ class _Styles:
     def __init__(self, size=10.5):
         self.title = ParagraphStyle("title", fontName="Serif-Bold", fontSize=13, leading=16,
                                     alignment=1)
-        self.body = ParagraphStyle("body", fontName="Serif", fontSize=size, leading=size * 1.2,
-                                   spaceAfter=3, alignment=4)  # 4 — по ширине
+        self.body = ParagraphStyle("body", fontName="Serif", fontSize=size, leading=size * 1.15,
+                                   spaceAfter=2, alignment=4)  # 4 — по ширине
         self.item = ParagraphStyle("item", parent=self.body, spaceAfter=0, alignment=0)
         self.value = ParagraphStyle("value", fontName="Serif", fontSize=min(size, 11),
                                     leading=min(size, 11) * 1.2)
-        self.caption = ParagraphStyle("caption", fontName="Serif-Italic", fontSize=8, leading=9.5,
+        self.caption = ParagraphStyle("caption", fontName="Serif-Italic", fontSize=7.5, leading=8.5,
                                       alignment=1)
         self.small = ParagraphStyle("small", fontName="Serif-Italic", fontSize=8.5, leading=10)
+        self.heading = ParagraphStyle("heading", fontName="Serif-Bold", fontSize=min(size, 10.5),
+                                      leading=min(size, 10.5) * 1.15, spaceBefore=1, spaceAfter=0)
 
 
 def _fields(rows, styles):
@@ -173,7 +175,7 @@ def _fields(rows, styles):
             ("RIGHTPADDING", (0, 0), (-1, -1), 2 * mm),
             ("TOPPADDING", (0, 0), (-1, -1), 1),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 1),
-            ("BOTTOMPADDING", (0, 1), (-1, 1), 3),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 1.5),
         ]))
         story.append(table)
     return story
@@ -193,8 +195,8 @@ def _signatures(signers, styles):
         rows.append([Paragraph(caption, styles.caption), Paragraph("подпись", styles.caption),
                      Paragraph("дата", styles.caption)])
         style += [("LINEBELOW", (0, top), (-1, top), 0.6, "#000000"),
-                  ("TOPPADDING", (0, top), (-1, top), 12),
-                  ("BOTTOMPADDING", (0, top + 1), (-1, top + 1), 6)]
+                  ("TOPPADDING", (0, top), (-1, top), 10),
+                  ("BOTTOMPADDING", (0, top + 1), (-1, top + 1), 3)]
     table = Table(rows, colWidths=[PAGE_WIDTH * 0.55, PAGE_WIDTH * 0.27, PAGE_WIDTH * 0.18])
     table.setStyle(TableStyle(style))
     return table
@@ -236,6 +238,8 @@ def _render(profile, styles):
 
     # Документ участника и представителя — одной строкой и под одной
     # подписью: так бланк читается одинаково сверху донизу.
+    if minor:
+        story.append(Paragraph("Участник олимпиады (субъект персональных данных)", styles.heading))
     story += _fields([
         [("ФИО", profile.full_name, 0.72), ("Дата рождения", _date(profile.birth_date), 0.28)],
         [(DOCUMENT_CAPTION, values["participant_document"], 1.0)],
@@ -243,8 +247,11 @@ def _render(profile, styles):
     ], styles)
 
     if minor:
-        story.append(Paragraph("И законный представитель Субъекта персональных данных "
-                               "на основании п. 1 ст. 64 Семейного кодекса РФ", styles.body))
+        # Основание полномочий — обязательная часть согласия представителя
+        # (п. 2 ч. 4 ст. 9 152-ФЗ): у родителя — закон, у опекуна — акт о назначении.
+        story.append(Paragraph(
+            "Законный представитель Участника <i>(родитель — п. 1 ст. 64 Семейного кодекса РФ; "
+            "опекун, попечитель — акт о назначении)</i>", styles.heading))
         story += _fields([
             [("ФИО представителя", profile.parent_full_name, 1.0)],
             [(DOCUMENT_CAPTION, values["parent_document"], 1.0)],
@@ -273,17 +280,18 @@ def _render(profile, styles):
         if block:
             story.append(Paragraph(block, styles.body))
 
-    signers = [(profile.full_name, "ФИО Субъекта персональных данных")]
     if minor:
-        signers.append((profile.parent_full_name, "ФИО законного представителя"))
+        signers = [(profile.parent_full_name, "ФИО законного представителя"),
+                   (profile.full_name, "ФИО участника (субъекта персональных данных)")]
+    else:
+        signers = [(profile.full_name, "ФИО участника")]
     story.append(KeepTogether([
         Spacer(1, 3 * mm),
         _signatures(signers, styles),
-        Spacer(1, 5 * mm),
+        Spacer(1, 2 * mm),
         Paragraph(
-            f"Бланк сформирован на сайте олимпиады {values['today']} для учётной записи "
-            f"{html.escape(values['email'])} (№ {profile.user_id}). Распечатайте, подпишите "
-            "и загрузите скан или фото в личном кабинете.", styles.small),
+            f"Сформировано на сайте олимпиады {values['today']}, учётная запись "
+            f"{html.escape(values['email'])} (№ {profile.user_id}).", styles.small),
     ]))
 
     buffer = io.BytesIO()
