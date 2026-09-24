@@ -19,6 +19,7 @@ backups
 *.xls
 *.docx
 *.doc
+/*.pdf
 .~lock.*#
 .idea
 .vscode
