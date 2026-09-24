@@ -17,6 +17,9 @@ backups
 **/*.pyc
 *.xlsx
 *.xls
+*.docx
+*.doc
+.~lock.*#
 .idea
 .vscode
 .DS_Store

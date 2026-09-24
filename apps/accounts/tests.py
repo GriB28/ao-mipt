@@ -67,12 +67,6 @@ def profile_data(**extra):
         "doc_issued_by": "ГУ МВД России по г. Москве", "doc_division_code": "770001",
         "reg_address": "101000, Москва, ул. Мира, 1", "grade": "10", "school": "Школа № 1",
         "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "@vasya_p",
-        "parent_last_name": "Пупкина", "parent_first_name": "Мария", "parent_middle_name": "",
-        "parent_doc_type": "passport_rf", "parent_doc_series": "4500", "parent_doc_number": "654321",
-        "parent_doc_issued_at_day": "1", "parent_doc_issued_at_month": "1",
-        "parent_doc_issued_at_year": "2012", "parent_doc_issued_by": "ОВД Тверской",
-        "parent_doc_division_code": "770-002",
-        "parent_reg_address": "101000, Москва, ул. Мира, 1",
     } | extra
 
 
@@ -160,22 +154,12 @@ class ParticipationStepsTest(TestCase):
         self.assertIn('>число</option>', html[day:month])
         self.assertIn('>год</option>', html[year:])
 
-    def test_parent_is_required_for_minor_only(self):
-        no_parent = {k: "" for k in profile_data() if k.startswith("parent_")}
-        response = self._save_profile(**no_parent)
-        self.assertFormError(response.context["form"], "parent_last_name",
-                             "Нужно, если участнику нет 18 лет.")
-        self.assertFalse(ParticipantProfile.objects.get(user=self.user).is_complete)
-
-        self._save_profile(**no_parent, birth_date_year="2006", grade="11")
-        profile = ParticipantProfile.objects.get(user=self.user)
-        self.assertFalse(profile.is_minor)
-        self.assertTrue(profile.is_complete)
-
-    def test_parent_passport_is_checked_too(self):
-        response = self._save_profile(parent_doc_series="45", parent_doc_number="1")
-        self.assertFormError(response.context["form"], "parent_doc_series", "Серия паспорта — 4 цифры.")
-        self.assertFormError(response.context["form"], "parent_doc_number", "Номер паспорта — 6 цифр.")
+    def test_parent_data_is_not_asked(self):
+        """Данные родителя вписываются в бланк от руки — сайт их не собирает."""
+        html = self.client.get(reverse("accounts:profile")).content.decode()
+        self.assertNotIn('name="parent_', html)
+        self._save_profile(birth_date_year="2012", grade="8")
+        self.assertTrue(ParticipantProfile.objects.get(user=self.user).is_complete)
 
     def test_no_blank_until_profile_is_complete(self):
         response = self.client.get(reverse("accounts:consent_blank"))
@@ -289,8 +273,9 @@ class ConsentPdfTest(TestCase):
 
         values = consent_pdf.values_for(self._kid(last_name="О'Нил").profile)
         self.assertEqual(values["participant_name"], "О'Нил Пётр")
-        self.assertIn("серия 0000 № 000001", values["parent_document"])
-        self.assertIn("код подразделения 770-002", values["parent_document"])
+        self.assertIn("серия 0000 № 000000", values["participant_document"])
+        self.assertIn("код подразделения 770-001", values["participant_document"])
+        self.assertFalse(any(key.startswith("parent_") for key in values))
 
     def test_minor_text_is_about_the_child_and_both_sign(self):
         from . import consent_pdf
@@ -314,8 +299,7 @@ class ConsentPdfTest(TestCase):
         from . import consent_pdf
 
         long = "141701, Московская область, городской округ Долгопрудный, г. Долгопрудный, " * 3
-        kid = self._kid(reg_address=long, parent_reg_address=long, doc_issued_by=long,
-                        parent_doc_issued_by=long)
+        kid = self._kid(reg_address=long, doc_issued_by=long)
         _, pages = consent_pdf._render(kid.profile, consent_pdf._Styles(consent_pdf.FONT_SIZES[-1]))
         self.assertEqual(pages, 1)
 
@@ -346,7 +330,10 @@ class ConsentPdfTest(TestCase):
                              "Согласие действует", "письменным заявлением", "{{ operator }}",
                              "только следующих", "Остальные персональные данные не распространяются"):
                     self.assertIn(part, text)
-        self.assertIn("Перечень моих персональных данных", legal_templates.CONSENT_FORM_MINOR)
+                self.assertIn("Федеральным законом от 27.07.2006 № 152-ФЗ", " ".join(text.split()))
+                self.assertNotIn("стать", text)  # ссылка на закон целиком
+        # Данные родителя сайт не обрабатывает — согласия на них в тексте нет.
+        self.assertNotIn("моих персональных данных", legal_templates.CONSENT_FORM_MINOR)
 
 
 class EmailConfirmTest(TestCase):

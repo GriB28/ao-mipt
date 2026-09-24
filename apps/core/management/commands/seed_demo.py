@@ -133,13 +133,6 @@ class Command(BaseCommand):
                         "doc_issued_at": date(2024, 3, 20), "doc_issued_by": "ГУ МВД России по г. Москве",
                         "doc_division_code": "770-001",
                         "reg_address": "101000, г. Москва, ул. Примерная, д. 1, кв. 1",
-                        "parent_last_name": "Тестова", "parent_first_name": "Анна",
-                        "parent_middle_name": "Сергеевна",
-                        "parent_doc_type": DocumentType.PASSPORT_RF, "parent_doc_series": "0000",
-                        "parent_doc_number": "000001", "parent_doc_issued_at": date(2015, 6, 1),
-                        "parent_doc_issued_by": "ГУ МВД России по г. Москве",
-                        "parent_doc_division_code": "770-002",
-                        "parent_reg_address": "101000, г. Москва, ул. Примерная, д. 1, кв. 1",
                         "consent_given": True, "consent_given_at": now,
                     },
                 )

@@ -2,10 +2,13 @@
 Бланк согласия на обработку ПД в PDF — по шаблону оргкомитета.
 
 Собирается из анкеты: школьник скачивает его, печатает, подписывает и
-загружает скан обратно. Сверху — данные участника (и законного
-представителя, если участнику нет 18) в строках с подписями под ними,
-как в бумажном шаблоне; дальше — текст согласия; внизу — ФИО, подпись и
-дата каждого, кто подписывает. От руки — только подписи и даты.
+загружает скан обратно. Сверху — данные участника в строках с подписями
+под ними, как в бумажном шаблоне; дальше — текст согласия; внизу — ФИО,
+подпись и дата каждого, кто подписывает.
+
+Если участнику нет 18, согласие даёт законный представитель (родитель):
+свои ФИО, паспорт и адрес он вписывает от руки в пустые строки — на
+сайте его данных нет, — и подписывают бланк двое: родитель и участник.
 
 Текст берётся со страницы consent-form-minor / consent-form-adult, если
 её завели в админке, иначе — из apps/core/legal_templates.py.
@@ -110,9 +113,6 @@ def values_for(profile) -> dict:
         "participant_birth_date": _date(profile.birth_date),
         "participant_document": _passport_line(profile, "") if profile.doc_type else "",
         "participant_address": profile.reg_address,
-        "parent_name": profile.parent_full_name,
-        "parent_document": _passport_line(profile, "parent_") if profile.parent_doc_type else "",
-        "parent_address": profile.parent_reg_address,
         "operator": legal_templates.CONSENT_OPERATOR,
         "contact_email": settings.CONTACT_EMAIL,
         "today": _date(timezone.localdate()),
@@ -181,6 +181,30 @@ def _fields(rows, styles):
     return story
 
 
+#: Высота строки для заполнения от руки — чтобы уместился почерк.
+HANDWRITING_LINE = 8 * mm
+
+
+def _blank_fields(rows, styles):
+    """Пустые строки для заполнения от руки, подпись — под последней строкой поля.
+
+    rows — список (подпись, сколько строк).
+    """
+    story = []
+    for caption, lines in rows:
+        cells = [[""] for _ in range(lines)] + [[Paragraph(caption, styles.caption)]]
+        table = Table(cells, colWidths=[PAGE_WIDTH],
+                      rowHeights=[HANDWRITING_LINE] * lines + [None])
+        table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "Serif"),
+            ("LINEBELOW", (0, 0), (-1, lines - 1), 0.6, "#000000"),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, -1), (-1, -1), 1.5),
+        ]))
+        story.append(table)
+    return story
+
+
 def _signatures(signers, styles):
     """ФИО | подпись | дата — для каждого, кто подписывает."""
     rows, style = [], [
@@ -191,11 +215,12 @@ def _signatures(signers, styles):
     ]
     for i, (name, caption) in enumerate(signers):
         top = i * 2
+        # Пустое имя — строка для заполнения от руки (ФИО родителя).
         rows.append([Paragraph(html.escape(name), styles.value), "", ""])
         rows.append([Paragraph(caption, styles.caption), Paragraph("подпись", styles.caption),
                      Paragraph("дата", styles.caption)])
         style += [("LINEBELOW", (0, top), (-1, top), 0.6, "#000000"),
-                  ("TOPPADDING", (0, top), (-1, top), 10),
+                  ("TOPPADDING", (0, top), (-1, top), 14),
                   ("BOTTOMPADDING", (0, top + 1), (-1, top + 1), 3)]
     table = Table(rows, colWidths=[PAGE_WIDTH * 0.55, PAGE_WIDTH * 0.27, PAGE_WIDTH * 0.18])
     table.setStyle(TableStyle(style))
@@ -253,10 +278,11 @@ def _render(profile, styles):
         story.append(Paragraph(
             "Законный представитель Участника <i>(на основании п. 1 ст. 64 "
             "Семейного кодекса РФ)</i>", styles.heading))
-        story += _fields([
-            [("ФИО представителя", profile.parent_full_name, 1.0)],
-            [(DOCUMENT_CAPTION, values["parent_document"], 1.0)],
-            [("Адрес регистрации по паспорту", profile.parent_reg_address, 1.0)],
+        # Данные родителя — от руки: на сайте их нет.
+        story += _blank_fields([
+            ("ФИО законного представителя (полностью)", 1),
+            ("Паспорт: серия, номер, кем и когда выдан, код подразделения", 2),
+            ("Адрес регистрации по паспорту", 2),
         ], styles)
     story.append(Spacer(1, 2 * mm))
 
@@ -282,7 +308,7 @@ def _render(profile, styles):
             story.append(Paragraph(block, styles.body))
 
     if minor:
-        signers = [(profile.parent_full_name, "ФИО законного представителя"),
+        signers = [("", "ФИО законного представителя"),
                    (profile.full_name, "ФИО участника (субъекта персональных данных)")]
     else:
         signers = [(profile.full_name, "ФИО участника")]

@@ -122,10 +122,8 @@ def _years(back, forward=0):
 class ProfileForm(forms.ModelForm):
     """Полная анкета участника: из неё собирается бланк согласия.
 
-    Если участнику нет 18, заполняется и раздел законного представителя:
-    согласие даёт он, и его данные попадают в бланк. Обязателен раздел
-    только для несовершеннолетних — проверяется здесь, на сервере; на
-    странице он прячется скриптом для взрослых.
+    Данных родителя здесь нет: если участнику нет 18, родитель вписывает
+    свои данные в бланк согласия от руки, сайт их не обрабатывает.
     """
 
     region = forms.ChoiceField(label="Регион", choices=[("", "— выберите регион —")] + [
@@ -138,31 +136,17 @@ class ProfileForm(forms.ModelForm):
             "doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by",
             "doc_division_code", "reg_address",
             "grade", "school", "city", "region", "phone", "telegram",
-            "parent_last_name", "parent_first_name", "parent_middle_name",
-            "parent_doc_type", "parent_doc_series", "parent_doc_number",
-            "parent_doc_issued_at", "parent_doc_issued_by", "parent_doc_division_code",
-            "parent_reg_address",
         ]
-        labels = {
-            "doc_issued_by": "Кем выдан",
-            "parent_last_name": "Фамилия", "parent_first_name": "Имя",
-            "parent_middle_name": "Отчество", "parent_doc_type": "Документ",
-            "parent_doc_series": "Серия", "parent_doc_number": "Номер",
-            "parent_doc_issued_at": "Дата выдачи", "parent_doc_issued_by": "Кем выдан",
-            "parent_doc_division_code": "Код подразделения",
-            "parent_reg_address": "Адрес регистрации по паспорту",
-        }
+        labels = {"doc_issued_by": "Кем выдан"}
         help_texts = {
             "doc_type": "До 14 лет — свидетельство о рождении",
             "doc_issued_by": "Как написано в документе",
             "doc_division_code": "Только для паспорта РФ, например 770-001",
-            "parent_doc_division_code": "Только для паспорта РФ, например 770-001",
             "reg_address": "Как в паспорте, с индексом. Если паспорта ещё нет — адрес, "
                            "по которому вы зарегистрированы",
             "school": "Полное название, например: МБОУ «Лицей № 1»",
             "phone": "Для связи перед очным туром и финалом",
             "telegram": "Ник, например @ivanov. Если Telegram нет — номер телефона",
-            "parent_reg_address": "Как в паспорте, с индексом",
         }
         widgets = {
             "reg_address": forms.Textarea(attrs={"rows": 2}),
@@ -170,15 +154,8 @@ class ProfileForm(forms.ModelForm):
             "phone": forms.TextInput(attrs={"type": "tel", "autocomplete": "tel"}),
             "doc_series": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "4510"}),
             "doc_number": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "123456"}),
-            "parent_reg_address": forms.Textarea(attrs={"rows": 2}),
-            "parent_doc_issued_by": forms.Textarea(attrs={"rows": 2}),
-            "parent_doc_series": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "4510"}),
-            "parent_doc_number": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "123456"}),
             "doc_division_code": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "770-001",
                                                         "inputmode": "numeric"}),
-            "parent_doc_division_code": forms.TextInput(attrs={"autocomplete": "off",
-                                                               "placeholder": "770-001",
-                                                               "inputmode": "numeric"}),
         }
 
     #: Группы полей — так они и показываются на странице.
@@ -188,13 +165,7 @@ class ProfileForm(forms.ModelForm):
          ("doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by",
           "doc_division_code", "reg_address")),
         ("Учёба и связь", ("grade", "school", "city", "region", "phone", "telegram")),
-        ("Родитель или законный представитель",
-         ("parent_last_name", "parent_first_name", "parent_middle_name", "parent_doc_type",
-          "parent_doc_series", "parent_doc_number", "parent_doc_issued_at",
-          "parent_doc_issued_by", "parent_doc_division_code", "parent_reg_address")),
     )
-    #: Раздел, который нужен только несовершеннолетним.
-    PARENT_SECTION = "Родитель или законный представитель"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -202,12 +173,8 @@ class ProfileForm(forms.ModelForm):
             self.fields[name].required = True
         self.fields["birth_date"].widget = DayMonthYearWidget(years=_years(back=25, forward=-6))
         self.fields["doc_issued_at"].widget = DayMonthYearWidget(years=_years(back=25))
-        self.fields["parent_doc_issued_at"].widget = DayMonthYearWidget(years=_years(back=60))
         self.fields["grade"].widget.attrs.update({"min": 1, "max": 11})
         self.fields["doc_type"].choices = [("", "— выберите документ —")] + DocumentType.choices
-        # Свидетельство о рождении бывает только у самого участника.
-        self.fields["parent_doc_type"].choices = [("", "— выберите документ —")] + [
-            c for c in DocumentType.choices if c[0] != DocumentType.BIRTH_CERT]
         # Регион, записанный до появления списка, мог в него не попасть —
         # не выбрасываем анкету из-за этого, а добавляем значение в choices.
         current = self.instance.region if self.instance and self.instance.pk else ""
@@ -215,8 +182,7 @@ class ProfileForm(forms.ModelForm):
             self.fields["region"].choices = list(self.fields["region"].choices) + [(current, current)]
 
     def sections(self):
-        return [(title, [self[n] for n in names], title == self.PARENT_SECTION)
-                for title, names in self.SECTIONS]
+        return [(title, [self[n] for n in names]) for title, names in self.SECTIONS]
 
     def clean_grade(self):
         grade = self.cleaned_data.get("grade")
@@ -250,17 +216,10 @@ class ProfileForm(forms.ModelForm):
         issued = cleaned.get("doc_issued_at")
         if issued and birth and issued < birth:
             self.add_error("doc_issued_at", "Документ не мог быть выдан раньше рождения.")
-        self._check_document(cleaned, "")
-
-        # Представитель нужен, если участнику нет 18 (или дата не указана).
-        if ParticipantProfile(birth_date=birth).is_minor:
-            for name in ParticipantProfile.PARENT_REQUIRED_FIELDS:
-                if not cleaned.get(name) and name not in self.errors:
-                    self.add_error(name, "Нужно, если участнику нет 18 лет.")
-            self._check_document(cleaned, "parent_")
+        self._check_document(cleaned)
         return cleaned
 
-    def _check_document(self, cleaned, prefix):
+    def _check_document(self, cleaned, prefix=""):
         """Серия и номер по виду документа: ловим опечатки, не мешаем редким случаям."""
         kind = cleaned.get(f"{prefix}doc_type")
         series = re.sub(r"\s+", "", cleaned.get(f"{prefix}doc_series") or "").upper()

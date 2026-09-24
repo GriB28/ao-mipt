@@ -258,7 +258,6 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   margin-bottom: var(--space-3);
   padding: 0;
 }
-.form-section[hidden] { display: none; }
 /* Серия и номер документа — в одну строку. */
 .field-row { display: grid; grid-template-columns: 2fr 3fr; gap: var(--space-3); }
 /* Дата тремя списками: число, месяц, год. */

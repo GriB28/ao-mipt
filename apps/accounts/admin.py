@@ -40,10 +40,6 @@ PROFILE_FIELDSETS = (
                              "grade", "school", "city", "region", "phone", "telegram")}),
     ("Документ и адрес", {"fields": ("doc_type", "doc_series", "doc_number", "doc_issued_at",
                                      "doc_issued_by", "doc_division_code", "reg_address")}),
-    ("Законный представитель", {"fields": (
-        "parent_last_name", "parent_first_name", "parent_middle_name", "parent_doc_type",
-        "parent_doc_series", "parent_doc_number", "parent_doc_issued_at",
-        "parent_doc_issued_by", "parent_doc_division_code", "parent_reg_address")}),
     ("Согласие при регистрации", {"fields": ("consent_given", "consent_given_at",
                                              "consent_version")}),
 )
