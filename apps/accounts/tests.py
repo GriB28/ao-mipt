@@ -66,7 +66,7 @@ def profile_data(**extra):
         "doc_issued_at_day": "1", "doc_issued_at_month": "6", "doc_issued_at_year": "2024",
         "doc_issued_by": "ГУ МВД России по г. Москве", "doc_division_code": "770001",
         "reg_address": "101000, Москва, ул. Мира, 1", "grade": "10", "school": "Школа № 1",
-        "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "",
+        "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "@vasya_p",
         "parent_last_name": "Пупкина", "parent_first_name": "Мария", "parent_middle_name": "",
         "parent_doc_type": "passport_rf", "parent_doc_series": "4500", "parent_doc_number": "654321",
         "parent_doc_issued_at_day": "1", "parent_doc_issued_at_month": "1",
@@ -117,6 +117,17 @@ class ParticipationStepsTest(TestCase):
         self._save_profile(doc_series="45 10", doc_number="123 456")
         profile = ParticipantProfile.objects.get(user=self.user)
         self.assertEqual((profile.doc_series, profile.doc_number), ("4510", "123456"))
+
+    def test_telegram_is_required_or_phone_instead(self):
+        response = self._save_profile(telegram="")
+        self.assertFormError(response.context["form"], "telegram", "Обязательное поле.")
+        response = self._save_profile(telegram="вася")
+        self.assertIn("telegram", response.context["form"].errors)
+        for given, stored in (("vasya_p", "@vasya_p"), ("https://t.me/vasya_p", "@vasya_p"),
+                              ("+7 900 123-45-67", "+7 900 123-45-67")):
+            with self.subTest(given=given):
+                self._save_profile(telegram=given)
+                self.assertEqual(ParticipantProfile.objects.get(user=self.user).telegram, stored)
 
     def test_division_code_for_passport(self):
         self._save_profile()

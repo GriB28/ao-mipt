@@ -224,7 +224,7 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
 
     #: Серия не входит: у иностранных документов её бывает нет.
     REQUIRED_FIELDS = ("last_name", "first_name", "birth_date", "grade", "school", "city",
-                       "region", "phone", "doc_type", "doc_number", "doc_issued_at",
+                       "region", "phone", "telegram", "doc_type", "doc_number", "doc_issued_at",
                        "doc_issued_by", "reg_address")
     #: То же для представителя — только если участнику нет 18.
     PARENT_REQUIRED_FIELDS = ("parent_last_name", "parent_first_name", "parent_doc_type",

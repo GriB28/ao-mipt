@@ -43,14 +43,21 @@ _fonts_ready = False
 
 
 def _register_fonts():
-    """DejaVu лежит в репозитории: у стандартных шрифтов PDF нет кириллицы."""
+    """Liberation Serif — метрический двойник Times New Roman.
+
+    Сам Times New Roman — шрифт Microsoft, класть его в репозиторий и
+    образ нельзя. Liberation Serif совпадает с ним по ширинам символов
+    и почти неотличим на вид, с кириллицей, под свободной лицензией
+    SIL OFL (fonts/LICENSE). У стандартных шрифтов PDF кириллицы нет.
+    """
     global _fonts_ready
     if _fonts_ready:
         return
-    pdfmetrics.registerFont(TTFont("DejaVu", FONT_DIR / "DejaVuSans.ttf"))
-    pdfmetrics.registerFont(TTFont("DejaVu-Bold", FONT_DIR / "DejaVuSans-Bold.ttf"))
-    pdfmetrics.registerFontFamily("DejaVu", normal="DejaVu", bold="DejaVu-Bold",
-                                  italic="DejaVu", boldItalic="DejaVu-Bold")
+    for style, suffix in (("", "Regular"), ("-Bold", "Bold"), ("-Italic", "Italic"),
+                          ("-BoldItalic", "BoldItalic")):
+        pdfmetrics.registerFont(TTFont(f"Serif{style}", FONT_DIR / f"LiberationSerif-{suffix}.ttf"))
+    pdfmetrics.registerFontFamily("Serif", normal="Serif", bold="Serif-Bold",
+                                  italic="Serif-Italic", boldItalic="Serif-BoldItalic")
     _fonts_ready = True
 
 
@@ -132,18 +139,20 @@ def _blocks(text):
 
 
 class _Styles:
-    def __init__(self, size=8.8):
-        self.title = ParagraphStyle("title", fontName="DejaVu-Bold", fontSize=11.5, leading=15,
+    """Как в бумажных бланках: основной текст прямой, подписи под строками —
+    мелким курсивом (не серым: серый плохо пропечатывается и сканируется)."""
+
+    def __init__(self, size=10.5):
+        self.title = ParagraphStyle("title", fontName="Serif-Bold", fontSize=13, leading=16,
                                     alignment=1)
-        self.body = ParagraphStyle("body", fontName="DejaVu", fontSize=size, leading=size * 1.25,
+        self.body = ParagraphStyle("body", fontName="Serif", fontSize=size, leading=size * 1.2,
                                    spaceAfter=3, alignment=4)  # 4 — по ширине
         self.item = ParagraphStyle("item", parent=self.body, spaceAfter=0, alignment=0)
-        self.value = ParagraphStyle("value", fontName="DejaVu", fontSize=min(size, 9),
-                                    leading=min(size, 9) * 1.22)
-        self.caption = ParagraphStyle("caption", fontName="DejaVu", fontSize=7, leading=9,
-                                      alignment=1, textColor="#555555")
-        self.small = ParagraphStyle("small", fontName="DejaVu", fontSize=7.5, leading=9.5,
-                                    textColor="#555555")
+        self.value = ParagraphStyle("value", fontName="Serif", fontSize=min(size, 11),
+                                    leading=min(size, 11) * 1.2)
+        self.caption = ParagraphStyle("caption", fontName="Serif-Italic", fontSize=8, leading=9.5,
+                                      alignment=1)
+        self.small = ParagraphStyle("small", fontName="Serif-Italic", fontSize=8.5, leading=10)
 
 
 def _fields(rows, styles):
@@ -173,6 +182,7 @@ def _fields(rows, styles):
 def _signatures(signers, styles):
     """ФИО | подпись | дата — для каждого, кто подписывает."""
     rows, style = [], [
+        ("FONTNAME", (0, 0), (-1, -1), "Serif"),
         ("LEFTPADDING", (0, 0), (-1, -1), 2 * mm),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2 * mm),
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
@@ -190,8 +200,12 @@ def _signatures(signers, styles):
     return table
 
 
+#: Подпись под строкой документа — у участника и у представителя одна и та же.
+DOCUMENT_CAPTION = ("Документ, удостоверяющий личность: вид, серия, номер, "
+                    "кем и когда выдан, код подразделения")
+
 #: Размеры основного шрифта, которые пробуем по очереди.
-FONT_SIZES = (8.8, 8.4, 8.0, 7.6, 7.2)
+FONT_SIZES = (10.5, 10, 9.5, 9, 8.5, 8)
 
 
 def build(profile) -> bytes:
@@ -220,13 +234,11 @@ def _render(profile, styles):
              Paragraph("на обработку персональных данных", styles.title),
              Spacer(1, 3 * mm)]
 
+    # Документ участника и представителя — одной строкой и под одной
+    # подписью: так бланк читается одинаково сверху донизу.
     story += _fields([
         [("ФИО", profile.full_name, 0.72), ("Дата рождения", _date(profile.birth_date), 0.28)],
-        [("Тип документа", profile.get_doc_type_display(), 0.34),
-         ("Серия", profile.doc_series, 0.18), ("Номер", profile.doc_number, 0.22),
-         ("Дата выдачи", _date(profile.doc_issued_at), 0.26)],
-        [("Кем выдан", profile.doc_issued_by, 0.76),
-         ("Код подразделения", profile.doc_division_code, 0.24)],
+        [(DOCUMENT_CAPTION, values["participant_document"], 1.0)],
         [("Адрес регистрации по паспорту", profile.reg_address, 1.0)],
     ], styles)
 
@@ -235,8 +247,7 @@ def _render(profile, styles):
                                "на основании п. 1 ст. 64 Семейного кодекса РФ", styles.body))
         story += _fields([
             [("ФИО представителя", profile.parent_full_name, 1.0)],
-            [("Паспортные данные: серия, номер, кем и когда выдан, код подразделения",
-              values["parent_document"], 1.0)],
+            [(DOCUMENT_CAPTION, values["parent_document"], 1.0)],
             [("Адрес регистрации по паспорту", profile.parent_reg_address, 1.0)],
         ], styles)
     story.append(Spacer(1, 2 * mm))
@@ -252,7 +263,8 @@ def _render(profile, styles):
             half = (len(items) + 1) // 2
             left, right = items[:half], items[half:] + [""] * (2 * half - len(items))
             columns = Table(list(zip(left, right, strict=True)), colWidths=[PAGE_WIDTH / 2] * 2)
-            columns.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 4 * mm),
+            columns.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "Serif"),
+                                         ("LEFTPADDING", (0, 0), (-1, -1), 4 * mm),
                                          ("TOPPADDING", (0, 0), (-1, -1), 0),
                                          ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
                                          ("VALIGN", (0, 0), (-1, -1), "TOP")]))

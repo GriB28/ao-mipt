@@ -18,7 +18,7 @@ def make_eligible(user, **profile_fields):
     defaults = {
         "last_name": "Тестов", "first_name": "Пётр", "birth_date": date(2010, 1, 1),
         "grade": 10, "school": "Школа", "city": "Москва", "region": "Москва",
-        "phone": "+7 900 000-00-00", "doc_type": DocumentType.PASSPORT_RF,
+        "phone": "+7 900 000-00-00", "telegram": "@testov", "doc_type": DocumentType.PASSPORT_RF,
         "doc_series": "0000", "doc_number": "000000", "doc_issued_at": date(2024, 1, 10),
         "doc_issued_by": "МВД", "doc_division_code": "770-001", "reg_address": "Москва",
         "parent_last_name": "Тестова", "parent_first_name": "Анна",

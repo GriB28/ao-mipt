@@ -161,7 +161,7 @@ class ProfileForm(forms.ModelForm):
                            "по которому вы зарегистрированы",
             "school": "Полное название, например: МБОУ «Лицей № 1»",
             "phone": "Для связи перед очным туром и финалом",
-            "telegram": "Необязательно. Например: @ivanov",
+            "telegram": "Ник, например @ivanov. Если Telegram нет — номер телефона",
             "parent_reg_address": "Как в паспорте, с индексом",
         }
         widgets = {
@@ -223,6 +223,20 @@ class ProfileForm(forms.ModelForm):
         if grade is not None and not 1 <= grade <= 11:
             raise forms.ValidationError("Класс — от 1 до 11.")
         return grade
+
+    def clean_telegram(self):
+        """@ник, ссылка t.me/ник или — если Telegram нет — номер телефона."""
+        value = self.cleaned_data.get("telegram", "").strip()
+        link = re.fullmatch(r"(?:https?://)?(?:t\.me|telegram\.me)/@?(\w+)/?", value, re.I)
+        if link:
+            value = link.group(1)
+        if re.fullmatch(r"@?[A-Za-z][A-Za-z0-9_]{4,31}", value):
+            return "@" + value.lstrip("@")
+        if len(re.sub(r"\D", "", value)) >= 10 and re.fullmatch(r"[\d\s()+-]+", value):
+            return value
+        raise forms.ValidationError(
+            "Укажите ник в Telegram (например, @ivanov) или, если Telegram нет, номер телефона."
+        )
 
     def clean_phone(self):
         phone = self.cleaned_data.get("phone", "").strip()
