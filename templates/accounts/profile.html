@@ -48,19 +48,23 @@
 {% if profile.is_complete and consent and consent.grants_access and not form.errors %}
 <details class="profile-details">
   <summary>Анкета заполнена — посмотреть или изменить</summary>
-  <p class="note">Если измените ФИО, дату рождения, документ или адрес — понадобится
+  <p class="note">Если измените ФИО, дату рождения, документ или адрес (свои или родителя) — понадобится
     подписать и загрузить согласие заново. Класс, школу и телефон менять можно свободно.</p>
 {% endif %}
 <form method="post" class="form-narrow profile-form" novalidate>
   {% csrf_token %}
   {% if form.non_field_errors %}<p class="message error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
-  {% for title, fields in form.sections %}
-    <fieldset class="form-section">
+  {% for title, fields, is_parent in form.sections %}
+    <fieldset class="form-section"{% if is_parent %} id="parent-block"{% endif %}>
       <legend>{{ title }}</legend>
+      {% if is_parent %}
+        <p class="muted">Заполняется, если вам нет 18 лет: согласие на обработку ваших данных
+          даёт родитель или другой законный представитель, и его данные войдут в бланк.</p>
+      {% endif %}
       {% for field in fields %}
-        {% if field.name == "doc_series" %}<div class="field-row">{% endif %}
+        {% if field.name == "doc_series" or field.name == "parent_doc_series" %}<div class="field-row">{% endif %}
         {% include "accounts/_field.html" %}
-        {% if field.name == "doc_number" %}</div>{% endif %}
+        {% if field.name == "doc_number" or field.name == "parent_doc_number" %}</div>{% endif %}
       {% endfor %}
     </fieldset>
   {% endfor %}
@@ -101,9 +105,9 @@
         <span class="helptext">В бланк уже вписаны данные из анкеты. Проверьте их.</span>
       </li>
       <li>Распечатайте и подпишите.
-        {% if profile.is_minor %}Подписываете <strong>вы и родитель</strong> (или другой законный
-          представитель). Свои ФИО, паспорт и адрес родитель вписывает в бланк от руки — на
-          сайт их вводить не нужно.{% else %}Подписываете вы.{% endif %}</li>
+        {% if profile.is_minor %}Подписываете <strong>вы и родитель</strong> (законный
+          представитель из анкеты). Все данные в бланк уже вписаны — от руки только подписи
+          и дата.{% else %}Подписываете вы, от руки — только подпись и дата.{% endif %}</li>
       <li>
         <form method="post" action="{% url 'accounts:consent_upload' %}" enctype="multipart/form-data" class="form-narrow">
           {% csrf_token %}
@@ -114,4 +118,31 @@
     </ol>
   {% endif %}
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Раздел представителя нужен, только если нет 18. Сервер проверяет то же
+  // самое сам; здесь — чтобы взрослому не показывать лишние поля.
+  (function () {
+    var block = document.getElementById("parent-block");
+    var parts = ["day", "month", "year"].map(function (p) {
+      return document.getElementById("id_birth_date_" + p);
+    });
+    if (!block || parts.some(function (el) { return !el; })) return;
+    function update() {
+      var d = +parts[0].value, m = +parts[1].value, y = +parts[2].value;
+      var minor = true;
+      if (d && m && y) {
+        var now = new Date();
+        var age = now.getFullYear() - y;
+        if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
+        minor = age < 18;
+      }
+      block.hidden = !minor;
+    }
+    parts.forEach(function (el) { el.addEventListener("change", update); });
+    update();
+  })();
+</script>
 {% endblock %}

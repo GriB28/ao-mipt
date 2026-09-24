@@ -2,11 +2,14 @@
 {% block title %}Регистрация{% endblock %}
 {% block content %}
 <h1>Регистрация участника</h1>
-<p class="lead prose">После регистрации вы сможете сдавать задачи и записаться на очный тур.</p>
+<p class="lead prose">Нужны только почта и пароль. Мы пришлём письмо со ссылкой — после
+  подтверждения откроется личный кабинет. Чтобы записаться на очный тур и сдавать решения,
+  там же нужно будет заполнить анкету и загрузить согласие на обработку данных.</p>
 
-<form method="post" class="form-wide">
+<form method="post" class="form-narrow">
   {% csrf_token %}
-  {{ form.as_p }}
+  {% for field in form %}{% include "accounts/_field.html" %}{% endfor %}
   <button class="btn" type="submit">Зарегистрироваться</button>
 </form>
+<p class="muted"><a href="{% url 'content:page' 'privacy' %}">Политика обработки персональных данных</a></p>
 {% endblock %}

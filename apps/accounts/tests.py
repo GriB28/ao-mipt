@@ -19,7 +19,6 @@ class SignUpTest(TestCase):
         "email": "Vasya@Example.RU",
         "password1": "olymp12345",
         "password2": "olymp12345",
-        "consent": "on",
     }
 
     def test_signup_creates_user_and_empty_profile(self):
@@ -31,8 +30,6 @@ class SignUpTest(TestCase):
         user = User.objects.get(email="vasya@example.ru")  # почта приводится к нижнему регистру
         self.assertEqual(user.role, User.Role.PARTICIPANT)
         profile = ParticipantProfile.objects.get(user=user)
-        self.assertTrue(profile.consent_given)
-        self.assertIsNotNone(profile.consent_given_at)
         self.assertFalse(profile.is_complete)
         self.assertFalse(user.can_participate)
 
@@ -41,9 +38,10 @@ class SignUpTest(TestCase):
         for field in ("last_name", "school", "doc_number"):
             self.assertNotIn(f'name="{field}"', html)
 
-    def test_signup_requires_consent(self):
-        self.client.post(reverse("accounts:signup"), self.form_data | {"consent": ""})
-        self.assertFalse(User.objects.filter(email="vasya@example.ru").exists())
+    def test_signup_has_no_consent_checkboxes(self):
+        """Согласие — подписанным бланком из кабинета, не галочкой при регистрации."""
+        html = self.client.get(reverse("accounts:signup")).content.decode()
+        self.assertNotIn('type="checkbox"', html)
 
     def test_duplicate_email_rejected_regardless_of_case(self):
         User.objects.create_user("vasya@example.ru", "olymp12345")
@@ -69,6 +67,11 @@ def profile_data(**extra):
         "doc_issued_by": "ГУ МВД России по г. Москве",
         "reg_address": "101000, Москва, ул. Мира, 1", "grade": "10", "school": "Школа № 1",
         "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "",
+        "parent_last_name": "Пупкина", "parent_first_name": "Мария", "parent_middle_name": "",
+        "parent_doc_type": "passport_rf", "parent_doc_series": "4500", "parent_doc_number": "654321",
+        "parent_doc_issued_at_day": "1", "parent_doc_issued_at_month": "1",
+        "parent_doc_issued_at_year": "2012", "parent_doc_issued_by": "ОВД Тверской",
+        "parent_reg_address": "101000, Москва, ул. Мира, 1",
     } | extra
 
 
@@ -135,10 +138,22 @@ class ParticipationStepsTest(TestCase):
         self.assertIn('>число</option>', html[day:month])
         self.assertIn('>год</option>', html[year:])
 
-    def test_parent_data_is_not_asked(self):
-        """Данные представителя сайт не обрабатывает — он вписывает их в бланк от руки."""
-        html = self.client.get(reverse("accounts:profile")).content.decode()
-        self.assertNotIn('name="parent_', html)
+    def test_parent_is_required_for_minor_only(self):
+        no_parent = {k: "" for k in profile_data() if k.startswith("parent_")}
+        response = self._save_profile(**no_parent)
+        self.assertFormError(response.context["form"], "parent_last_name",
+                             "Нужно, если участнику нет 18 лет.")
+        self.assertFalse(ParticipantProfile.objects.get(user=self.user).is_complete)
+
+        self._save_profile(**no_parent, birth_date_year="2006", grade="11")
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertFalse(profile.is_minor)
+        self.assertTrue(profile.is_complete)
+
+    def test_parent_passport_is_checked_too(self):
+        response = self._save_profile(parent_doc_series="45", parent_doc_number="1")
+        self.assertFormError(response.context["form"], "parent_doc_series", "Серия паспорта — 4 цифры.")
+        self.assertFormError(response.context["form"], "parent_doc_number", "Номер паспорта — 6 цифр.")
 
     def test_no_blank_until_profile_is_complete(self):
         response = self.client.get(reverse("accounts:consent_blank"))
@@ -248,14 +263,17 @@ class ConsentPdfTest(TestCase):
         return kid, consent_pdf.fill(consent_pdf.template_text(minor=kid.profile.is_minor),
                                      consent_pdf.values_for(kid.profile))
 
-    def test_minor_blank_leaves_parent_lines_empty(self):
+    def test_minor_blank_is_filled_with_parent_data(self):
+        """От руки в бланке — только подписи: данные представителя из анкеты."""
         from . import consent_pdf
 
         kid, text = self._text(last_name="О'Нил")
         self.assertIn("О&#x27;Нил", text)  # данные экранированы для разметки reportlab
         self.assertIn("серия 0000 № 000000", text)
-        self.assertIn("(фамилия, имя, отчество законного представителя полностью)", text)
+        self.assertIn("Я, Тестова Анна", text)
+        self.assertIn("серия 0000 № 000001", text)
         self.assertNotIn("{{", text)
+        self.assertNotIn("_____", text)
         self.assertTrue(consent_pdf.build(kid.profile).startswith(b"%PDF"))
 
     def test_unknown_placeholder_becomes_a_blank_line(self):
@@ -439,7 +457,6 @@ class OrganizerAccessTest(TestCase):
 
 
 class ConsentTest(TestCase):
-    def test_signup_page_links_to_consent_documents(self):
+    def test_signup_page_links_to_privacy_policy(self):
         html = self.client.get(reverse("accounts:signup")).content.decode()
-        self.assertIn(reverse("content:page", args=["consent"]), html)
         self.assertIn(reverse("content:page", args=["privacy"]), html)

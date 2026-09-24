@@ -166,9 +166,10 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     (и подтверждение почты). Для участия (запись на площадку, сдача
     решений, второй тур) — полная анкета с документом и адресом: из неё
     собирается бланк согласия на обработку ПД, который школьник
-    подписывает и загружает сканом. Если участнику нет 18, бланк
-    подписывает и законный представитель — его данные вписываются в
-    бланк от руки, на сайте они не вводятся и не хранятся.
+    подписывает и загружает сканом. Если участнику нет 18, в анкете
+    заполняются и данные законного представителя: согласие даёт он, и
+    по 152-ФЗ его ФИО, документ и адрес должны быть в бланке. От руки
+    в бланке только подписи — участника и представителя.
 
     Паспортные данные видят только администраторы (см. admin.py).
     Поля в базе необязательные: полноту проверяет форма и is_complete,
@@ -203,15 +204,35 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
                                    help_text="Как в паспорте, с индексом")
 
     #: Без чего анкета участника не считается заполненной.
+    # --- Законный представитель (если участнику нет 18) ------------------
+    parent_last_name = models.CharField("фамилия представителя", max_length=100, blank=True)
+    parent_first_name = models.CharField("имя представителя", max_length=100, blank=True)
+    parent_middle_name = models.CharField("отчество представителя", max_length=100, blank=True)
+    parent_doc_type = models.CharField("документ представителя", max_length=20,
+                                       choices=DocumentType.choices, blank=True)
+    parent_doc_series = models.CharField("серия (представитель)", max_length=20, blank=True)
+    parent_doc_number = models.CharField("номер (представитель)", max_length=30, blank=True)
+    parent_doc_issued_at = models.DateField("дата выдачи (представитель)", null=True, blank=True)
+    parent_doc_issued_by = models.CharField("кем выдан (представитель)", max_length=300, blank=True)
+    parent_reg_address = models.CharField("адрес регистрации (представитель)", max_length=500,
+                                          blank=True)
+
     #: Серия не входит: у иностранных документов её бывает нет.
     REQUIRED_FIELDS = ("last_name", "first_name", "birth_date", "grade", "school", "city",
                        "region", "phone", "doc_type", "doc_number", "doc_issued_at",
                        "doc_issued_by", "reg_address")
+    #: То же для представителя — только если участнику нет 18.
+    PARENT_REQUIRED_FIELDS = ("parent_last_name", "parent_first_name", "parent_doc_type",
+                              "parent_doc_number", "parent_doc_issued_at",
+                              "parent_doc_issued_by", "parent_reg_address")
     #: Данные, которые попадают в бланк согласия. Если их поменять после
     #: загрузки скана, подписанное согласие перестаёт им соответствовать.
     CONSENT_FIELDS = ("last_name", "first_name", "middle_name", "birth_date",
                       "doc_type", "doc_series", "doc_number", "doc_issued_at",
-                      "doc_issued_by", "reg_address")
+                      "doc_issued_by", "reg_address",
+                      "parent_last_name", "parent_first_name", "parent_middle_name",
+                      "parent_doc_type", "parent_doc_series", "parent_doc_number",
+                      "parent_doc_issued_at", "parent_doc_issued_by", "parent_reg_address")
 
     class Meta:
         verbose_name = "анкета участника"
@@ -223,6 +244,11 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     @property
     def full_name(self):
         return " ".join(filter(None, [self.last_name, self.first_name, self.middle_name]))
+
+    @property
+    def parent_full_name(self):
+        return " ".join(filter(None, [self.parent_last_name, self.parent_first_name,
+                                      self.parent_middle_name]))
 
     def age(self, on=None):
         if not self.birth_date:
@@ -248,6 +274,10 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
         missing = [n for n in self.REQUIRED_FIELDS if not getattr(self, n)]
         if self.doc_type in DOC_TYPES_WITH_SERIES and not self.doc_series:
             missing.append("doc_series")
+        if self.is_minor:
+            missing += [n for n in self.PARENT_REQUIRED_FIELDS if not getattr(self, n)]
+            if self.parent_doc_type in DOC_TYPES_WITH_SERIES and not self.parent_doc_series:
+                missing.append("parent_doc_series")
         return [self._meta.get_field(n).verbose_name for n in missing]
 
     @property
@@ -289,7 +319,7 @@ class ConsentDocument(TimeStampedModel):
                              verbose_name="участник")
     file = models.FileField("скан", upload_to=consent_upload_path)
     original_name = models.CharField("исходное имя", max_length=255, blank=True)
-    for_minor = models.BooleanField("подписывает и представитель", default=True)
+    for_minor = models.BooleanField("согласие даёт представитель", default=True)
     data = models.JSONField("данные в бланке", default=dict, blank=True,
                             help_text="Что было в анкете в момент загрузки")
     status = models.CharField("статус", max_length=10, choices=Status.choices, default=Status.PENDING)

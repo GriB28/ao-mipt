@@ -2,9 +2,9 @@
 Бланк согласия на обработку ПД в PDF.
 
 Собирается из данных анкеты: школьник скачивает его, печатает,
-подписывает и загружает скан обратно. Если участнику нет 18, бланк
-подписывают двое — участник и законный представитель; данные
-представителя вписываются от руки, на сайте их нет.
+подписывает и загружает скан обратно. Если участнику нет 18, согласие
+даёт законный представитель — его данные тоже из анкеты, — а подписывают
+бланк двое: представитель и участник. От руки — только подписи и дата.
 
 Текст берётся со страницы consent-form-minor / consent-form-adult,
 если её завели в админке, иначе — из apps/core/legal_templates.py.
@@ -49,14 +49,22 @@ def _date(value):
     return value.strftime("%d.%m.%Y") if value else "________"
 
 
-def _document(profile):
-    """«паспорт РФ серия 4510 № 123456, выдан 01.02.2020, ГУ МВД …» — внутри фразы, со строчной."""
-    label = profile.get_doc_type_display()
+def _document(profile, prefix=""):
+    """«паспорт РФ серия 4510 № 123456, выдан 01.02.2020, ГУ МВД …» — внутри фразы, со строчной.
+
+    prefix="parent_" — документ законного представителя.
+    """
+    kind = getattr(profile, f"{prefix}doc_type")
+    if not kind:
+        return legal_templates.BLANK
+    label = getattr(profile, f"get_{prefix}doc_type_display")()
     label = label[:1].lower() + label[1:]
-    series = f"серия {profile.doc_series} " if profile.doc_series else ""
-    issued = "выдано" if profile.doc_type == "birth_cert" else "выдан"
-    return (f"{label} {series}№ {profile.doc_number}, {issued} "
-            f"{_date(profile.doc_issued_at)}, {profile.doc_issued_by}")
+    series = getattr(profile, f"{prefix}doc_series")
+    series = f"серия {series} " if series else ""
+    issued = "выдано" if kind == "birth_cert" else "выдан"
+    return (f"{label} {series}№ {getattr(profile, f'{prefix}doc_number')}, {issued} "
+            f"{_date(getattr(profile, f'{prefix}doc_issued_at'))}, "
+            f"{getattr(profile, f'{prefix}doc_issued_by')}")
 
 
 def template_text(minor: bool) -> str:
@@ -88,6 +96,9 @@ def values_for(profile) -> dict:
         "participant_birth_date": _date(profile.birth_date),
         "participant_document": _document(profile),
         "participant_address": profile.reg_address,
+        "parent_name": profile.parent_full_name or legal_templates.BLANK,
+        "parent_document": _document(profile, "parent_"),
+        "parent_address": profile.parent_reg_address or legal_templates.BLANK,
         "operator": legal_templates.CONSENT_OPERATOR,
         "contact_email": settings.CONTACT_EMAIL,
         "today": _date(timezone.localdate()),
@@ -137,10 +148,9 @@ def build(profile) -> bytes:
     story.append(Spacer(1, 6 * mm))
 
     # Подписывают оба: участник и, если ему нет 18, законный представитель.
-    # ФИО представителя на сайте нет — строка для него пустая.
     rows = []
     if minor:
-        rows.append(["Законный представитель:", "______________", "/ " + "_" * 26 + " /"])
+        rows.append(["Законный представитель:", "______________", f"/ {profile.parent_full_name} /"])
     rows.append(["Участник:", "______________", f"/ {profile.full_name} /"])
     rows.append(["Дата:", "«____» ____________ 20____ г.", ""])
     sign = Table(rows, colWidths=[55 * mm, 45 * mm, 75 * mm])
