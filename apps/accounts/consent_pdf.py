@@ -227,7 +227,7 @@ def _render(profile, styles):
          ("Дата выдачи", _date(profile.doc_issued_at), 0.26)],
         [("Кем выдан", profile.doc_issued_by, 0.76),
          ("Код подразделения", profile.doc_division_code, 0.24)],
-        [("Адрес регистрации", profile.reg_address, 1.0)],
+        [("Адрес регистрации по паспорту", profile.reg_address, 1.0)],
     ], styles)
 
     if minor:
@@ -237,7 +237,7 @@ def _render(profile, styles):
             [("ФИО представителя", profile.parent_full_name, 1.0)],
             [("Паспортные данные: серия, номер, кем и когда выдан, код подразделения",
               values["parent_document"], 1.0)],
-            [("Адрес места постоянной регистрации", profile.parent_reg_address, 1.0)],
+            [("Адрес регистрации по паспорту", profile.parent_reg_address, 1.0)],
         ], styles)
     story.append(Spacer(1, 2 * mm))
 

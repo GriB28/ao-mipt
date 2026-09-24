@@ -150,14 +150,15 @@ class ProfileForm(forms.ModelForm):
             "parent_doc_series": "Серия", "parent_doc_number": "Номер",
             "parent_doc_issued_at": "Дата выдачи", "parent_doc_issued_by": "Кем выдан",
             "parent_doc_division_code": "Код подразделения",
-            "parent_reg_address": "Адрес регистрации",
+            "parent_reg_address": "Адрес регистрации по паспорту",
         }
         help_texts = {
             "doc_type": "До 14 лет — свидетельство о рождении",
             "doc_issued_by": "Как написано в документе",
             "doc_division_code": "Только для паспорта РФ, например 770-001",
             "parent_doc_division_code": "Только для паспорта РФ, например 770-001",
-            "reg_address": "Как в паспорте, с индексом. Для свидетельства — адрес, где вы прописаны",
+            "reg_address": "Как в паспорте, с индексом. Если паспорта ещё нет — адрес, "
+                           "по которому вы зарегистрированы",
             "school": "Полное название, например: МБОУ «Лицей № 1»",
             "phone": "Для связи перед очным туром и финалом",
             "telegram": "Необязательно. Например: @ivanov",

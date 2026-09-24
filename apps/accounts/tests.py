@@ -288,8 +288,12 @@ class ConsentPdfTest(TestCase):
         text = " ".join(consent_pdf._blocks(consent_pdf.fill(
             consent_pdf.template_text(minor=True), consent_pdf.values_for(kid.profile))))
         self.assertIn("несовершеннолетнего ребенка (подопечного)", text)
-        self.assertIn("– гражданство.", text)
         self.assertIn("117303, г. Москва", text)  # адрес оператора
+        self.assertIn("до достижения целей обработки", text)  # срок действия
+        # Перечень — ровно то, что собирает сайт; рекламы нет.
+        self.assertIn("– адрес регистрации по паспорту;", text)
+        for extra in ("гражданство", "пол,", "места жительства", "место рождения", "рекламн"):
+            self.assertNotIn(extra, text)
         self.assertNotIn("{{", text)
         self.assertTrue(consent_pdf.build(kid.profile).startswith(b"%PDF"))
 

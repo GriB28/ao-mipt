@@ -202,7 +202,7 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     doc_issued_by = models.CharField("кем выдан", max_length=300, blank=True)
     doc_division_code = models.CharField("код подразделения", max_length=7, blank=True,
                                          help_text="Только для паспорта РФ")
-    reg_address = models.CharField("адрес регистрации", max_length=500, blank=True,
+    reg_address = models.CharField("адрес регистрации по паспорту", max_length=500, blank=True,
                                    help_text="Как в паспорте, с индексом")
 
     #: Без чего анкета участника не считается заполненной.
@@ -218,7 +218,8 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     parent_doc_issued_by = models.CharField("кем выдан (представитель)", max_length=300, blank=True)
     parent_doc_division_code = models.CharField("код подразделения (представитель)", max_length=7,
                                                 blank=True)
-    parent_reg_address = models.CharField("адрес регистрации (представитель)", max_length=500,
+    parent_reg_address = models.CharField("адрес регистрации по паспорту (представитель)",
+                                          max_length=500,
                                           blank=True)
 
     #: Серия не входит: у иностранных документов её бывает нет.
