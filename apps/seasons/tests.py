@@ -198,6 +198,9 @@ class PracticeStageTest(TestCase):
         self.assertTrue(Stage.objects.get(season__year=2027, is_practice=True).is_open)
 
     def test_practice_problem_offered_on_the_contest_page(self):
+        from apps.accounts.models import User
+
+        self.client.force_login(User.objects.get(email="student@example.ru"))
         html = self.client.get("/online/").content.decode()
         self.assertIn("Тренировочная задача", html)
 

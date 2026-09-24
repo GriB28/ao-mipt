@@ -2,7 +2,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import Http404, HttpResponse
@@ -16,47 +16,59 @@ from apps.seasons.models import Season
 
 from . import consent_pdf
 from .emails import read_token, send_confirmation
-from .forms import ConsentUploadForm, OrganizerProfileForm, ProfileForm, SignUpForm
+from .forms import (
+    ConsentUploadForm,
+    OrganizerProfileForm,
+    ProfileForm,
+    ResendConfirmationForm,
+    SignUpForm,
+)
 from .models import ConsentDocument, ParticipantProfile, User
 
 
 def signup(request):
-    """Регистрация школьника."""
+    """Регистрация школьника: почта и пароль. Вход — только после подтверждения почты."""
     if request.user.is_authenticated:
         return redirect("accounts:profile")
     form = SignUpForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
-        # Сразу отмечаем участие в текущем сезоне: без него нельзя
-        # записаться на площадку и человек не попадёт в рассылки по сезону.
-        season = Season.objects.active()
-        if season:
-            Registration.objects.get_or_create(user=user, season=season)
-        login(request, user)
+        if form.unconfirmed_user:
+            # Уже регистрировался, но письмо не открыл — шлём заново.
+            user = form.unconfirmed_user
+        else:
+            user = form.save()
+            # Сразу отмечаем участие в текущем сезоне: без него нельзя
+            # записаться на площадку и человек не попадёт в рассылки.
+            season = Season.objects.active()
+            if season:
+                Registration.objects.get_or_create(user=user, season=season)
         send_confirmation(request, user)
-        messages.success(
-            request,
-            "Регистрация завершена. Мы отправили письмо со ссылкой для подтверждения "
-            "почты — проверьте входящие и папку «Спам». Чтобы участвовать, заполните "
-            "анкету и загрузите согласие — всё здесь, в кабинете.",
-        )
-        return redirect("accounts:profile")
+        request.session["signup_email"] = user.email
+        return redirect("accounts:signup_done")
     return render(request, "accounts/signup.html", {"form": form})
+
+
+def signup_done(request):
+    """«Проверьте почту»: кабинет откроется после перехода по ссылке."""
+    return render(request, "accounts/signup_done.html", {
+        "email": request.session.get("signup_email", ""),
+        "form": ResendConfirmationForm(initial={"email": request.session.get("signup_email", "")}),
+    })
 
 
 def confirm_email(request, token):
     """Переход по ссылке из письма.
 
-    Ссылку часто открывают в другом браузере, где человек не залогинен,
-    поэтому подтверждение не требует входа — достаточно подписи в ссылке.
+    Ссылку часто открывают в другом браузере или на телефоне, поэтому
+    подтверждение не требует входа — достаточно подписи в ссылке. Сама
+    ссылка не входит в кабинет: пароль всё равно спросим, иначе
+    пересланное письмо давало бы доступ к кабинету.
     """
-    # Куда вернуть после подтверждения: в кабинет, если вход есть,
-    # иначе на форму входа, где будет видно сообщение об успехе.
     back = "accounts:profile" if request.user.is_authenticated else "accounts:login"
     data = read_token(token)
     if not data:
-        messages.error(request, "Ссылка устарела или испорчена. Запросите письмо заново в кабинете.")
-        return redirect(back)
+        messages.error(request, "Ссылка устарела или испорчена. Запросите письмо заново.")
+        return redirect("accounts:resend_confirmation")
 
     user = User.objects.filter(pk=data["uid"]).first()
     # Если после отправки письма человек сменил адрес, старая ссылка
@@ -68,19 +80,44 @@ def confirm_email(request, token):
     if not user.email_confirmed:
         user.email_confirmed = True
         user.save(update_fields=["email_confirmed"])
-    messages.success(request, "Почта подтверждена, спасибо.")
+    messages.success(request, "Почта подтверждена. Войдите, чтобы открыть личный кабинет."
+                     if back == "accounts:login" else "Почта подтверждена, спасибо.")
     return redirect(back)
 
 
-@login_required
 def resend_confirmation(request):
-    """Переотправить письмо: первое могло не дойти или потеряться."""
-    if request.user.email_confirmed:
-        messages.info(request, "Почта уже подтверждена.")
-    else:
-        send_confirmation(request, request.user)
-        messages.success(request, f"Письмо отправлено повторно на {request.user.email}.")
-    return redirect("accounts:profile")
+    """Письмо со ссылкой ещё раз: первое могло не дойти или потеряться.
+
+    Ответ одинаковый, есть такой адрес или нет, — чтобы по этой форме
+    нельзя было проверять, кто зарегистрирован. Частоту запросов с одного
+    адреса ограничивает nginx.
+    """
+    form = ResendConfirmationForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = User.objects.filter(email__iexact=form.cleaned_data["email"].strip(),
+                                   email_confirmed=False, is_active=True).first()
+        if user:
+            send_confirmation(request, user)
+        messages.success(request, "Если этот адрес зарегистрирован и ещё не подтверждён, "
+                                  "письмо со ссылкой уже в пути. Проверьте и папку «Спам».")
+        request.session["signup_email"] = form.cleaned_data["email"]
+        return redirect("accounts:signup_done")
+    return render(request, "accounts/resend_confirmation.html", {"form": form})
+
+
+class PasswordResetConfirm(auth_views.PasswordResetConfirmView):
+    """Сброс пароля по ссылке из письма заодно подтверждает почту.
+
+    Человек открыл письмо — значит, ящик его. Иначе тот, кто не нашёл
+    письмо о регистрации и сбросил пароль, так и не смог бы войти.
+    """
+
+    def form_valid(self, form):
+        user = form.user
+        if not user.email_confirmed:
+            user.email_confirmed = True
+            user.save(update_fields=["email_confirmed"])
+        return super().form_valid(form)
 
 
 @login_required

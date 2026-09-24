@@ -417,6 +417,7 @@ class ManagerViewTest(TestCase):
     def test_formulas_and_figure_survive_to_the_page(self):
         self.problem.statement_html = "Скорость $v_0 = \\sqrt{2gh}$."
         self.problem.save()
+        self.client.force_login(self.kid)  # задачи — только вошедшим
         html = self.client.get(reverse("contest:problem_detail", args=[self.problem.pk])).content.decode()
         # Формулы разбирает KaTeX в браузере — на сервере важно лишь,
         # что исходный текст дошёл целым и блок помечен классом math.

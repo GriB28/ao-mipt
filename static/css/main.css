@@ -247,14 +247,24 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
 .step-list li.done { color: var(--text-secondary); text-decoration: line-through; }
 .step-list li.done::marker { content: "✓  "; color: var(--color-success-500); }
 
-.parent-block {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  margin: var(--space-5) 0;
+.form-section {
+  border: 0;
+  padding: 0;
+  margin: 0 0 var(--space-5);
 }
-.parent-block legend { padding: 0 var(--space-2); font-weight: var(--weight-medium); }
-.parent-block[hidden] { display: none; }
+.form-section legend {
+  font-weight: var(--weight-medium);
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-3);
+  padding: 0;
+}
+/* Серия и номер документа — в одну строку. */
+.field-row { display: grid; grid-template-columns: 2fr 3fr; gap: var(--space-3); }
+/* Дата тремя списками: число, месяц, год. */
+.profile-form select[name$="_day"], .profile-form select[name$="_month"],
+.profile-form select[name$="_year"] { width: auto; display: inline-block; margin-right: var(--space-2); }
+.profile-form select[name$="_month"] { min-width: 9em; }
+
 .field-error input, .field-error select, .field-error textarea { border-color: var(--color-danger-500); }
 
 .consent-status {

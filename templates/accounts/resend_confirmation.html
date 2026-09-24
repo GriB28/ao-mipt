@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Письмо для подтверждения почты{% endblock %}
+{% block content %}
+<h1>Письмо для подтверждения почты</h1>
+<p class="prose muted">Укажите адрес, с которым регистрировались, — мы пришлём ссылку ещё раз.</p>
+<form method="post" class="form-narrow">
+  {% csrf_token %}
+  {% for field in form %}{% include "accounts/_field.html" %}{% endfor %}
+  <button class="btn" type="submit">Отправить ссылку</button>
+</form>
+{% endblock %}

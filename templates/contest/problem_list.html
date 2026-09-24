@@ -41,7 +41,14 @@
     </p>
   {% endif %}
 
-  {% if not stage.platform_url and not stage.is_upcoming %}
+  {% if not user.is_authenticated and not stage.platform_url %}
+    {% comment %}Задачи — только зарегистрированным участникам.{% endcomment %}
+    <div class="note">
+      <p>Задачи видны зарегистрированным участникам.</p>
+      <p><a class="btn btn-small" href="{% url 'accounts:signup' %}">Зарегистрироваться</a>
+        <a class="btn btn-small btn-secondary" href="{% url 'accounts:login' %}?next={{ request.path }}">Войти</a></p>
+    </div>
+  {% elif not stage.platform_url and not stage.is_upcoming %}
   <table class="table-fit">
     <thead><tr><th>№</th><th>Задача</th>{% if not user.is_manager %}<th>Моё решение</th>{% endif %}</tr></thead>
     <tbody>

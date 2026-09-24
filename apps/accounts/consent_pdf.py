@@ -2,7 +2,9 @@
 Бланк согласия на обработку ПД в PDF.
 
 Собирается из данных анкеты: школьник скачивает его, печатает,
-подписывает (сам или вместе с родителем) и загружает скан обратно.
+подписывает и загружает скан обратно. Если участнику нет 18, бланк
+подписывают двое — участник и законный представитель; данные
+представителя вписываются от руки, на сайте их нет.
 
 Текст берётся со страницы consent-form-minor / consent-form-adult,
 если её завели в админке, иначе — из apps/core/legal_templates.py.
@@ -47,11 +49,14 @@ def _date(value):
     return value.strftime("%d.%m.%Y") if value else "________"
 
 
-def _document(kind, kind_label, number, issued_at, issued_by):
-    """«паспорт РФ 1234 567890, выдан 01.02.2020, ГУ МВД …» — внутри фразы, со строчной."""
-    label = kind_label[:1].lower() + kind_label[1:]
-    issued = "выдано" if kind == "birth_cert" else "выдан"
-    return f"{label} {number}, {issued} {_date(issued_at)}, {issued_by}"
+def _document(profile):
+    """«паспорт РФ серия 4510 № 123456, выдан 01.02.2020, ГУ МВД …» — внутри фразы, со строчной."""
+    label = profile.get_doc_type_display()
+    label = label[:1].lower() + label[1:]
+    series = f"серия {profile.doc_series} " if profile.doc_series else ""
+    issued = "выдано" if profile.doc_type == "birth_cert" else "выдан"
+    return (f"{label} {series}№ {profile.doc_number}, {issued} "
+            f"{_date(profile.doc_issued_at)}, {profile.doc_issued_by}")
 
 
 def template_text(minor: bool) -> str:
@@ -65,10 +70,14 @@ def template_text(minor: bool) -> str:
 
 
 def fill(text: str, values: dict) -> str:
-    """Подставить данные в {{ имя }}. Значения экранируются: это ввод участника."""
+    """Подставить данные в {{ имя }}. Значения экранируются: это ввод участника.
+
+    Неизвестная подстановка (например, из старой редакции текста в админке)
+    становится пустой строкой — её заполнят от руки, а не увидят «{{ … }}».
+    """
     def replace(match):
         key = match.group(1)
-        return html.escape(values[key]) if key in values else match.group(0)
+        return html.escape(values[key]) if key in values else legal_templates.BLANK
     return re.sub(r"\{\{\s*(\w+)\s*\}\}", replace, text)
 
 
@@ -77,15 +86,8 @@ def values_for(profile) -> dict:
     return {
         "participant_name": profile.full_name,
         "participant_birth_date": _date(profile.birth_date),
-        "participant_document": _document(profile.doc_type, profile.get_doc_type_display(),
-                                          profile.doc_number, profile.doc_issued_at,
-                                          profile.doc_issued_by),
+        "participant_document": _document(profile),
         "participant_address": profile.reg_address,
-        "parent_name": profile.parent_full_name,
-        "parent_document": _document(profile.parent_doc_type, profile.get_parent_doc_type_display(),
-                                     profile.parent_doc_number, profile.parent_doc_issued_at,
-                                     profile.parent_doc_issued_by),
-        "parent_address": profile.parent_reg_address,
         "operator": legal_templates.CONSENT_OPERATOR,
         "contact_email": settings.CONTACT_EMAIL,
         "today": _date(timezone.localdate()),
@@ -114,27 +116,40 @@ def build(profile) -> bytes:
     minor = profile.is_minor
     values = values_for(profile)
 
-    body = ParagraphStyle("body", fontName="DejaVu", fontSize=10.5, leading=14.5,
-                          spaceAfter=6, alignment=4)  # 4 — по ширине
+    body = ParagraphStyle("body", fontName="DejaVu", fontSize=10, leading=13.5,
+                          spaceAfter=5, alignment=4)  # 4 — по ширине
     small = ParagraphStyle("small", parent=body, fontSize=8, leading=10, textColor="#555555",
                            alignment=0)
 
     title = ParagraphStyle("title", parent=body, fontSize=11.5, leading=15, alignment=1,
                            spaceAfter=10)
+    # Строки для заполнения от руки: интервал шире, чтобы уместился почерк.
+    handwritten = ParagraphStyle("handwritten", parent=body, leading=21, alignment=0)
     blocks = _blocks(fill(template_text(minor), values))
-    # Первый абзац — заголовок бланка: по центру, а не по ширине.
-    story = [Paragraph(block, title if i == 0 else body) for i, block in enumerate(blocks)]
-    story.append(Spacer(1, 10 * mm))
+    story = []
+    for i, block in enumerate(blocks):
+        # Первый абзац — заголовок бланка: по центру, а не по ширине.
+        style = title if i == 0 else handwritten if "______" in block else body
+        # Подсказка под строкой — «(кем выдан)» — мелко, чтобы не спорила с почерком.
+        block = re.sub(r"(^|<br/>)\s*(\([^()<]{3,80}\))\s*(?=<br/>|$)",
+                       r'\1<font size="7" color="#666666">\2</font>', block)
+        story.append(Paragraph(block, style))
+    story.append(Spacer(1, 6 * mm))
 
-    signer = values["parent_name"] if minor else values["participant_name"]
-    sign = Table(
-        [["Дата: ____________", "Подпись: ______________", f"/ {signer} /"]],
-        colWidths=[45 * mm, 55 * mm, 75 * mm],
-    )
+    # Подписывают оба: участник и, если ему нет 18, законный представитель.
+    # ФИО представителя на сайте нет — строка для него пустая.
+    rows = []
+    if minor:
+        rows.append(["Законный представитель:", "______________", "/ " + "_" * 26 + " /"])
+    rows.append(["Участник:", "______________", f"/ {profile.full_name} /"])
+    rows.append(["Дата:", "«____» ____________ 20____ г.", ""])
+    sign = Table(rows, colWidths=[55 * mm, 45 * mm, 75 * mm])
     sign.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "DejaVu"),
-                              ("FONTSIZE", (0, 0), (-1, -1), 10)]))
+                              ("FONTSIZE", (0, 0), (-1, -1), 10),
+                              ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                              ("SPAN", (1, -1), (2, -1))]))
     story.append(sign)
-    story.append(Spacer(1, 12 * mm))
+    story.append(Spacer(1, 6 * mm))
     story.append(Paragraph(
         f"Бланк сформирован на сайте олимпиады {values['today']} для учётной записи "
         f"{html.escape(values['email'])} (№ {profile.user_id}). Распечатайте, подпишите "
@@ -142,7 +157,7 @@ def build(profile) -> bytes:
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=15 * mm,
-                            topMargin=15 * mm, bottomMargin=15 * mm,
+                            topMargin=12 * mm, bottomMargin=12 * mm,
                             title="Согласие на обработку персональных данных",
                             author="Аэрокосмическая олимпиада МФТИ")
     doc.build(story)

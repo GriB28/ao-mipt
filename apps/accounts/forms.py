@@ -2,14 +2,14 @@ import re
 
 from django import forms
 from django.conf import settings
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 
 from apps.core.validators import validate_consent_file
 
-from .models import OrganizerProfile, ParticipantProfile, User
+from .models import DOC_TYPES_WITH_SERIES, DocumentType, OrganizerProfile, ParticipantProfile, User
 from .regions import REGION_CHOICES
 
 # Версия текста согласия. Меняется вместе с текстом на странице /page/consent/.
@@ -81,12 +81,26 @@ class SignUpForm(UserCreationForm):
 
     def clean_email(self):
         email = self.cleaned_data["email"].strip().lower()
-        if User.objects.filter(email__iexact=email).exists():
+        existing = User.objects.filter(email__iexact=email).first()
+        # Регистрация с неподтверждённым адресом — обычно человек не нашёл
+        # письмо и пробует снова. Письмо отправим повторно, но пароль
+        # не меняем: иначе чужую свежую регистрацию мог бы «перехватить»
+        # любой, кто знает адрес. Забыл пароль — есть восстановление.
+        self.unconfirmed_user = None
+        if existing and existing.is_participant and not existing.email_confirmed:
+            self.unconfirmed_user = existing
+        elif existing:
             raise forms.ValidationError(
                 "Пользователь с такой почтой уже зарегистрирован. "
                 "Если это вы — войдите или восстановите пароль."
             )
         return email
+
+    def validate_unique(self):
+        # Повтор неподтверждённой регистрации — не ошибка (см. clean_email):
+        # новую учётку не создаём, а шлём письмо ещё раз.
+        if not getattr(self, "unconfirmed_user", None):
+            super().validate_unique()
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -102,15 +116,38 @@ class SignUpForm(UserCreationForm):
         return user
 
 
-DATE_WIDGET = forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
+class DayMonthYearWidget(forms.SelectDateWidget):
+    """Дата тремя списками: число, месяц, год.
+
+    Поле type=date в браузере с английской локалью показывает
+    месяц/день/год, и школьники путают порядок. Три списка в привычном
+    порядке и печатать ничего не нужно — на телефоне это нативный выбор.
+    """
+
+    def __init__(self, years):
+        # Подписи Django принимает в порядке «год, месяц, день».
+        super().__init__(years=years, empty_label=("год", "месяц", "число"))
+
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        # Порядок SelectDateWidget берёт из формата локали; фиксируем
+        # «число — месяц — год», чтобы не зависеть от настроек сервера.
+        order = {"day": 0, "month": 1, "year": 2}
+        context["widget"]["subwidgets"].sort(key=lambda w: order[w["name"].rsplit("_", 1)[-1]])
+        return context
+
+
+def _years(back, forward=0):
+    this = timezone.localdate().year
+    return list(range(this + forward, this - back - 1, -1))
 
 
 class ProfileForm(forms.ModelForm):
     """Полная анкета участника: из неё собирается бланк согласия.
 
-    Блок представителя обязателен, только если по дате рождения участнику
-    нет 18 — это проверяется здесь, на сервере; на странице блок
-    показывается и прячется скриптом для удобства.
+    Данных законного представителя здесь нет намеренно: их сайт не
+    обрабатывает. Если участнику нет 18, представитель вписывает свои
+    данные в бланк от руки и подписывает его вместе с участником.
     """
 
     region = forms.ChoiceField(label="Регион", choices=[("", "— выберите регион —")] + [
@@ -120,62 +157,50 @@ class ProfileForm(forms.ModelForm):
         model = ParticipantProfile
         fields = [
             "last_name", "first_name", "middle_name", "birth_date",
-            "doc_type", "doc_number", "doc_issued_at", "doc_issued_by", "reg_address",
+            "doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by", "reg_address",
             "grade", "school", "city", "region", "phone", "telegram",
-            "parent_last_name", "parent_first_name", "parent_middle_name",
-            "parent_doc_type", "parent_doc_number", "parent_doc_issued_at",
-            "parent_doc_issued_by", "parent_reg_address",
         ]
-        labels = {
-            "parent_last_name": "Фамилия", "parent_first_name": "Имя",
-            "parent_middle_name": "Отчество", "parent_doc_type": "Документ",
-            "parent_doc_number": "Серия и номер", "parent_doc_issued_at": "Дата выдачи",
-            "parent_doc_issued_by": "Кем выдан", "parent_reg_address": "Адрес регистрации",
-            "doc_issued_by": "Кем выдан",
-        }
+        labels = {"doc_issued_by": "Кем выдан"}
         help_texts = {
             "doc_type": "До 14 лет — свидетельство о рождении",
-            "doc_number": "Для паспорта РФ: 4 цифры серии и 6 цифр номера",
             "doc_issued_by": "Как написано в документе",
             "reg_address": "Как в паспорте, с индексом. Для свидетельства — адрес, где вы прописаны",
             "school": "Полное название, например: МБОУ «Лицей № 1»",
             "phone": "Для связи перед очным туром и финалом",
             "telegram": "Необязательно. Например: @ivanov",
-            "parent_reg_address": "Как в паспорте, с индексом",
         }
         widgets = {
-            "birth_date": DATE_WIDGET, "doc_issued_at": DATE_WIDGET,
-            "parent_doc_issued_at": DATE_WIDGET,
             "reg_address": forms.Textarea(attrs={"rows": 2}),
-            "parent_reg_address": forms.Textarea(attrs={"rows": 2}),
             "doc_issued_by": forms.Textarea(attrs={"rows": 2}),
-            "parent_doc_issued_by": forms.Textarea(attrs={"rows": 2}),
             "phone": forms.TextInput(attrs={"type": "tel", "autocomplete": "tel"}),
+            "doc_series": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "4510"}),
+            "doc_number": forms.TextInput(attrs={"autocomplete": "off", "placeholder": "123456"}),
         }
 
-    #: Поля представителя — группа, которую страница прячет для взрослых.
-    PARENT_FIELDS = ParticipantProfile.PARENT_REQUIRED_FIELDS + ("parent_middle_name",)
+    #: Группы полей — так они и показываются на странице.
+    SECTIONS = (
+        ("Участник", ("last_name", "first_name", "middle_name", "birth_date")),
+        ("Документ, удостоверяющий личность",
+         ("doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by", "reg_address")),
+        ("Учёба и связь", ("grade", "school", "city", "region", "phone", "telegram")),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name in ParticipantProfile.REQUIRED_FIELDS:
             self.fields[name].required = True
+        self.fields["birth_date"].widget = DayMonthYearWidget(years=_years(back=25, forward=-6))
+        self.fields["doc_issued_at"].widget = DayMonthYearWidget(years=_years(back=25))
         self.fields["grade"].widget.attrs.update({"min": 1, "max": 11})
-        # Свидетельство о рождении бывает только у самого участника.
-        self.fields["parent_doc_type"].choices = [
-            c for c in self.fields["parent_doc_type"].choices if c[0] != "birth_cert"
-        ]
+        self.fields["doc_type"].choices = [("", "— выберите документ —")] + DocumentType.choices
         # Регион, записанный до появления списка, мог в него не попасть —
         # не выбрасываем анкету из-за этого, а добавляем значение в choices.
         current = self.instance.region if self.instance and self.instance.pk else ""
         if current and current not in dict(REGION_CHOICES):
             self.fields["region"].choices = list(self.fields["region"].choices) + [(current, current)]
 
-    def participant_fields(self):
-        return [self[n] for n in self.Meta.fields if n not in self.PARENT_FIELDS]
-
-    def parent_fields(self):
-        return [self[n] for n in self.Meta.fields if n in self.PARENT_FIELDS]
+    def sections(self):
+        return [(title, [self[n] for n in names]) for title, names in self.SECTIONS]
 
     def clean_grade(self):
         grade = self.cleaned_data.get("grade")
@@ -193,34 +218,59 @@ class ProfileForm(forms.ModelForm):
         cleaned = super().clean()
         today = timezone.localdate()
         birth = cleaned.get("birth_date")
-        if birth and not (today.year - 25 <= birth.year <= today.year - 6):
-            self.add_error("birth_date", "Проверьте год рождения.")
-        for prefix in ("", "parent_"):
-            issued = cleaned.get(f"{prefix}doc_issued_at")
-            if issued and issued > today:
-                self.add_error(f"{prefix}doc_issued_at", "Дата выдачи не может быть в будущем.")
-            if not prefix and issued and birth and issued < birth:
-                self.add_error("doc_issued_at", "Документ не мог быть выдан раньше рождения.")
-            self._normalize_passport(cleaned, prefix)
-
-        # Представитель нужен, если участнику нет 18 (или дата не указана).
-        probe = ParticipantProfile(birth_date=birth)
-        if probe.is_minor:
-            for name in ParticipantProfile.PARENT_REQUIRED_FIELDS:
-                if not cleaned.get(name):
-                    self.add_error(name, "Нужно, если участнику нет 18 лет.")
+        issued = cleaned.get("doc_issued_at")
+        if issued and issued > today:
+            self.add_error("doc_issued_at", "Дата выдачи не может быть в будущем.")
+        if issued and birth and issued < birth:
+            self.add_error("doc_issued_at", "Документ не мог быть выдан раньше рождения.")
+        self._check_document(cleaned)
         return cleaned
 
-    def _normalize_passport(self, cleaned, prefix):
-        """Паспорт РФ: «1234 567890». Остальные документы — как ввели."""
-        if cleaned.get(f"{prefix}doc_type") != "passport_rf":
-            return
-        number = cleaned.get(f"{prefix}doc_number") or ""
-        digits = re.sub(r"\D", "", number)
-        if number and len(digits) != 10:
-            self.add_error(f"{prefix}doc_number", "У паспорта РФ 10 цифр: 4 — серия, 6 — номер.")
-        elif digits:
-            cleaned[f"{prefix}doc_number"] = f"{digits[:4]} {digits[4:]}"
+    def _check_document(self, cleaned):
+        """Серия и номер по виду документа: ловим опечатки, не мешаем редким случаям."""
+        kind = cleaned.get("doc_type")
+        series = re.sub(r"\s+", "", cleaned.get("doc_series") or "").upper()
+        number = re.sub(r"\s+", "", cleaned.get("doc_number") or "")
+        if kind == DocumentType.PASSPORT_RF:
+            if series and not re.fullmatch(r"\d{4}", series):
+                self.add_error("doc_series", "Серия паспорта — 4 цифры.")
+            if number and not re.fullmatch(r"\d{6}", number):
+                self.add_error("doc_number", "Номер паспорта — 6 цифр.")
+        elif kind == DocumentType.BIRTH_CERT:
+            # Серия свидетельства: римские цифры, дефис, две русские буквы — «IV-МЮ».
+            series = series.replace("–", "-").replace("—", "-")
+            if series and not re.fullmatch(r"[IVXLCА-ЯЁ1]+-?[А-ЯЁ]{2}", series):
+                self.add_error("doc_series", "Серия свидетельства выглядит так: IV-МЮ.")
+            if number and not re.fullmatch(r"\d{6}", number):
+                self.add_error("doc_number", "Номер свидетельства — 6 цифр.")
+        if kind in DOC_TYPES_WITH_SERIES and not series:
+            self.add_error("doc_series", "Обязательное поле.")
+        cleaned["doc_series"] = series
+        cleaned["doc_number"] = number
+
+
+class LoginForm(AuthenticationForm):
+    """Вход. Участник без подтверждённой почты не входит.
+
+    Без подтверждения нет кабинета: опечатка в адресе иначе всплыла бы
+    только в апреле, когда не дошёл вызов на финал. Сотрудников это не
+    касается — их заводит администратор.
+    """
+
+    error_messages = AuthenticationForm.error_messages | {
+        "invalid_login": "Неверная почта или пароль.",
+        "unconfirmed": "Почта ещё не подтверждена. Откройте ссылку из письма, которое мы "
+                       "прислали при регистрации, — или запросите письмо ещё раз.",
+    }
+
+    def confirm_login_allowed(self, user):
+        super().confirm_login_allowed(user)
+        if user.is_participant and not user.email_confirmed:
+            raise forms.ValidationError(self.error_messages["unconfirmed"], code="unconfirmed")
+
+
+class ResendConfirmationForm(forms.Form):
+    email = forms.EmailField(label="E-mail, указанный при регистрации")
 
 
 class ConsentUploadForm(forms.Form):

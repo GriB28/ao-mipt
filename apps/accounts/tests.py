@@ -4,6 +4,7 @@ import tempfile
 
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -23,7 +24,9 @@ class SignUpTest(TestCase):
 
     def test_signup_creates_user_and_empty_profile(self):
         response = self.client.post(reverse("accounts:signup"), self.form_data)
-        self.assertRedirects(response, reverse("accounts:profile"))
+        # Не входим: кабинет — только после подтверждения почты.
+        self.assertRedirects(response, reverse("accounts:signup_done"))
+        self.assertNotIn("_auth_user_id", self.client.session)
 
         user = User.objects.get(email="vasya@example.ru")  # почта приводится к нижнему регистру
         self.assertEqual(user.role, User.Role.PARTICIPANT)
@@ -54,17 +57,18 @@ class SignUpTest(TestCase):
 
 
 def profile_data(**extra):
-    """Полная анкета несовершеннолетнего — как её отправляет форма."""
+    """Полная анкета несовершеннолетнего — как её отправляет форма.
+
+    Даты — тремя списками (число, месяц, год), серия и номер — отдельно.
+    """
     return {
         "last_name": "Пупкин", "first_name": "Василий", "middle_name": "",
-        "birth_date": "2010-05-01", "doc_type": "passport_rf", "doc_number": "4510123456",
-        "doc_issued_at": "2024-06-01", "doc_issued_by": "ГУ МВД России по г. Москве",
+        "birth_date_day": "1", "birth_date_month": "5", "birth_date_year": "2010",
+        "doc_type": "passport_rf", "doc_series": "4510", "doc_number": "123456",
+        "doc_issued_at_day": "1", "doc_issued_at_month": "6", "doc_issued_at_year": "2024",
+        "doc_issued_by": "ГУ МВД России по г. Москве",
         "reg_address": "101000, Москва, ул. Мира, 1", "grade": "10", "school": "Школа № 1",
         "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "",
-        "parent_last_name": "Пупкина", "parent_first_name": "Мария", "parent_middle_name": "",
-        "parent_doc_type": "passport_rf", "parent_doc_number": "4500 654321",
-        "parent_doc_issued_at": "2012-01-01", "parent_doc_issued_by": "ОВД Тверской",
-        "parent_reg_address": "101000, Москва, ул. Мира, 1",
     } | extra
 
 
@@ -99,31 +103,42 @@ class ParticipationStepsTest(TestCase):
         consent = ConsentDocument.objects.get(user=self.user)
         self.assertEqual(consent.status, ConsentDocument.Status.PENDING)
         self.assertTrue(consent.for_minor)
-        self.assertEqual(consent.data["doc_number"], "4510 123456")
+        self.assertEqual((consent.data["doc_series"], consent.data["doc_number"]), ("4510", "123456"))
         self.assertTrue(User.objects.get(pk=self.user.pk).can_participate)
 
-    def test_passport_number_is_checked_and_normalized(self):
-        response = self._save_profile(doc_number="12 34")
-        self.assertFormError(response.context["form"], "doc_number",
-                             "У паспорта РФ 10 цифр: 4 — серия, 6 — номер.")
-        self._save_profile(doc_number="4510-123456")
-        self.assertEqual(ParticipantProfile.objects.get(user=self.user).doc_number, "4510 123456")
+    def test_passport_series_and_number_are_checked(self):
+        response = self._save_profile(doc_series="12", doc_number="12345")
+        self.assertFormError(response.context["form"], "doc_series", "Серия паспорта — 4 цифры.")
+        self.assertFormError(response.context["form"], "doc_number", "Номер паспорта — 6 цифр.")
+        self._save_profile(doc_series="45 10", doc_number="123 456")
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertEqual((profile.doc_series, profile.doc_number), ("4510", "123456"))
 
-    def test_birth_certificate_is_accepted_as_is(self):
+    def test_birth_certificate_is_accepted(self):
         """У семиклассника паспорта нет — только свидетельство о рождении."""
-        self._save_profile(doc_type="birth_cert", doc_number="IV-МЮ 123456", birth_date="2013-02-01",
-                           grade="7", doc_issued_at="2013-03-01")
+        self._save_profile(doc_type="birth_cert", doc_series="iv-мю", doc_number="123456",
+                           birth_date_year="2013", grade="7", doc_issued_at_year="2013")
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertTrue(profile.is_complete)
+        self.assertEqual(profile.doc_series, "IV-МЮ")
+
+    def test_foreign_document_may_have_no_series(self):
+        self._save_profile(doc_type="foreign", doc_series="", doc_number="N1234567")
         self.assertTrue(ParticipantProfile.objects.get(user=self.user).is_complete)
 
-    def test_parent_is_required_for_minor_only(self):
-        no_parent = {k: "" for k in profile_data() if k.startswith("parent_")}
-        response = self._save_profile(**no_parent)
-        self.assertFormError(response.context["form"], "parent_last_name",
-                             "Нужно, если участнику нет 18 лет.")
-        self._save_profile(**no_parent, birth_date="2006-01-01", grade="11")
-        profile = ParticipantProfile.objects.get(user=self.user)
-        self.assertFalse(profile.is_minor)
-        self.assertTrue(profile.is_complete)
+    def test_dates_are_day_month_year(self):
+        html = self.client.get(reverse("accounts:profile")).content.decode()
+        day, month, year = (html.index(f'name="birth_date_{part}"') for part in ("day", "month", "year"))
+        self.assertLess(day, month)
+        self.assertLess(month, year)
+        # И подписи стоят у своих списков.
+        self.assertIn('>число</option>', html[day:month])
+        self.assertIn('>год</option>', html[year:])
+
+    def test_parent_data_is_not_asked(self):
+        """Данные представителя сайт не обрабатывает — он вписывает их в бланк от руки."""
+        html = self.client.get(reverse("accounts:profile")).content.decode()
+        self.assertNotIn('name="parent_', html)
 
     def test_no_blank_until_profile_is_complete(self):
         response = self.client.get(reverse("accounts:consent_blank"))
@@ -145,7 +160,7 @@ class ParticipationStepsTest(TestCase):
         self._upload()
         self._save_profile(phone="+7 900 765-43-21")  # телефона в бланке нет
         self.assertEqual(ConsentDocument.objects.get().status, ConsentDocument.Status.PENDING)
-        self._save_profile(doc_number="4510 999999")
+        self._save_profile(doc_number="999999")
         self.assertEqual(ConsentDocument.objects.get().status, ConsentDocument.Status.OUTDATED)
         self.assertFalse(User.objects.get(pk=self.user.pk).can_participate)
 
@@ -225,18 +240,35 @@ class ConsentAccessTest(TestCase):
 
 
 class ConsentPdfTest(TestCase):
-    def test_minor_blank_is_signed_by_the_parent(self):
+    def _text(self, **fields):
         from . import consent_pdf
         from .testing import make_eligible
 
-        kid = make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"),
-                            last_name="О'Нил")
-        text = consent_pdf.fill(consent_pdf.template_text(minor=True),
-                                consent_pdf.values_for(kid.profile))
-        self.assertIn("Тестова Анна", text)
+        kid = make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"), **fields)
+        return kid, consent_pdf.fill(consent_pdf.template_text(minor=kid.profile.is_minor),
+                                     consent_pdf.values_for(kid.profile))
+
+    def test_minor_blank_leaves_parent_lines_empty(self):
+        from . import consent_pdf
+
+        kid, text = self._text(last_name="О'Нил")
         self.assertIn("О&#x27;Нил", text)  # данные экранированы для разметки reportlab
+        self.assertIn("серия 0000 № 000000", text)
+        self.assertIn("(фамилия, имя, отчество законного представителя полностью)", text)
         self.assertNotIn("{{", text)
         self.assertTrue(consent_pdf.build(kid.profile).startswith(b"%PDF"))
+
+    def test_unknown_placeholder_becomes_a_blank_line(self):
+        from . import consent_pdf
+
+        self.assertEqual(consent_pdf.fill("Я, {{ parent_name }}.", {}),
+                         f"Я, {consent_pdf.legal_templates.BLANK}.")
+
+    def test_adult_blank_has_no_parent(self):
+        from datetime import date
+
+        _, text = self._text(birth_date=date(2000, 1, 1))
+        self.assertNotIn("законного представителя", text)
 
 
 class EmailConfirmTest(TestCase):
@@ -277,10 +309,95 @@ class EmailConfirmTest(TestCase):
         user.refresh_from_db()
         self.assertFalse(user.email_confirmed)
 
-    def test_resend_requires_login(self):
-        response = self.client.get(reverse("accounts:resend_confirmation"))
+    def _login(self):
+        return self.client.post(reverse("accounts:login"),
+                                {"username": "vasya@example.ru", "password": "olymp12345"})
+
+    def test_no_login_before_confirmation(self):
+        self._signup()
+        response = self._login()
+        self.assertContains(response, "Почта ещё не подтверждена")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_login_works_after_confirmation(self):
+        user = self._signup()
+        self.client.get(reverse("accounts:confirm_email", args=[make_token(user)]))
+        self.assertRedirects(self._login(), reverse("core:home"), fetch_redirect_response=False)
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_link_itself_does_not_log_in(self):
+        """Пересланное письмо не должно давать доступ к кабинету."""
+        user = self._signup()
+        self.client.get(reverse("accounts:confirm_email", args=[make_token(user)]))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_signing_up_again_resends_but_keeps_password(self):
+        """Иначе чужую неподтверждённую регистрацию мог бы «перехватить» любой."""
+        self._signup()
+        self.client.post(reverse("accounts:signup"), SignUpTest.form_data | {
+            "password1": "another-pass-777", "password2": "another-pass-777"})
+        self.assertEqual(len(mail.outbox), 2)
+        user = User.objects.get(email="vasya@example.ru")
+        self.assertTrue(user.check_password("olymp12345"))
+
+    def test_resend_does_not_reveal_who_is_registered(self):
+        self._signup()
+        answers = [self.client.post(reverse("accounts:resend_confirmation"), {"email": email},
+                                    follow=True).content.decode().count("письмо со ссылкой уже в пути")
+                   for email in ("vasya@example.ru", "nobody@example.ru")]
+        self.assertEqual(answers, [1, 1])
+        self.assertEqual(len(mail.outbox), 2)  # регистрация + повтор, чужому — ничего
+
+    def test_password_reset_confirms_email(self):
+        """Не нашёл письмо о регистрации, сбросил пароль — ящик доказан."""
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        user = self._signup()
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        url = reverse("accounts:password_reset_confirm",
+                      args=[uid, default_token_generator.make_token(user)])
+        form_url = self.client.get(url)["Location"]
+        self.client.post(form_url, {"new_password1": "fresh-pass-2026", "new_password2": "fresh-pass-2026"})
+        user.refresh_from_db()
+        self.assertTrue(user.email_confirmed)
+
+    def test_staff_log_in_without_confirmation(self):
+        """Организаторов заводит администратор — им подтверждать почту не нужно."""
+        User.objects.create_user("org@example.ru", "olymp12345", role=User.Role.ORGANIZER)
+        response = self.client.post(reverse("accounts:login"),
+                                    {"username": "org@example.ru", "password": "olymp12345"})
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response["Location"])
+
+    def test_stale_unconfirmed_accounts_are_purged(self):
+        from datetime import timedelta
+
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        user = self._signup()
+        User.objects.filter(pk=user.pk).update(date_joined=timezone.now() - timedelta(days=15))
+        confirmed = User.objects.create_user("ok@example.ru", "olymp12345", email_confirmed=True)
+        User.objects.filter(pk=confirmed.pk).update(date_joined=timezone.now() - timedelta(days=15))
+        call_command("purge_unconfirmed", verbosity=0)
+        self.assertFalse(User.objects.filter(pk=user.pk).exists())
+        self.assertTrue(User.objects.filter(pk=confirmed.pk).exists())
+
+
+class ProblemsNeedLoginTest(TestCase):
+    """Задачи текущего тура — только вошедшим участникам с подтверждённой почтой."""
+
+    def test_anonymous_sees_schedule_but_no_problems(self):
+        from apps.contest.tests import open_problem
+
+        call_command("seed_demo", verbosity=0)
+        problem = open_problem()
+        html = self.client.get(reverse("contest:problem_list")).content.decode()
+        self.assertIn("Задачи видны зарегистрированным участникам", html)
+        self.assertNotIn(problem.title, html)
+        detail = self.client.get(reverse("contest:problem_detail", args=[problem.pk]))
+        self.assertIn("/accounts/login/", detail["Location"])
 
 
 class LoginTest(TestCase):

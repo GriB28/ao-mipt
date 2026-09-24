@@ -6,21 +6,15 @@
 
 {% if blockers %}
   {% comment %}
-    Три шага до участия. Показываем их все с отметками, а не только
+    Шаги до участия (почта к этому моменту уже подтверждена — без неё
+    в кабинет не войти). Показываем их все с отметками, а не только
     оставшиеся: так понятно, сколько уже сделано и что впереди.
   {% endcomment %}
   <section class="card steps">
     <h2>Чтобы участвовать в олимпиаде</h2>
     <p class="muted">Записаться на очную площадку, сдавать решения дистанционного тура и
-      пройти во второй тур можно после трёх шагов. Смотреть задачи и лекции можно уже сейчас.</p>
+      пройти во второй тур можно после двух шагов. Смотреть задачи и лекции можно уже сейчас.</p>
     <ol class="step-list">
-      <li class="{% if user.email_confirmed %}done{% endif %}">
-        Подтвердить почту по ссылке из письма
-        {% if not user.email_confirmed %}
-          — <a href="{% url 'accounts:resend_confirmation' %}">отправить письмо ещё раз</a>
-          <span class="helptext">Письмо ушло на {{ user.email }}. Проверьте папку «Спам».</span>
-        {% endif %}
-      </li>
       <li class="{% if profile.is_complete %}done{% endif %}">
         <a href="#anketa">Заполнить анкету</a>
       </li>
@@ -60,13 +54,16 @@
 <form method="post" class="form-narrow profile-form" novalidate>
   {% csrf_token %}
   {% if form.non_field_errors %}<p class="message error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
-  {% for field in form.participant_fields %}{% include "accounts/_field.html" %}{% endfor %}
-
-  <fieldset id="parent-block" class="parent-block">
-    <legend>Родитель или законный представитель</legend>
-    <p class="muted">Нужен, если вам нет 18 лет: согласие на обработку данных подписывает он.</p>
-    {% for field in form.parent_fields %}{% include "accounts/_field.html" %}{% endfor %}
-  </fieldset>
+  {% for title, fields in form.sections %}
+    <fieldset class="form-section">
+      <legend>{{ title }}</legend>
+      {% for field in fields %}
+        {% if field.name == "doc_series" %}<div class="field-row">{% endif %}
+        {% include "accounts/_field.html" %}
+        {% if field.name == "doc_number" %}</div>{% endif %}
+      {% endfor %}
+    </fieldset>
+  {% endfor %}
 
   <button class="btn" type="submit">Сохранить анкету</button>
 </form>
@@ -104,8 +101,9 @@
         <span class="helptext">В бланк уже вписаны данные из анкеты. Проверьте их.</span>
       </li>
       <li>Распечатайте и подпишите.
-        {% if profile.is_minor %}Подписывает <strong>родитель или законный представитель</strong>,
-          указанный в анкете.{% else %}Подписываете вы.{% endif %}</li>
+        {% if profile.is_minor %}Подписываете <strong>вы и родитель</strong> (или другой законный
+          представитель). Свои ФИО, паспорт и адрес родитель вписывает в бланк от руки — на
+          сайт их вводить не нужно.{% else %}Подписываете вы.{% endif %}</li>
       <li>
         <form method="post" action="{% url 'accounts:consent_upload' %}" enctype="multipart/form-data" class="form-narrow">
           {% csrf_token %}
@@ -116,28 +114,4 @@
     </ol>
   {% endif %}
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script>
-  // Блок представителя нужен, только если нет 18. Сервер проверяет то же
-  // самое сам; здесь — чтобы взрослому не показывать лишние поля.
-  (function () {
-    var birth = document.getElementById("id_birth_date");
-    var block = document.getElementById("parent-block");
-    if (!birth || !block) return;
-    function update() {
-      var minor = true;
-      if (birth.value) {
-        var b = new Date(birth.value), now = new Date();
-        var age = now.getFullYear() - b.getFullYear();
-        if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) age--;
-        minor = age < 18;
-      }
-      block.hidden = !minor;
-    }
-    birth.addEventListener("change", update);
-    update();
-  })();
-</script>
 {% endblock %}

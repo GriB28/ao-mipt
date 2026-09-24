@@ -53,10 +53,23 @@ def _practice_problem(season):
             .order_by("number").first())
 
 
+def _email_unconfirmed(user):
+    """Участник вошёл, но почту не подтвердил (сессия со времён до проверки).
+
+    Новые участники без подтверждения просто не могут войти (LoginForm).
+    """
+    return user.is_authenticated and user.is_participant and not user.email_confirmed
+
+
 def problem_list(request):
+    """Тур: расписание видно всем, сами задачи — только вошедшим участникам."""
+    if _email_unconfirmed(request.user):
+        messages.info(request, "Подтвердите почту, чтобы открыть задачи.")
+        return redirect("accounts:resend_confirmation")
     season = Season.objects.active()
     stage = _online_stage(season)
-    problems = list(Problem.objects.visible().filter(stage=stage)) if stage else []
+    problems = (list(Problem.objects.visible().filter(stage=stage))
+                if stage and request.user.is_authenticated else [])
 
     # К каждой задаче — последняя попытка участника, чтобы в списке
     # было видно не только «сдано», но и когда.
@@ -72,7 +85,7 @@ def problem_list(request):
 
     return render(request, "contest/problem_list.html", {
         "season": season, "stage": stage, "problems": problems,
-        "practice": _practice_problem(season),
+        "practice": _practice_problem(season) if request.user.is_authenticated else None,
         "my_venues": Venue.objects.managed_by(request.user),
         "offline_twin": _twin_stage(stage, Stage.Kind.OFFLINE),
     })
@@ -104,7 +117,11 @@ def _problem_page(request, problem, form=None):
     })
 
 
+@login_required
 def problem_detail(request, pk):
+    if _email_unconfirmed(request.user):
+        messages.info(request, "Подтвердите почту, чтобы открыть задачи.")
+        return redirect("accounts:resend_confirmation")
     # Организатор должен открыть и неодобренную задачу — свою собственную,
     # чтобы посмотреть, как она будет выглядеть у участников.
     visible = Problem.objects.visible()
