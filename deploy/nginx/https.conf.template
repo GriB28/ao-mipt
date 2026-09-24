@@ -1,6 +1,11 @@
 # Боевая конфигурация: http только для Let's Encrypt и редиректа,
 # весь сайт — по https.
 
+# Счётчик запросов для входа и регистрации (см. locations.conf):
+# 30 в минуту с одного адреса, 429 при превышении.
+limit_req_zone $binary_remote_addr zone=auth:10m rate=30r/m;
+limit_req_status 429;
+
 server {
     listen 80 default_server;
     server_name _;

@@ -11,7 +11,9 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 
+from apps.accounts.models import User
 from apps.core.validators import validate_solution_file
 from apps.seasons.models import Season, Stage
 
@@ -118,6 +120,8 @@ def problem_detail(request, pk):
 @login_required
 def submit(request, pk):
     problem = get_object_or_404(Problem.objects.visible(), pk=pk)
+    if request.user.is_manager:
+        raise PermissionDenied("Организаторы решения не сдают.")
     if not problem.accepts_submissions:
         messages.error(request, "Приём решений по этой задаче закрыт.")
         return redirect("contest:problem_detail", pk=pk)
@@ -126,6 +130,11 @@ def submit(request, pk):
     if request.method == "POST" and form.is_valid():
         files = form.cleaned_data["files"]
         try:
+            if len(files) > settings.MAX_FILES_PER_SUBMISSION:
+                raise ValidationError(
+                    f"Не больше {settings.MAX_FILES_PER_SUBMISSION} файлов за раз. "
+                    "Соберите страницы в один PDF или .zip."
+                )
             for f in files:
                 validate_solution_file(f)
         except ValidationError as exc:
@@ -133,6 +142,20 @@ def submit(request, pk):
             return _problem_page(request, problem, form)
 
         with transaction.atomic():
+            # Блокируем строку участника до конца транзакции: двойное
+            # нажатие «Отправить» даёт две попытки строго по очереди, и
+            # «последней» остаётся ровно одна.
+            User.objects.select_for_update().filter(pk=request.user.pk).first()
+            # Предел попыток — защита диска: без него один человек может
+            # загружать по 100 МБ, пока место на сервере не кончится.
+            attempts = Submission.objects.filter(user=request.user, problem=problem).count()
+            if attempts >= settings.MAX_ATTEMPTS_PER_PROBLEM:
+                messages.error(
+                    request,
+                    f"По этой задаче уже {attempts} попыток — это предел. "
+                    "Если нужно заменить решение, напишите организаторам.",
+                )
+                return redirect(reverse("contest:problem_detail", args=[pk]) + "#my-solution")
             submission = form.save(commit=False)
             submission.user = request.user
             submission.problem = problem
@@ -295,16 +318,31 @@ def review_detail(request, pk):
         grade.save()
         messages.success(request, "Оценка сохранена.")
         # Возвращаем в очередь с теми же фильтрами, чтобы проверять подряд.
-        return redirect(request.POST.get("back") or "contest:review_list")
+        return redirect(_safe_back(request, request.POST.get("back")))
 
     return render(request, "contest/review_detail.html", {
         "submission": submission, "form": form, "grade": grade,
-        "back": request.GET.get("back", ""),
+        "back": _safe_back(request, request.GET.get("back")),
         "history": (Submission.objects
                     .filter(user=submission.user, problem=submission.problem)
                     .exclude(pk=submission.pk)
                     .order_by("-created_at")),
     })
+
+
+def _safe_back(request, url):
+    """Адрес «вернуться в очередь» — только внутри сайта.
+
+    Он приходит в ссылке (?back=…), и подставить туда можно что угодно:
+    чужой сайт или javascript:. Всё, что не является адресом очереди
+    на нашем сайте, заменяем на саму очередь.
+    """
+    fallback = reverse("contest:review_list")
+    if url and url.startswith(fallback) and url_has_allowed_host_and_scheme(
+        url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return url
+    return fallback
 
 
 # --- Задачи: заводит организатор, одобряет администратор --------------------

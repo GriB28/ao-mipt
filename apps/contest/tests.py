@@ -84,10 +84,9 @@ class DeadlineTest(TestCase):
                 self.assertNotIn(p, Problem.objects.visible())
                 p.delete()
 
-    def test_problem_hidden_until_publish_at(self):
-        p = self._problem(self.now - timedelta(days=1), self.now + timedelta(days=1))
-        p.publish_at = self.now + timedelta(hours=1)
-        p.save()
+    def test_problem_hidden_until_stage_starts(self):
+        """Время публикации общее для этапа — его начало."""
+        p = self._problem(self.now + timedelta(hours=1), self.now + timedelta(days=1))
         self.assertNotIn(p, Problem.objects.visible())
 
 
@@ -267,7 +266,7 @@ class ProblemApprovalTest(TestCase):
         self._create()
         self.assertEqual(Problem.objects.get(number=90).created_by, self.organizer)
 
-    def test_statement_is_required_in_some_form(self):
+    def test_statement_is_required(self):
         response = self._create(statement_html="")
         self.assertIn("Нужно условие", response.content.decode())
         self.assertFalse(Problem.objects.filter(number=90).exists())
@@ -551,3 +550,79 @@ class LastSubmissionTest(TestCase):
         self._send()
         html = self.client.get(reverse("contest:problem_list")).content.decode()
         self.assertIn("#my-solution", html)
+
+
+class SecurityTest(TestCase):
+    """Найденные при аудите дыры — чтобы не вернулись."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_demo", verbosity=0)
+
+    def setUp(self):
+        self.organizer = User.objects.get(email="organizer@example.ru")
+        self.kid = User.objects.get(email="student@example.ru")
+
+    def test_script_in_statement_is_removed(self):
+        """Скрипт в условии не выполняется ни у участника, ни у администратора."""
+        problem = open_problem(author=self.organizer)
+        problem.statement_html = ('<p onclick="steal()">Найдите $v$.</p><script>steal()</script>'
+                                  '<img src="x" onerror="steal()"><a href="javascript:steal()">x</a>')
+        problem.save()
+        self.client.force_login(self.kid)
+        html = self.client.get(reverse("contest:problem_detail", args=[problem.pk])).content.decode()
+        self.assertIn("Найдите $v$.", html)
+        for bad in ("<script>steal", "onclick=", "onerror=", "javascript:steal"):
+            self.assertNotIn(bad, html)
+
+    def test_statement_is_cleaned_when_saved(self):
+        stage = Stage.objects.get(season__year=2027, slug="otbor-1")
+        self.client.force_login(self.organizer)
+        self.client.post(reverse("contest:problem_new"), {
+            "stage": stage.pk, "number": 77, "title": "З",
+            "statement_html": "<p>Условие</p><script>alert(1)</script>"})
+        self.assertEqual(Problem.objects.get(number=77).statement_html, "<p>Условие</p>")
+
+    def test_back_link_cannot_lead_off_site(self):
+        problem = open_problem(author=self.organizer)
+        submission = Submission.objects.create(user=self.kid, problem=problem)
+        self.client.force_login(self.organizer)
+        url = reverse("contest:review_detail", args=[submission.pk])
+        queue = reverse("contest:review_list")
+        for bad in ("javascript:alert(1)", "https://evil.example/", "//evil.example/"):
+            with self.subTest(back=bad):
+                page = self.client.get(url, {"back": bad})
+                self.assertEqual(page.context["back"], queue)
+                saved = self.client.post(url, {"score": "1", "comment": "", "status": "graded",
+                                               "back": bad})
+                self.assertEqual(saved["Location"], queue)
+        # Своя очередь с фильтрами по-прежнему работает.
+        good = f"{queue}?problem={problem.pk}&status=todo"
+        self.assertEqual(self.client.get(url, {"back": good}).context["back"], good)
+
+    @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="olymp-test-media-"),
+                       MAX_ATTEMPTS_PER_PROBLEM=2)
+    def test_attempts_per_problem_are_limited(self):
+        problem = open_problem()
+        self.client.force_login(self.kid)
+        for _ in range(3):
+            f = SimpleUploadedFile("r.pdf", b"%PDF", content_type="application/pdf")
+            self.client.post(reverse("contest:submit", args=[problem.pk]), {"files": [f]})
+        self.assertEqual(Submission.objects.filter(user=self.kid, problem=problem).count(), 2)
+
+    def test_organizer_cannot_submit_solutions(self):
+        problem = open_problem()
+        self.client.force_login(self.organizer)
+        f = SimpleUploadedFile("r.pdf", b"%PDF", content_type="application/pdf")
+        response = self.client.post(reverse("contest:submit", args=[problem.pk]), {"files": [f]})
+        self.assertEqual(response.status_code, 403)
+
+    def test_attachment_upload_path_works(self):
+        """Материалы к задаче из админки раньше падали с ошибкой 500."""
+        from apps.contest.models import ProblemAttachment, problem_upload_path
+
+        problem = open_problem()
+        path = problem_upload_path(ProblemAttachment(problem=problem), "data.csv")
+        self.assertTrue(path.endswith("/data.csv"))
+        # Имя файла задачи не угадать: в пути случайная папка.
+        self.assertNotEqual(problem_upload_path(problem, "a.png"), problem_upload_path(problem, "a.png"))

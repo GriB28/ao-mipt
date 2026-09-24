@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% load html_clean %}
 {% block title %}{{ page.title }}{% endblock %}
 {% block content %}
 <h1>{{ page.title }}</h1>
-<div>{{ page.body|safe }}</div>
+<div>{{ page.body|clean_html }}</div>
 {% endblock %}

@@ -6,6 +6,7 @@
 выгрузка в Excel остаётся кнопкой, а не источником истины.
 """
 
+import secrets
 from pathlib import Path
 
 from django.conf import settings
@@ -19,8 +20,15 @@ from apps.seasons.models import Stage
 
 
 def problem_upload_path(instance, filename):
-    season = instance.stage.season.slug
-    return f"problems/{season}/{instance.stage.slug}/{filename}"
+    """Куда кладём файлы задачи: рисунок, PDF, материалы.
+
+    Общая для Problem и ProblemAttachment (у вложения этап берём через
+    задачу). Случайная папка в пути — чтобы файлы ещё не открытой задачи
+    нельзя было скачать до начала тура, угадав имя вроде «risunok.png»:
+    /media/ отдаётся без проверки прав.
+    """
+    stage = instance.problem.stage if hasattr(instance, "problem_id") else instance.stage
+    return f"problems/{stage.season.slug}/{stage.slug}/{secrets.token_urlsafe(12)}/{filename}"
 
 
 def solution_upload_path(instance, filename):
@@ -31,18 +39,17 @@ def solution_upload_path(instance, filename):
 
 class ProblemQuerySet(models.QuerySet):
     def visible(self):
-        """Задача видна участникам: одобрена, этап начался и наступило время публикации.
+        """Задача видна участникам: одобрена и этап уже начался.
 
-        Проверка начала этапа — страховка: задачи заводят и одобряют
-        заранее, и без неё одобренная задача без «опубликовать в»
-        оказалась бы у участников за недели до старта тура.
+        Время публикации общее для всех задач этапа — это начало этапа,
+        оно задаётся в админке (Сезоны → Этапы). Задачи заводят и
+        одобряют заранее, и открываются они все разом.
         """
-        now = timezone.now()
         return self.filter(
             stage__is_published=True,
-            stage__starts_at__lte=now,
+            stage__starts_at__lte=timezone.now(),
             status=Problem.Status.APPROVED,
-        ).filter(models.Q(publish_at__isnull=True) | models.Q(publish_at__lte=now))
+        )
 
     def editable_by(self, user):
         """Задачи, которые человек вправе открыть в рабочем месте организатора.
@@ -100,8 +107,6 @@ class Problem(TimeStampedModel):
                                     null=True, blank=True,
                                     help_text="Необязательно. Участникам не показывается")
 
-    publish_at = models.DateTimeField("опубликовать в", null=True, blank=True,
-                                      help_text="Пусто — сразу после одобрения")
     status = models.CharField("статус", max_length=10, choices=Status.choices, default=Status.DRAFT)
     moderation_comment = models.TextField("комментарий администратора", blank=True,
                                           help_text="Виден автору задачи, если задача отклонена")

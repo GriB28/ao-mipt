@@ -41,6 +41,12 @@ class VenueForm(ContactRequiredMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Регион, записанный до появления списка, мог в него не попасть —
         # не ломаем правку старой площадки из-за этого.
+        # Контакты площадки публичные — школьники звонят по ним в день тура.
+        # Человек должен знать это до того, как впишет личный номер.
+        for name in ("contact_name", "contact_phone", "contact_telegram", "contact_email"):
+            hint = self.fields[name].help_text
+            self.fields[name].help_text = f"{hint}. Видно всем на странице площадки" if hint \
+                else "Видно всем на странице площадки"
         current = self.instance.region if self.instance and self.instance.pk else ""
         if current and current not in dict(REGION_CHOICES):
             self.fields["region"].choices = list(REGION_CHOICES) + [(current, current)]

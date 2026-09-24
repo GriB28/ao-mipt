@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load html_clean %}
 {% block title %}{{ problem.title }}{% endblock %}
 {% block content %}
 {% if problem.stage.is_practice %}
@@ -17,7 +18,7 @@
     Класс math включает разбор формул: KaTeX ищет $…$ и $$…$$
     только внутри него, чтобы не трогать остальной текст страницы.
   {% endcomment %}
-  <div class="card prose math">{{ problem.statement_html|safe }}</div>
+  <div class="card prose math">{{ problem.statement_html|clean_html }}</div>
 {% endif %}
 
 {% if problem.figure %}

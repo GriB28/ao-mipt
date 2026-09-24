@@ -10,9 +10,10 @@ class EmailBackend(ModelBackend):
         email = (username or kwargs.get("email") or "").strip()
         if not email:
             return None
-        try:
-            user = User.objects.get(email__iexact=email)
-        except User.DoesNotExist:
+        # filter().first(), а не get(): адреса, заведённые в админке с
+        # разным регистром (Ivan@ и ivan@), не должны ронять вход ошибкой.
+        user = User.objects.filter(email__iexact=email).order_by("pk").first()
+        if user is None:
             # Тратим то же время, что и на реальную проверку —
             # иначе по скорости ответа можно узнать, есть ли такой e-mail.
             User().set_password(password)

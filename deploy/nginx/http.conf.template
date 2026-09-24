@@ -2,6 +2,11 @@
 # сборки у себя на компьютере. Как только сертификат выпущен, при
 # следующем старте nginx переключится на https.conf.template.
 
+# Счётчик запросов для входа и регистрации (см. locations.conf):
+# 30 в минуту с одного адреса, 429 при превышении.
+limit_req_zone $binary_remote_addr zone=auth:10m rate=30r/m;
+limit_req_status 429;
+
 server {
     listen 80 default_server;
     server_name _;

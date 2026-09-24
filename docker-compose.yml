@@ -37,6 +37,9 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-olymp} -d ${POSTGRES_DB:-olymp}"]
       interval: 5s
       retries: 10
+    # Даём базе спокойно дописать всё на диск при остановке, а не
+    # обрывать её через 10 секунд по умолчанию.
+    stop_grace_period: 1m
     restart: unless-stopped
     logging: *logging
 

@@ -176,6 +176,12 @@ STORAGES = {
 # Тот же лимит надо продублировать в nginx (client_max_body_size).
 MAX_UPLOAD_SIZE_MB = env.int("MAX_UPLOAD_SIZE_MB", default=20)
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+# Сколько файлов в одной отправке и сколько отправок по одной задаче.
+# Пределы защищают диск сервера; обычному участнику их не достичь.
+MAX_FILES_PER_SUBMISSION = env.int("MAX_FILES_PER_SUBMISSION", default=10)
+MAX_ATTEMPTS_PER_PROBLEM = env.int("MAX_ATTEMPTS_PER_PROBLEM", default=30)
+# /healthz/ отвечает 503, если места под загрузки осталось меньше.
+HEALTHZ_MIN_FREE_GB = env.float("HEALTHZ_MIN_FREE_GB", default=2.0)
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Проверка: {{ submission.problem.title }}{% endblock %}
 {% block content %}
-<p class="muted"><a href="{{ back|default:'/online/review/' }}">← К очереди проверки</a></p>
+<p class="muted"><a href="{{ back }}">← К очереди проверки</a></p>
 
 <h1>{{ submission.problem.number }}. {{ submission.problem.title }}</h1>
 <p class="lead">

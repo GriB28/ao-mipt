@@ -159,3 +159,15 @@ class HealthzTest(TestCase):
 
         with patch("apps.core.views.connection.cursor", side_effect=Exception("down")):
             self.assertEqual(self.client.get(reverse("core:healthz")).status_code, 503)
+
+
+class HealthzDiskTest(TestCase):
+    def test_low_disk_space_is_reported(self):
+        from collections import namedtuple
+        from unittest.mock import patch
+
+        usage = namedtuple("usage", "total used free")(100, 99, 1024 ** 3)  # 1 ГБ свободно
+        with patch("apps.core.views.shutil.disk_usage", return_value=usage):
+            response = self.client.get(reverse("core:healthz"))
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(b"low disk", response.content)

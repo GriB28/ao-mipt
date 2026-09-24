@@ -14,20 +14,36 @@ OUT=/backups
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-7}"
 HOUR="${BACKUP_HOUR_UTC:-00}"   # 00 UTC = 03:00 по Москве
 
+fail() {
+    echo "backup: ОШИБКА — $1" >&2
+    rm -f "$OUT"/.db-*.tmp "$OUT"/.media-*.tmp
+    return 1
+}
+
+# Каждый шаг проверяется явно, а не через set -e: в ежедневном цикле
+# функция вызывается как «run_backup || …», и там set -e не действует —
+# упавший pg_dump иначе дал бы недописанный файл под видом бэкапа.
 run_backup() {
     stamp=$(date -u +%F_%H%M)
     echo "backup: начинаю $stamp"
     # Сначала во временный файл: оборванный бэкап не должен выглядеть целым.
-    pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f "$OUT/.db-$stamp.tmp"
-    mv "$OUT/.db-$stamp.tmp" "$OUT/db-$stamp.dump"
-    tar czf "$OUT/.media-$stamp.tmp" -C /media .
-    mv "$OUT/.media-$stamp.tmp" "$OUT/media-$stamp.tar.gz"
+    pg_dump -h db -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f "$OUT/.db-$stamp.tmp" \
+        || { fail "pg_dump не отработал"; return 1; }
+    # Дамп читается — значит, он целый.
+    pg_restore --list "$OUT/.db-$stamp.tmp" >/dev/null \
+        || { fail "дамп базы повреждён"; return 1; }
+    tar czf "$OUT/.media-$stamp.tmp" -C /media . \
+        || { fail "не удалось упаковать загрузки (место на диске?)"; return 1; }
+    mv "$OUT/.db-$stamp.tmp" "$OUT/db-$stamp.dump" || { fail "mv"; return 1; }
+    mv "$OUT/.media-$stamp.tmp" "$OUT/media-$stamp.tar.gz" || { fail "mv"; return 1; }
+    # Старые удаляем только после удачного бэкапа: полоса ошибок не должна
+    # съесть последние хорошие копии.
     find "$OUT" -maxdepth 1 \( -name 'db-*.dump' -o -name 'media-*.tar.gz' \) -mtime +"$KEEP_DAYS" -delete
     echo "backup: готово — $(ls -1 "$OUT" | wc -l) файлов в /backups, храню $KEEP_DAYS дн."
 }
 
 if [ "${1:-}" = now ]; then
-    run_backup
+    run_backup || exit 1
     exit 0
 fi
 
