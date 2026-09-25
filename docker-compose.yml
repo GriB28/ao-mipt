@@ -63,11 +63,11 @@ services:
       web:
         condition: service_healthy
 
+  # к нджинксу нужно настроить конфиг в глобале
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:8888:80"
     environment:
       DOMAIN: ${DOMAIN:-}
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-100m}
@@ -84,14 +84,16 @@ services:
 
   # Продлевает сертификат Let's Encrypt (проверка дважды в сутки,
   # реально продлевает за 30 дней до конца). Первый выпуск — make https.
-  certbot:
-    image: certbot/certbot
-    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
-    volumes:
-      - letsencrypt:/etc/letsencrypt
-      - certbot-www:/var/www/certbot
-    restart: unless-stopped
-    logging: *logging
+
+  # фигня это всё, а не сертбот. у нас ревёрс прокси будет и продление сертификатов должно глобально хэндлиться
+  # certbot:
+  #   image: certbot/certbot
+  #   entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+  #   volumes:
+  #     - letsencrypt:/etc/letsencrypt
+  #     - certbot-www:/var/www/certbot
+  #   restart: unless-stopped
+  #   logging: *logging
 
   # Ежедневный бэкап базы и загрузок в ./backups (см. deploy/backup.sh).
   backup:

@@ -49,7 +49,7 @@ if DEBUG or TESTING:
 # --- Приложения -----------------------------------------------------------
 
 DJANGO_APPS = [
-    'whitenoise.runserver_nostatic',      # тестовый деплой: runserver при DEBUG=false
+    # 'whitenoise.runserver_nostatic',      # тестовый деплой: runserver при DEBUG=false
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
