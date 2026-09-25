@@ -5,6 +5,8 @@
 # Настройки — в .env (образец: .env.example). Порядок развёртывания —
 # docs/deploy.md.
 
+name: asolymp
+
 x-app: &app
   build: .
   image: olymp-web
