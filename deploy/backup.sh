@@ -1,6 +1,6 @@
 #!/bin/sh
 # Бэкап базы и загруженных файлов. Работает в контейнере backup
-# (см. docker-compose.yml), складывает архивы в ./asolymp/backups на сервере.
+# (см. docker-compose.yml), складывает архивы в ./backups на сервере [или он же /backups в контейнере].
 #
 #   backup.sh          ждать и делать бэкап раз в сутки в BACKUP_HOUR_UTC
 #   backup.sh now      сделать бэкап прямо сейчас и выйти
@@ -16,7 +16,7 @@
 # сервере нет (см. docs/deploy.md, «Бэкапы»).
 set -eu
 
-OUT=/asolymp/backups
+OUT=/backups
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-7}"
 HOUR="${BACKUP_HOUR_UTC:-00}"   # 00 UTC = 03:00 по Москве
 RECIPIENT="${BACKUP_AGE_RECIPIENT:-}"
@@ -60,7 +60,7 @@ run_backup() {
     # Старые удаляем только после удачного бэкапа: полоса ошибок не должна
     # съесть последние хорошие копии.
     find "$OUT" -maxdepth 1 \( -name 'db-*.dump*' -o -name 'media-*.tar.gz*' \) -mtime +"$KEEP_DAYS" -delete
-    echo "backup: готово — $(ls -1 "$OUT" | wc -l) файлов в /asolymp/backups, храню $KEEP_DAYS дн."
+    echo "backup: готово — $(ls -1 "$OUT" | wc -l) файлов в /backups, храню $KEEP_DAYS дн."
 }
 
 if [ "${1:-}" = now ]; then
