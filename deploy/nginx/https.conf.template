@@ -1,0 +1,41 @@
+# Боевая конфигурация: http только для Let's Encrypt и редиректа,
+# весь сайт — по https.
+
+# Счётчик запросов для входа и регистрации (см. locations.conf):
+# 30 в минуту с одного адреса, 429 при превышении.
+limit_req_zone $binary_remote_addr zone=auth:10m rate=30r/m;
+limit_req_status 429;
+
+server {
+    listen 80 default_server;
+    server_name _;
+    server_tokens off;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://${DOMAIN}$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+    server_tokens off;
+    client_max_body_size ${CLIENT_MAX_BODY_SIZE};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    include /etc/nginx/olymp/locations.conf;
+}

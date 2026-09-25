@@ -50,6 +50,8 @@
       Запись открыта с {{ stage.registration_opens_at|default:stage.starts_at|date:"d.m.Y" }}
       по {{ stage.registration_closes_at|default:stage.ends_at|date:"d.m.Y" }}.
     </p>
+  {% elif not user.can_participate %}
+    {% include "accounts/_participation_gate.html" with what="записаться на площадку" %}
   {% else %}
     {% if my_booking %}
       {% comment %}

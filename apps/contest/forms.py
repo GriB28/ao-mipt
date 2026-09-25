@@ -1,4 +1,7 @@
 from django import forms
+from django.conf import settings
+
+from apps.core.sanitize import clean_html
 
 from .models import Grade, Problem, Submission
 
@@ -24,10 +27,24 @@ class MultipleFileField(forms.FileField):
 class SubmissionForm(forms.ModelForm):
     files = MultipleFileField(label="Файлы решения", required=True)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Предел для браузера: он сожмёт фото и не даст отправить лишнее.
+        limit = settings.PARTICIPANT_UPLOAD_MAX_MB
+        self.fields["files"].widget.attrs["data-max-mb"] = f"{limit:g}"
+        self.fields["files"].help_text = (
+            f"До {limit:g} МБ на файл. Фото с телефона уменьшатся автоматически."
+        )
+
     class Meta:
         model = Submission
         fields = ("answer", "comment")
         widgets = {"comment": forms.Textarea(attrs={"rows": 3})}
+
+
+def _plain(number):
+    """10.00 → «10», 7.50 → «7.5»: баллы без лишних нулей."""
+    return f"{number.normalize():f}"
 
 
 class GradeForm(forms.ModelForm):
@@ -49,7 +66,7 @@ class GradeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.max_score = max_score
         if max_score is not None:
-            self.fields["score"].help_text = f"Максимум за задачу: {max_score:g}"
+            self.fields["score"].help_text = f"Максимум за задачу: {_plain(max_score)}"
 
     def clean_score(self):
         score = self.cleaned_data.get("score")
@@ -60,7 +77,7 @@ class GradeForm(forms.ModelForm):
         # Балл выше максимума почти всегда опечатка (например, 100 вместо 10)
         # и молча портит итоговую таблицу.
         if self.max_score is not None and score > self.max_score:
-            raise forms.ValidationError(f"Больше максимума за задачу ({self.max_score:g}).")
+            raise forms.ValidationError(f"Больше максимума за задачу ({_plain(self.max_score)}).")
         return score
 
 
@@ -72,32 +89,36 @@ class ProblemForm(forms.ModelForm):
     дополнительных проверяющих администратор, а не автор. Максимального
     балла тоже нет — участникам он не показывается, а шкалу удобнее
     уточнять уже при проверке.
+
+    Условие — только текстом на странице: PDF не читается на телефоне и
+    не ищется. Времени публикации тоже нет: все задачи этапа открываются
+    разом в момент его начала (задаётся в админке). Разбор прикладывает
+    администратор после тура.
     """
 
     class Meta:
         model = Problem
-        fields = ("stage", "number", "title", "statement_html", "statement_pdf",
-                  "figure", "figure_caption", "publish_at",
-                  "solution_pdf", "solution_published_at")
+        fields = ("stage", "number", "title", "statement_html", "figure", "figure_caption")
         widgets = {
             "statement_html": forms.Textarea(attrs={
                 "rows": 12,
                 "placeholder": "Условие задачи. Формулы — в долларах: $v_0 = \\sqrt{2gh}$",
             }),
-            "publish_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
-            "solution_published_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Тренировочная песочница в списке этапов не нужна: туда задачи
-        # заводит только seed_demo, вручную там делать нечего.
-        self.fields["stage"].queryset = self.fields["stage"].queryset.filter(is_practice=False)
+        # Только этапы текущего сезона и без тренировочной песочницы:
+        # задачу прошлого сезона организатору заводить незачем, а в
+        # песочницу её кладёт setup_site.
+        self.fields["stage"].queryset = (self.fields["stage"].queryset
+                                         .filter(is_practice=False, season__is_active=True))
+        # В модели условие необязательно (у задач из архива бывает только
+        # PDF), а организатор без текста условия задачу не заведёт.
+        self.fields["statement_html"].required = True
+        self.fields["statement_html"].error_messages["required"] = "Нужно условие задачи."
 
-    def clean(self):
-        cleaned = super().clean()
-        if not cleaned.get("statement_html") and not cleaned.get("statement_pdf"):
-            raise forms.ValidationError(
-                "Нужно условие: либо текстом на странице, либо файлом PDF."
-            )
-        return cleaned
+    def clean_statement_html(self):
+        # Храним уже очищенный текст: в базе не должно лежать то, что
+        # опасно показывать (см. apps/core/sanitize.py).
+        return clean_html(self.cleaned_data["statement_html"])

@@ -18,7 +18,15 @@ body {
   color: var(--text-primary);
   background: var(--bg-page);
   -webkit-font-smoothing: antialiased;
+  /* Длинные слова и адреса (имена файлов, e-mail) переносятся,
+     а не распирают страницу вбок на телефоне. */
+  overflow-wrap: break-word;
+  /* iOS не увеличивает шрифт сам при повороте экрана. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
+
+img, video, iframe { max-width: 100%; }
 
 .container {
   max-width: var(--container-width);
@@ -65,6 +73,7 @@ body {
   transition: color var(--transition);
 }
 .main-nav a:hover { color: var(--text-on-dark); }
+.main-nav a[aria-current="page"] { color: var(--text-on-dark); }
 
 .user-nav {
   margin-left: auto;
@@ -154,7 +163,8 @@ a { color: var(--text-link); }
 .grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* min(…, 100%): на экране уже 280px колонка сжимается, а не вылезает. */
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
 }
 
 .card {
@@ -165,6 +175,8 @@ a { color: var(--text-link); }
   transition: box-shadow var(--transition);
 }
 .card:hover { box-shadow: var(--shadow-md); }
+.card > :first-child { margin-top: 0; }
+.card > :last-child { margin-bottom: 0; }
 .card a { text-decoration: none; }
 .card a:hover { text-decoration: underline; }
 
@@ -186,7 +198,8 @@ form p { margin: 0 0 var(--space-4); }
 label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-1); }
 
 input[type=text], input[type=email], input[type=password], input[type=number],
-input[type=date], input[type=file], input[type=url], select, textarea {
+input[type=date], input[type=datetime-local], input[type=time], input[type=tel],
+input[type=search], input[type=file], input[type=url], select, textarea {
   width: 100%;
   padding: var(--space-3);
   border: 1px solid var(--border-default);
@@ -204,10 +217,87 @@ input:focus, select:focus, textarea:focus {
 }
 input[type=checkbox] { width: auto; margin-right: var(--space-2); }
 
+/* Галочка слева от подписи, а не отдельной строкой под ней: Django
+   выводит подпись первой, разворачиваем порядок. Сама галочка
+   крупнее обычной — в неё попадают пальцем. */
+form p:has(> input[type=checkbox]) {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+form p:has(> input[type=checkbox]) label { margin: 0; color: var(--text-primary); font-size: var(--text-sm); }
+form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--color-brand-500); }
+
 .helptext { font-size: var(--text-xs); color: var(--text-secondary); display: block; margin-top: var(--space-1); }
+.upload-note-error { color: var(--color-danger-500); }
 .errorlist { font-size: var(--text-xs); color: var(--color-danger-500); list-style: none; padding: 0; margin: var(--space-1) 0 0; }
 
 .form-narrow { max-width: 480px; }
+
+.gate ul { margin: var(--space-2) 0; padding-left: var(--space-5); }
+.gate p:last-child { margin-bottom: 0; }
+
+/* --- Кабинет участника: шаги до участия и согласие ------------------------ */
+
+.steps { margin: var(--space-5) 0; max-width: var(--content-width); }
+.step-list { margin: var(--space-3) 0 0; padding-left: var(--space-5); }
+.step-list li { margin-bottom: var(--space-2); }
+.step-list li.done { color: var(--text-secondary); text-decoration: line-through; }
+.step-list li.done::marker { content: "✓  "; color: var(--color-success-500); }
+
+.form-section {
+  border: 0;
+  padding: 0;
+  margin: 0 0 var(--space-5);
+}
+.form-section legend {
+  font-weight: var(--weight-medium);
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-3);
+  padding: 0;
+}
+/* Серия и номер документа — в одну строку. */
+.field-row { display: grid; grid-template-columns: 2fr 3fr; gap: var(--space-3); }
+/* Дата тремя списками: число, месяц, год. */
+.profile-form select[name$="_day"], .profile-form select[name$="_month"],
+.profile-form select[name$="_year"] { width: auto; display: inline-block; margin-right: var(--space-2); }
+.profile-form select[name$="_month"] { min-width: 9em; }
+
+.field-error input, .field-error select, .field-error textarea { border-color: var(--color-danger-500); }
+
+.consent-status {
+  max-width: var(--content-width);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  border-left: 3px solid var(--color-lavender-300);
+  margin-bottom: var(--space-4);
+}
+.consent-status p { margin: 0 0 var(--space-2); }
+.consent-status p:last-child { margin-bottom: 0; }
+.consent-approved { border-left-color: var(--color-success-500); }
+.consent-rejected, .consent-outdated { border-left-color: var(--color-warning-500); }
+.profile-details summary { cursor: pointer; color: var(--text-link); padding: var(--space-2) 0; }
+.consent-steps { padding-left: var(--space-5); max-width: var(--content-width); }
+.consent-steps > li { margin-bottom: var(--space-4); }
+
+/* Блок решения администратора в форме задачи. */
+.moderation {
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--color-brand-500);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-5) 0;
+}
+.moderation legend { padding: 0 var(--space-2); font-weight: var(--weight-medium); }
+
+/* Ряд кнопок под формой: на телефоне переносятся и встают одинаковой ширины. */
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+@media (max-width: 480px) {
+  .actions > .btn { flex: 1 1 100%; text-align: center; }
+}
 .form-wide { max-width: var(--content-width); }
 
 /* --- Статусы и бейджи ---------------------------------------------------- */
@@ -271,7 +361,7 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
 .playlist-grid {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   margin-bottom: var(--space-6);
 }
 
@@ -384,7 +474,7 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
 .footer-grid {
   display: grid;
   gap: var(--space-5);
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
 }
 .footer-grid p { margin: 0 0 var(--space-2); }
 
@@ -399,20 +489,132 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
 
 /* --- Мобильные ----------------------------------------------------------- */
 
+/* Рассчитано на ширину 360–430px (большинство смартфонов) и не
+   ломается до 320px (iPhone SE первого поколения). */
 @media (max-width: 720px) {
-  .header-inner { gap: var(--space-3); padding: var(--space-3) 0; }
-  .main-nav { gap: var(--space-2) var(--space-4); width: 100%; }
-  .user-nav { margin-left: 0; width: 100%; }
-  h1 { font-size: var(--text-2xl); }
+  /* Первая строка — логотип и вход, вторая — меню во всю ширину.
+     Меню не переносится на несколько строк, а листается вбок:
+     пять пунктов в две кривые строки читаются хуже одной ленты. */
+  .header-inner {
+    gap: var(--space-2) var(--space-3);
+    padding-block: var(--space-3) 0;
+    min-height: 0;
+  }
+  .user-nav { gap: var(--space-3); margin-left: auto; }
+  .main-nav + .user-nav { margin-left: auto; }
+  .main-nav {
+    order: 3;
+    width: calc(100% + 2 * var(--space-4));
+    margin-inline: calc(var(--space-4) * -1);
+    padding: var(--space-1) var(--space-4) 0;
+    flex-wrap: nowrap;
+    gap: var(--space-5);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .main-nav::-webkit-scrollbar { display: none; }
+  .main-nav a {
+    flex: none;
+    white-space: nowrap;
+    /* Палец, а не курсор: высота пункта не меньше 44px. */
+    padding: var(--space-3) 0;
+    border-bottom: 2px solid transparent;
+  }
+  .main-nav a[aria-current="page"] { border-bottom-color: var(--color-brand-500); }
+
+  h1 { font-size: var(--text-2xl); margin-top: var(--space-5); }
+  h2 { margin-top: var(--space-5); }
+  .lead { font-size: var(--text-base); }
   .hero { padding: var(--space-5) var(--space-4); }
   .hero h1 { font-size: var(--text-2xl); }
+  .card { padding: var(--space-4); }
   #map { height: 380px; }
+  .site-footer { margin-top: var(--space-7); }
 
-  /* Таблицы (задачи, архив, очередь проверки) шире экрана телефона.
-     Даём им прокручиваться внутри себя, чтобы вбок не уезжала вся
-     страница — иначе на телефоне «плывёт» вообще всё. */
-  table { display: block; overflow-x: auto; white-space: nowrap; }
-  table th, table td { white-space: normal; min-width: 90px; }
+  /* Кнопка отправки формы — во всю ширину: в неё проще попасть. */
+  .form-narrow .btn[type=submit], .form-wide .btn[type=submit] { width: 100%; }
+  .filter-bar { gap: var(--space-3); }
+  .filter-bar label, .filter-bar select { width: 100%; }
+
+  /* Таблицы-матрицы (ведомость баллов) по-прежнему прокручиваются
+     внутри себя, чтобы вбок не уезжала вся страница. Списочные
+     таблицы помечены .table-stack и превращаются в карточки ниже. */
+  table:not(.table-stack):not(.table-fit) { display: block; overflow-x: auto; }
+  table:not(.table-stack):not(.table-fit) th,
+  table:not(.table-stack):not(.table-fit) td { min-width: 72px; }
+  /* .table-fit — узкие таблицы, которые и так помещаются в экран. */
+  .table-fit th, .table-fit td { padding: var(--space-3) var(--space-2); }
+  .score-table th:first-child, .score-table td:first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--bg-page);
+  }
+  /* 16px в поле ввода — иначе iOS увеличивает страницу при фокусе. */
+  .score-table input { font-size: var(--text-base); width: 4em; }
+}
+
+@media (max-width: 480px) {
+  .playlist-card { grid-template-columns: 96px 1fr; gap: var(--space-3); }
+}
+
+/* На самых узких экранах шапка должна уместиться в одну строку:
+   админка с телефона всё равно неудобна, ссылка на неё остаётся
+   в кабинете и на широком экране. */
+@media (max-width: 480px) {
+  .user-nav { gap: var(--space-2); }
+  .nav-admin { display: none; }
+  .logo { font-size: var(--text-base); }
+}
+
+/* --- Таблица-список на телефоне ------------------------------------------ */
+
+/* Строка таблицы становится карточкой: подпись столбца (data-label)
+   слева, значение справа. Так на телефоне видно всё сразу, и не надо
+   листать таблицу вбок в поисках статуса или балла. */
+@media (max-width: 640px) {
+  .table-stack, .table-stack tbody, .table-stack tr, .table-stack td, .table-stack th {
+    display: block;
+  }
+  .table-stack thead { display: none; }
+  .table-stack tr {
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+    background: var(--bg-card);
+  }
+  .table-stack tbody tr:hover { background: var(--bg-card); }
+  .table-stack td, .table-stack th {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-default);
+    text-align: right;
+  }
+  .table-stack td:last-child, .table-stack th:last-child { border-bottom: 0; }
+  .table-stack td > * { min-width: 0; margin: 0; }
+  .table-stack td > div { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
+  .table-stack td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--text-secondary);
+    text-align: left;
+  }
+  /* Первая ячейка — заголовок карточки, без подписи и крупнее. */
+  .table-stack td:first-child {
+    display: block;
+    text-align: left;
+    font-size: var(--text-base);
+    font-weight: var(--weight-medium);
+  }
+  .table-stack td:first-child::before { content: none; }
+  /* Ячейка без подписи (ссылка «Проверить →») — кнопкой справа. */
+  .table-stack td:not([data-label]):not(:first-child) { justify-content: flex-end; }
+  .table-stack td:not([data-label])::before { content: none; }
+  .table-stack td[colspan] { display: block; text-align: left; }
+  .table-stack .table-total { display: flex; justify-content: space-between; }
+  .table-stack .table-total th { border: 0; padding: var(--space-1) 0; }
 }
 
 /* --- Панель организатора ------------------------------------------------- */
@@ -480,7 +682,46 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
 }
 
 .file-list { list-style: none; padding: 0; margin: var(--space-3) 0; }
-.file-list li { padding: var(--space-2) 0; border-bottom: 1px solid var(--border-default); }
+.file-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-default);
+}
+.file-list li > a:first-child { overflow-wrap: anywhere; min-width: 0; }
+.file-download { margin-left: auto; font-size: var(--text-sm); }
+
+/* --- Моё решение (страница задачи) --------------------------------------- */
+
+.my-solution { margin: var(--space-5) 0; max-width: var(--content-width); }
+.my-solution-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+.my-solution-head h2 { margin: 0; }
+.my-solution-comment, .my-solution-grade {
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+.my-solution-comment > p:first-child, .my-solution-grade > p:first-child { margin-top: 0; }
+.my-solution-comment > :last-child, .my-solution-grade > :last-child { margin-bottom: 0; }
+.my-solution-history { margin-top: var(--space-3); }
+.my-solution-history summary { cursor: pointer; color: var(--text-link); padding: var(--space-2) 0; }
+.my-solution-history ul { padding-left: var(--space-5); }
+.my-solution-history li { margin-bottom: var(--space-2); overflow-wrap: anywhere; }
+.cell-files a { overflow-wrap: anywhere; }
+
+/* Формулы KaTeX и код шире экрана телефона листаются внутри себя. */
+.katex-display { overflow-x: auto; overflow-y: hidden; padding-block: var(--space-1); }
+pre { overflow-x: auto; }
+.prose img { height: auto; }
 
 /* Пояснение к равноценным форматам тура: заметнее обычного текста,
    но не тревожное — это не предупреждение, а развилка выбора. */
@@ -748,6 +989,13 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
 
 /* На узком экране схема разворачивается вертикально, стрелки — вниз.
    Горизонтальная прокрутка как способ смотреть схему не годится. */
+@media (max-width: 560px) {
+  .scheme-all { padding: var(--space-3); gap: var(--space-3); }
+  .scheme-qualifying, .scheme-primary { padding: var(--space-3); }
+  .scheme-qualifying-row { gap: var(--space-3); }
+  .stage-card { padding: var(--space-3); }
+}
+
 @media (max-width: 860px) {
   .scheme-all, .scheme-qualifying-row { grid-template-columns: minmax(0, 1fr); }
   .scheme-primary-cards { grid-template-columns: minmax(0, 1fr); }

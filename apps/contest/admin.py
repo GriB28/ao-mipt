@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils.html import format_html
 
 from .models import Grade, Problem, ProblemAttachment, Score, Submission, SubmissionFile
 
@@ -45,7 +46,16 @@ class ProblemAdmin(admin.ModelAdmin):
 class SubmissionFileInline(admin.TabularInline):
     model = SubmissionFile
     extra = 0
-    readonly_fields = ("file",)
+    fields = ("download",)
+    readonly_fields = ("download",)
+
+    # Прямой адрес /media/solutions/ на сервере закрыт — ссылка ведёт
+    # через проверку прав, как и на сайте.
+    @admin.display(description="файл")
+    def download(self, obj):
+        if not obj.pk:
+            return "—"
+        return format_html('<a href="{}">{}</a>', obj.get_absolute_url(), obj.filename)
 
 
 class GradeInline(admin.StackedInline):

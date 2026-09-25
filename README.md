@@ -92,8 +92,15 @@ make demo        # собирает dist/ — 44 статические стра
 
 ## Запуск в Docker (как на сервере)
 
+На сервер сайт ставится контейнерами: база, сайт, nginx с HTTPS,
+рассылки и ежедневный бэкап — одной командой. Пошагово, от чистого
+сервера до работающего https — в [docs/deploy.md](docs/deploy.md).
+
+Проверить сборку у себя:
+
 ```bash
-cp .env.example .env    # заполнить SECRET_KEY и POSTGRES_PASSWORD
+cp .env.example .env    # вписать SECRET_KEY, POSTGRES_PASSWORD,
+                        # ALLOWED_HOSTS=localhost и USE_HTTPS=False
 make up                 # http://localhost
 ```
 
@@ -116,7 +123,7 @@ templates/         HTML-шаблоны
 static/
   css/tokens.css   ВСЕ цвета и шрифты — файл для дизайнера
   css/main.css     вёрстка (цветов не содержит)
-deploy/            конфиг nginx
+deploy/            всё для сервера: nginx, бэкап, настройка сервера, HTTPS
 docs/              архитектура, дорожная карта, инструкция по развёртыванию
 ```
 

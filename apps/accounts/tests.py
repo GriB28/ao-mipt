@@ -1,70 +1,47 @@
 """Регистрация и вход — через них проходит каждый участник."""
 
+import tempfile
+
 from django.core import mail
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .emails import make_token
-from .models import ParticipantProfile, User
+from .models import ConsentDocument, ParticipantProfile, User
 
 
 class SignUpTest(TestCase):
+    """Регистрация — только почта и пароль, анкета потом."""
+
     form_data = {
         "email": "Vasya@Example.RU",
         "password1": "olymp12345",
         "password2": "olymp12345",
-        "last_name": "Пупкин",
-        "first_name": "Василий",
-        "grade": 10,
-        "school": "Школа №1",
-        "city": "Москва",
-        "region": "Москва",
-        "telegram": "@vasya",
-        "consent": "on",
     }
 
-    def test_signup_creates_user_and_profile(self):
+    def test_signup_creates_user_and_empty_profile(self):
         response = self.client.post(reverse("accounts:signup"), self.form_data)
-        self.assertRedirects(response, reverse("accounts:profile"))
+        # Не входим: кабинет — только после подтверждения почты.
+        self.assertRedirects(response, reverse("accounts:signup_done"))
+        self.assertNotIn("_auth_user_id", self.client.session)
 
         user = User.objects.get(email="vasya@example.ru")  # почта приводится к нижнему регистру
         self.assertEqual(user.role, User.Role.PARTICIPANT)
-
         profile = ParticipantProfile.objects.get(user=user)
-        self.assertEqual(profile.last_name, "Пупкин")
-        self.assertEqual(profile.region, "Москва")
-        self.assertTrue(profile.consent_given)
-        self.assertIsNotNone(profile.consent_given_at)
+        self.assertFalse(profile.is_complete)
+        self.assertFalse(user.can_participate)
 
-    def test_school_city_and_region_are_required(self):
-        """Без них нельзя посчитать охват и разложить людей по площадкам."""
-        for field in ("school", "city", "region"):
-            with self.subTest(field=field):
-                response = self.client.post(reverse("accounts:signup"), self.form_data | {field: ""})
-                self.assertFormError(response.context["form"], field, "Обязательное поле.")
-                self.assertFalse(User.objects.filter(email="vasya@example.ru").exists())
+    def test_signup_asks_nothing_but_email_and_password(self):
+        html = self.client.get(reverse("accounts:signup")).content.decode()
+        for field in ("last_name", "school", "doc_number"):
+            self.assertNotIn(f'name="{field}"', html)
 
-    def test_unknown_region_rejected(self):
-        """Регион выбирается из списка, произвольную строку не принимаем."""
-        self.client.post(reverse("accounts:signup"), self.form_data | {"region": "Мордор"})
-        self.assertFalse(User.objects.filter(email="vasya@example.ru").exists())
-
-    def test_phone_or_telegram_required(self):
-        data = self.form_data | {"telegram": "", "phone": ""}
-        response = self.client.post(reverse("accounts:signup"), data)
-        self.assertFormError(response.context["form"], "phone",
-                             "Укажите телефон или Telegram — хотя бы один способ связи.")
-        self.assertFalse(User.objects.filter(email="vasya@example.ru").exists())
-
-    def test_phone_alone_is_enough(self):
-        data = self.form_data | {"telegram": "", "phone": "+7 900 000-00-00"}
-        self.client.post(reverse("accounts:signup"), data)
-        self.assertTrue(User.objects.filter(email="vasya@example.ru").exists())
-
-    def test_signup_requires_consent(self):
-        data = self.form_data | {"consent": ""}
-        self.client.post(reverse("accounts:signup"), data)
-        self.assertFalse(User.objects.filter(email="vasya@example.ru").exists())
+    def test_signup_has_no_consent_checkboxes(self):
+        """Согласие — подписанным бланком из кабинета, не галочкой при регистрации."""
+        html = self.client.get(reverse("accounts:signup")).content.decode()
+        self.assertNotIn('type="checkbox"', html)
 
     def test_duplicate_email_rejected_regardless_of_case(self):
         User.objects.create_user("vasya@example.ru", "olymp12345")
@@ -75,6 +52,304 @@ class SignUpTest(TestCase):
         data = self.form_data | {"password1": "123", "password2": "123"}
         self.client.post(reverse("accounts:signup"), data)
         self.assertFalse(User.objects.filter(email="vasya@example.ru").exists())
+
+
+def profile_data(**extra):
+    """Полная анкета несовершеннолетнего — как её отправляет форма.
+
+    Даты — тремя списками (число, месяц, год), серия и номер — отдельно.
+    """
+    return {
+        "last_name": "Пупкин", "first_name": "Василий", "middle_name": "",
+        "birth_date_day": "1", "birth_date_month": "5", "birth_date_year": "2010",
+        "birth_place": "г. Москва",
+        "doc_type": "passport_rf", "doc_series": "4510", "doc_number": "123456",
+        "doc_issued_at_day": "1", "doc_issued_at_month": "6", "doc_issued_at_year": "2024",
+        "doc_issued_by": "ГУ МВД России по г. Москве", "doc_division_code": "770001",
+        "reg_address": "101000, Москва, ул. Мира, 1", "grade": "10", "school": "Школа № 1",
+        "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "@vasya_p",
+    } | extra
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="olymp-test-media-"))
+class ParticipationStepsTest(TestCase):
+    """Почта → анкета → согласие: после этого открыто участие."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("kid@e.ru", "olymp12345", email_confirmed=True)
+        ParticipantProfile.objects.create(user=self.user)
+        self.client.force_login(self.user)
+
+    def _save_profile(self, **extra):
+        return self.client.post(reverse("accounts:profile"), profile_data(**extra))
+
+    def _upload(self, name="scan.jpg", content=b"\xff\xd8 scan", **extra):
+        f = SimpleUploadedFile(name, content, content_type="image/jpeg")
+        return self.client.post(reverse("accounts:consent_upload"), {"file": f} | extra)
+
+    def test_full_path_opens_participation(self):
+        self.assertFalse(self.user.can_participate)
+        self._save_profile()
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.profile.is_complete)
+        self.assertFalse(self.user.can_participate)  # согласия ещё нет
+
+        blank = self.client.get(reverse("accounts:consent_blank"))
+        self.assertEqual(blank["Content-Type"], "application/pdf")
+        self.assertTrue(blank.content.startswith(b"%PDF"))
+
+        self._upload()
+        consent = ConsentDocument.objects.get(user=self.user)
+        self.assertEqual(consent.status, ConsentDocument.Status.PENDING)
+        self.assertTrue(consent.for_minor)
+        self.assertEqual((consent.data["doc_series"], consent.data["doc_number"]), ("4510", "123456"))
+        self.assertTrue(User.objects.get(pk=self.user.pk).can_participate)
+
+    def test_passport_series_and_number_are_checked(self):
+        response = self._save_profile(doc_series="12", doc_number="12345")
+        self.assertFormError(response.context["form"], "doc_series", "Серия паспорта — 4 цифры.")
+        self.assertFormError(response.context["form"], "doc_number", "Номер паспорта — 6 цифр.")
+        self._save_profile(doc_series="45 10", doc_number="123 456")
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertEqual((profile.doc_series, profile.doc_number), ("4510", "123456"))
+
+    def test_telegram_is_required_or_phone_instead(self):
+        response = self._save_profile(telegram="")
+        self.assertFormError(response.context["form"], "telegram", "Обязательное поле.")
+        response = self._save_profile(telegram="вася")
+        self.assertIn("telegram", response.context["form"].errors)
+        for given, stored in (("vasya_p", "@vasya_p"), ("https://t.me/vasya_p", "@vasya_p"),
+                              ("+7 900 123-45-67", "+7 900 123-45-67")):
+            with self.subTest(given=given):
+                self._save_profile(telegram=given)
+                self.assertEqual(ParticipantProfile.objects.get(user=self.user).telegram, stored)
+
+    def test_division_code_for_passport(self):
+        self._save_profile()
+        self.assertEqual(ParticipantProfile.objects.get(user=self.user).doc_division_code, "770-001")
+        response = self._save_profile(doc_division_code="77")
+        self.assertFormError(response.context["form"], "doc_division_code",
+                             "Код подразделения — 6 цифр, например 770-001.")
+        response = self._save_profile(doc_division_code="")
+        self.assertFormError(response.context["form"], "doc_division_code",
+                             "Обязательное поле для паспорта РФ.")
+
+    def test_birth_certificate_is_accepted(self):
+        """У семиклассника паспорта нет — только свидетельство о рождении."""
+        self._save_profile(doc_type="birth_cert", doc_series="iv-мю", doc_number="123456",
+                           birth_date_year="2013", grade="7", doc_issued_at_year="2013")
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertTrue(profile.is_complete)
+        self.assertEqual(profile.doc_series, "IV-МЮ")
+
+    def test_foreign_document_may_have_no_series(self):
+        self._save_profile(doc_type="foreign", doc_series="", doc_number="N1234567")
+        self.assertTrue(ParticipantProfile.objects.get(user=self.user).is_complete)
+
+    def test_dates_are_day_month_year(self):
+        html = self.client.get(reverse("accounts:profile")).content.decode()
+        day, month, year = (html.index(f'name="birth_date_{part}"') for part in ("day", "month", "year"))
+        self.assertLess(day, month)
+        self.assertLess(month, year)
+        # И подписи стоят у своих списков.
+        self.assertIn('>число</option>', html[day:month])
+        self.assertIn('>год</option>', html[year:])
+
+    def test_parent_data_is_not_asked(self):
+        """Данные родителя вписываются в бланк от руки — сайт их не собирает."""
+        html = self.client.get(reverse("accounts:profile")).content.decode()
+        self.assertNotIn('name="parent_', html)
+        self._save_profile(birth_date_year="2012", grade="8")
+        self.assertTrue(ParticipantProfile.objects.get(user=self.user).is_complete)
+
+    def test_no_blank_until_profile_is_complete(self):
+        response = self.client.get(reverse("accounts:consent_blank"))
+        self.assertRedirects(response, reverse("accounts:profile"))
+
+    def test_scan_over_the_limit_is_rejected(self):
+        self._save_profile()
+        with self.settings(PARTICIPANT_UPLOAD_MAX_MB=0.001):
+            self._upload(content=b"x" * 5000)
+        self.assertFalse(ConsentDocument.objects.exists())
+
+    def test_scan_must_be_pdf_or_picture(self):
+        self._save_profile()
+        self._upload(name="scan.docx")
+        self.assertFalse(ConsentDocument.objects.exists())
+
+    def test_changing_passport_data_requires_new_consent(self):
+        self._save_profile()
+        self._upload()
+        self._save_profile(phone="+7 900 765-43-21")  # телефона в бланке нет
+        self.assertEqual(ConsentDocument.objects.get().status, ConsentDocument.Status.PENDING)
+        self._save_profile(doc_number="999999")
+        self.assertEqual(ConsentDocument.objects.get().status, ConsentDocument.Status.OUTDATED)
+        self.assertFalse(User.objects.get(pk=self.user.pk).can_participate)
+
+    def test_rejected_consent_keeps_participation(self):
+        """Пока участник досылает исправленное, он не выпадает из олимпиады."""
+        self._save_profile()
+        self._upload()
+        ConsentDocument.objects.update(status=ConsentDocument.Status.REJECTED)
+        self.assertTrue(User.objects.get(pk=self.user.pk).can_participate)
+
+    def test_unconfirmed_email_blocks_participation(self):
+        self._save_profile()
+        self._upload()
+        User.objects.filter(pk=self.user.pk).update(email_confirmed=False)
+        self.assertIn("подтвердить почту по ссылке из письма",
+                      User.objects.get(pk=self.user.pk).participation_blockers())
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="olymp-test-media-"))
+class ConsentAccessTest(TestCase):
+    """Скан согласия и паспортные данные видят только сам участник и администраторы."""
+
+    def setUp(self):
+        from .testing import make_eligible
+
+        self.kid = make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"))
+        self.consent = ConsentDocument.objects.get(user=self.kid)
+        self.admin = User.objects.create_user("adm@e.ru", "olymp12345", role=User.Role.ADMIN,
+                                              is_staff=True)
+        self.organizer = User.objects.create_user("org@e.ru", "olymp12345",
+                                                  role=User.Role.ORGANIZER, is_staff=True)
+
+    def test_owner_and_admin_open_the_scan(self):
+        for user in (self.kid, self.admin):
+            with self.subTest(user=user.email):
+                self.client.force_login(user)
+                self.assertEqual(self.client.get(self.consent.get_absolute_url()).status_code, 200)
+
+    def test_others_do_not(self):
+        other = User.objects.create_user("other@e.ru", "olymp12345")
+        for user in (other, self.organizer):
+            with self.subTest(user=user.email):
+                self.client.force_login(user)
+                self.assertEqual(self.client.get(self.consent.get_absolute_url()).status_code, 404)
+
+    def test_organizer_in_admin_does_not_see_passport_data(self):
+        """Даже с правами из группы: анкеты и согласия — только администраторам."""
+        from django.contrib.auth.models import Permission
+
+        self.organizer.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label="accounts"))
+        self.client.force_login(self.organizer)
+        for url in ("/admin/accounts/participantprofile/", "/admin/accounts/consentdocument/",
+                    f"/admin/accounts/participantprofile/{self.kid.profile.pk}/change/"):
+            with self.subTest(url=url):
+                self.assertIn(self.client.get(url).status_code, (302, 403, 404))
+        # И учётки тоже: иначе можно было бы выдать себе роль администратора.
+        self.assertEqual(self.client.get(f"/admin/accounts/user/{self.kid.pk}/change/").status_code, 403)
+        self.client.post(f"/admin/accounts/user/{self.organizer.pk}/change/",
+                         {"email": "org@e.ru", "role": "admin", "is_superuser": "on"})
+        self.organizer.refresh_from_db()
+        self.assertFalse(self.organizer.is_superuser)
+
+    def test_admin_rejects_with_comment_and_participant_gets_a_letter(self):
+        self.client.force_login(self.admin)
+        url = f"/admin/accounts/consentdocument/{self.consent.pk}/change/"
+        self.client.post(url, {"status": "rejected", "review_comment": ""})
+        self.consent.refresh_from_db()
+        self.assertEqual(self.consent.status, ConsentDocument.Status.PENDING)  # без комментария нельзя
+
+        self.client.post(url, {"status": "rejected", "review_comment": "Нет подписи родителя"})
+        self.consent.refresh_from_db()
+        self.assertEqual(self.consent.status, ConsentDocument.Status.REJECTED)
+        self.assertEqual(self.consent.reviewed_by, self.admin)
+        self.assertEqual(mail.outbox[-1].to, ["kid@e.ru"])
+        self.assertIn("Нет подписи родителя", mail.outbox[-1].body)
+
+
+class ConsentPdfTest(TestCase):
+    """Бланк по шаблону оргкомитета: данные из анкеты, от руки — только подписи."""
+
+    def _kid(self, **fields):
+        from .testing import make_eligible
+
+        return make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"), **fields)
+
+    def test_values_come_from_the_profile(self):
+        from . import consent_pdf
+
+        values = consent_pdf.values_for(self._kid(last_name="О'Нил").profile)
+        self.assertEqual(values["participant_name"], "О'Нил Пётр")
+        self.assertIn("серия 0000 № 000000", values["participant_document"])
+        self.assertIn("код подразделения 770-001", values["participant_document"])
+        self.assertFalse(any(key.startswith("parent_") for key in values))
+
+    def test_minor_text_is_about_the_child_and_both_sign(self):
+        from . import consent_pdf
+
+        kid = self._kid()
+        text = " ".join(consent_pdf._blocks(consent_pdf.fill(
+            consent_pdf.template_text(minor=True), consent_pdf.values_for(kid.profile))))
+        # Согласие даёт участник, законный представитель присоединяется к нему.
+        self.assertIn("Я, участник олимпиады", text)
+        self.assertIn("Мой законный представитель (родитель)", text)
+        self.assertNotIn("подопечн", text)
+        self.assertIn("117303, г. Москва", text)  # адрес оператора
+        self.assertIn("до достижения целей обработки", text)  # срок действия
+        # Перечень — ровно то, что собирает сайт; рекламы нет.
+        self.assertIn("– адрес регистрации по паспорту;", text)
+        self.assertIn("– дата и место рождения;", text)
+        for extra in ("гражданство", "пол,", "места жительства", "рекламн"):
+            self.assertNotIn(extra, text)
+        self.assertNotIn("{{", text)
+        self.assertTrue(consent_pdf.build(kid.profile).startswith(b"%PDF"))
+
+    def test_blank_fits_one_page_even_with_long_addresses(self):
+        """Скан загружается одним файлом — вторая страница с подписями потерялась бы."""
+        from . import consent_pdf
+
+        long = "141701, Московская область, городской округ Долгопрудный, г. Долгопрудный, " * 3
+        kid = self._kid(reg_address=long, doc_issued_by=long)
+        _, pages = consent_pdf._render(kid.profile, consent_pdf._Styles(consent_pdf.FONT_SIZES[-1]))
+        self.assertEqual(pages, 1)
+
+    def test_unknown_placeholder_becomes_a_blank_line(self):
+        from . import consent_pdf
+
+        self.assertEqual(consent_pdf.fill("Я, {{ nobody }}.", {}),
+                         f"Я, {consent_pdf.legal_templates.BLANK}.")
+
+    def test_adult_text_has_no_representative(self):
+        from . import consent_pdf
+
+        text = consent_pdf.template_text(minor=False)
+        self.assertNotIn("несовершеннолетнего", text)
+        self.assertIn("Я, участник олимпиады", text)
+
+    def test_texts_are_first_person_and_complete(self):
+        """Ч. 4 ст. 9 152-ФЗ: цель, действия, срок, отзыв, оператор; публикуется только перечень."""
+        import re
+
+        from apps.core import legal_templates
+
+        for minor, text in ((True, legal_templates.CONSENT_FORM_MINOR),
+                            (False, legal_templates.CONSENT_FORM_ADULT)):
+            with self.subTest(minor=minor):
+                self.assertFalse(re.search(r"\bМы\b", text))
+                for part in ("Цель обработки", "Действия с персональными данными", "уничтожение",
+                             "Согласие действует", "письменным заявлением", "{{ operator }}",
+                             "только следующих", "Остальные персональные данные не распространяются"):
+                    self.assertIn(part, text)
+                self.assertIn("Федеральным законом от 27.07.2006 № 152-ФЗ", " ".join(text.split()))
+                self.assertNotIn("стать", text)  # ссылка на закон целиком
+        # Абзац о представителе — только у несовершеннолетних.
+        self.assertNotIn("законный представитель", legal_templates.CONSENT_FORM_ADULT)
+        # Данные родителя сайт не обрабатывает — согласия на их обработку нет.
+        self.assertNotIn("персональных данных представителя", legal_templates.CONSENT_FORM_MINOR)
+
+    def test_distribution_names_the_site(self):
+        """Правила РКН к согласию на распространение: назвать ресурс публикации."""
+        from . import consent_pdf
+
+        kid = self._kid()
+        with self.settings(SITE_URL="https://aero.example.ru"):
+            text = consent_pdf.fill(consent_pdf.template_text(minor=True),
+                                    consent_pdf.values_for(kid.profile))
+        self.assertIn("на сайте олимпиады https://aero.example.ru", " ".join(text.split()))
 
 
 class EmailConfirmTest(TestCase):
@@ -115,10 +390,95 @@ class EmailConfirmTest(TestCase):
         user.refresh_from_db()
         self.assertFalse(user.email_confirmed)
 
-    def test_resend_requires_login(self):
-        response = self.client.get(reverse("accounts:resend_confirmation"))
+    def _login(self):
+        return self.client.post(reverse("accounts:login"),
+                                {"username": "vasya@example.ru", "password": "olymp12345"})
+
+    def test_no_login_before_confirmation(self):
+        self._signup()
+        response = self._login()
+        self.assertContains(response, "Почта ещё не подтверждена")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_login_works_after_confirmation(self):
+        user = self._signup()
+        self.client.get(reverse("accounts:confirm_email", args=[make_token(user)]))
+        self.assertRedirects(self._login(), reverse("core:home"), fetch_redirect_response=False)
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_link_itself_does_not_log_in(self):
+        """Пересланное письмо не должно давать доступ к кабинету."""
+        user = self._signup()
+        self.client.get(reverse("accounts:confirm_email", args=[make_token(user)]))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_signing_up_again_resends_but_keeps_password(self):
+        """Иначе чужую неподтверждённую регистрацию мог бы «перехватить» любой."""
+        self._signup()
+        self.client.post(reverse("accounts:signup"), SignUpTest.form_data | {
+            "password1": "another-pass-777", "password2": "another-pass-777"})
+        self.assertEqual(len(mail.outbox), 2)
+        user = User.objects.get(email="vasya@example.ru")
+        self.assertTrue(user.check_password("olymp12345"))
+
+    def test_resend_does_not_reveal_who_is_registered(self):
+        self._signup()
+        answers = [self.client.post(reverse("accounts:resend_confirmation"), {"email": email},
+                                    follow=True).content.decode().count("письмо со ссылкой уже в пути")
+                   for email in ("vasya@example.ru", "nobody@example.ru")]
+        self.assertEqual(answers, [1, 1])
+        self.assertEqual(len(mail.outbox), 2)  # регистрация + повтор, чужому — ничего
+
+    def test_password_reset_confirms_email(self):
+        """Не нашёл письмо о регистрации, сбросил пароль — ящик доказан."""
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        user = self._signup()
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        url = reverse("accounts:password_reset_confirm",
+                      args=[uid, default_token_generator.make_token(user)])
+        form_url = self.client.get(url)["Location"]
+        self.client.post(form_url, {"new_password1": "fresh-pass-2026", "new_password2": "fresh-pass-2026"})
+        user.refresh_from_db()
+        self.assertTrue(user.email_confirmed)
+
+    def test_staff_log_in_without_confirmation(self):
+        """Организаторов заводит администратор — им подтверждать почту не нужно."""
+        User.objects.create_user("org@example.ru", "olymp12345", role=User.Role.ORGANIZER)
+        response = self.client.post(reverse("accounts:login"),
+                                    {"username": "org@example.ru", "password": "olymp12345"})
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response["Location"])
+
+    def test_stale_unconfirmed_accounts_are_purged(self):
+        from datetime import timedelta
+
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        user = self._signup()
+        User.objects.filter(pk=user.pk).update(date_joined=timezone.now() - timedelta(days=15))
+        confirmed = User.objects.create_user("ok@example.ru", "olymp12345", email_confirmed=True)
+        User.objects.filter(pk=confirmed.pk).update(date_joined=timezone.now() - timedelta(days=15))
+        call_command("purge_unconfirmed", verbosity=0)
+        self.assertFalse(User.objects.filter(pk=user.pk).exists())
+        self.assertTrue(User.objects.filter(pk=confirmed.pk).exists())
+
+
+class ProblemsNeedLoginTest(TestCase):
+    """Задачи текущего тура — только вошедшим участникам с подтверждённой почтой."""
+
+    def test_anonymous_sees_schedule_but_no_problems(self):
+        from apps.contest.tests import open_problem
+
+        call_command("seed_demo", verbosity=0)
+        problem = open_problem()
+        html = self.client.get(reverse("contest:problem_list")).content.decode()
+        self.assertIn("Задачи видны зарегистрированным участникам", html)
+        self.assertNotIn(problem.title, html)
+        detail = self.client.get(reverse("contest:problem_detail", args=[problem.pk]))
+        self.assertIn("/accounts/login/", detail["Location"])
 
 
 class LoginTest(TestCase):
@@ -160,7 +520,6 @@ class OrganizerAccessTest(TestCase):
 
 
 class ConsentTest(TestCase):
-    def test_signup_page_links_to_consent_documents(self):
+    def test_signup_page_links_to_privacy_policy(self):
         html = self.client.get(reverse("accounts:signup")).content.decode()
-        self.assertIn(reverse("content:page", args=["consent"]), html)
         self.assertIn(reverse("content:page", args=["privacy"]), html)

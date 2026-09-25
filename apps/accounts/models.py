@@ -7,8 +7,11 @@
 конкретной площадке определяется связью Venue.managers, а не ролью.
 """
 
+import secrets
+
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.utils import timezone
 
 from apps.core.models import TimeStampedModel
 
@@ -92,6 +95,32 @@ class User(AbstractUser):
         return self.role == self.Role.ADMIN or self.is_superuser
 
     @property
+    def latest_consent(self):
+        return self.consents.order_by("-created_at").first()
+
+    def participation_blockers(self):
+        """Что мешает участвовать: список шагов, которые осталось сделать.
+
+        Пустой список — можно записываться на площадку, сдавать решения
+        и идти на второй тур. Для организаторов и администраторов не
+        применяется: они не участвуют.
+        """
+        steps = []
+        if not self.email_confirmed:
+            steps.append("подтвердить почту по ссылке из письма")
+        profile = getattr(self, "profile", None)
+        if profile is None or not profile.is_complete:
+            steps.append("заполнить анкету участника")
+        consent = self.latest_consent
+        if consent is None or not consent.grants_access:
+            steps.append("загрузить подписанное согласие на обработку персональных данных")
+        return steps
+
+    @property
+    def can_participate(self) -> bool:
+        return self.is_participant and not self.participation_blockers()
+
+    @property
     def can_review(self):
         """Допущен к проверке решений. Сейчас совпадает с is_manager,
         но право на конкретную задачу проверяет Problem.can_be_reviewed_by."""
@@ -113,44 +142,199 @@ class ConsentMixin(models.Model):
         abstract = True
 
 
+class DocumentType(models.TextChoices):
+    """Чем подтверждается личность.
+
+    Паспорт есть не у всех: до 14 лет у школьника только свидетельство
+    о рождении, а участники из-за рубежа приходят со своими документами.
+    """
+
+    PASSPORT_RF = "passport_rf", "Паспорт РФ"
+    BIRTH_CERT = "birth_cert", "Свидетельство о рождении"
+    FOREIGN = "foreign", "Документ другой страны"
+
+
+#: У каких документов серия обязательна (у иностранных её может не быть).
+DOC_TYPES_WITH_SERIES = (DocumentType.PASSPORT_RF, DocumentType.BIRTH_CERT)
+
+
 class ParticipantProfile(ConsentMixin, TimeStampedModel):
     """
-    Анкета школьника. Персональные данные несовершеннолетних —
-    храним минимум и фиксируем факт согласия (152-ФЗ).
+    Анкета школьника.
+
+    Заполняется в два приёма. При регистрации — только почта и пароль
+    (и подтверждение почты). Для участия (запись на площадку, сдача
+    решений, второй тур) — полная анкета с документом и адресом: из неё
+    собирается бланк согласия на обработку ПД, который школьник
+    подписывает и загружает сканом. Если участнику нет 18, согласие даёт
+    законный представитель (родитель): свои ФИО, документ и адрес он
+    вписывает в бланк от руки — на сайте его данные не вводятся и не
+    обрабатываются. Подписывают бланк оба.
+
+    Паспортные данные видят только администраторы (см. admin.py).
+    Поля в базе необязательные: полноту проверяет форма и is_complete,
+    иначе запись нельзя было бы создать в момент регистрации.
     """
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile", verbose_name="пользователь")
 
-    last_name = models.CharField("фамилия", max_length=100)
-    first_name = models.CharField("имя", max_length=100)
+    last_name = models.CharField("фамилия", max_length=100, blank=True)
+    first_name = models.CharField("имя", max_length=100, blank=True)
     middle_name = models.CharField("отчество", max_length=100, blank=True)
 
     birth_date = models.DateField("дата рождения", null=True, blank=True)
+    birth_place = models.CharField("место рождения", max_length=250, blank=True,
+                                   help_text="Как в паспорте или свидетельстве о рождении")
     grade = models.PositiveSmallIntegerField("класс", null=True, blank=True)
 
-    # Школа, город и регион обязательны: по ним считают охват олимпиады
-    # и раскладывают участников по площадкам. Регион выбирается из списка
-    # (apps/accounts/regions.py), иначе в базе заводятся «Москва», «г. Москва»
-    # и «МСК» как три разных региона.
-    school = models.CharField("школа", max_length=250)
-    city = models.CharField("город", max_length=120)
-    region = models.CharField("регион", max_length=120)
+    # Регион выбирается из списка (apps/accounts/regions.py), иначе в базе
+    # заводятся «Москва», «г. Москва» и «МСК» как три разных региона.
+    school = models.CharField("школа", max_length=250, blank=True)
+    city = models.CharField("город", max_length=120, blank=True)
+    region = models.CharField("регион", max_length=120, blank=True)
 
-    # Телефон или телеграм — хотя бы одно, проверяется в форме:
-    # на уровне базы такое ограничение только мешало бы импорту.
     phone = models.CharField("телефон", max_length=32, blank=True)
     telegram = models.CharField("Telegram", max_length=64, blank=True)
+
+    # --- Документ и адрес участника (для согласия на обработку ПД) --------
+    doc_type = models.CharField("документ", max_length=20, choices=DocumentType.choices, blank=True)
+    doc_series = models.CharField("серия", max_length=20, blank=True)
+    doc_number = models.CharField("номер", max_length=30, blank=True)
+    doc_issued_at = models.DateField("дата выдачи", null=True, blank=True)
+    doc_issued_by = models.CharField("кем выдан", max_length=300, blank=True)
+    doc_division_code = models.CharField("код подразделения", max_length=7, blank=True,
+                                         help_text="Только для паспорта РФ")
+    reg_address = models.CharField("адрес регистрации по паспорту", max_length=500, blank=True,
+                                   help_text="Как в паспорте, с индексом")
+
+    #: Без чего анкета участника не считается заполненной.
+    #: Серия не входит: у иностранных документов её бывает нет.
+    REQUIRED_FIELDS = ("last_name", "first_name", "birth_date", "birth_place", "grade", "school", "city",
+                       "region", "phone", "telegram", "doc_type", "doc_number", "doc_issued_at",
+                       "doc_issued_by", "reg_address")
+    #: Данные, которые попадают в бланк согласия. Если их поменять после
+    #: загрузки скана, подписанное согласие перестаёт им соответствовать.
+    CONSENT_FIELDS = ("last_name", "first_name", "middle_name", "birth_date", "birth_place",
+                      "doc_type", "doc_series", "doc_number", "doc_issued_at",
+                      "doc_issued_by", "doc_division_code", "reg_address")
 
     class Meta:
         verbose_name = "анкета участника"
         verbose_name_plural = "анкеты участников"
 
     def __str__(self):
-        return self.full_name
+        return self.full_name or self.user.email
 
     @property
     def full_name(self):
         return " ".join(filter(None, [self.last_name, self.first_name, self.middle_name]))
+
+    def age(self, on=None):
+        if not self.birth_date:
+            return None
+        on = on or timezone.localdate()
+        years = on.year - self.birth_date.year
+        if (on.month, on.day) < (self.birth_date.month, self.birth_date.day):
+            years -= 1
+        return years
+
+    @property
+    def is_minor(self) -> bool:
+        """Нет 18 — согласие подписывает и законный представитель.
+
+        Пока дата рождения не указана, считаем несовершеннолетним:
+        школьников старше 18 почти не бывает, и лучше спросить лишнее.
+        """
+        age = self.age()
+        return age is None or age < 18
+
+    def missing_fields(self):
+        """Названия незаполненных полей — чтобы показать, что осталось."""
+        missing = [n for n in self.REQUIRED_FIELDS if not getattr(self, n)]
+        if self.doc_type in DOC_TYPES_WITH_SERIES and not self.doc_series:
+            missing.append("doc_series")
+        if self.doc_type == DocumentType.PASSPORT_RF and not self.doc_division_code:
+            missing.append("doc_division_code")
+        return [self._meta.get_field(n).verbose_name for n in missing]
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.missing_fields()
+
+    def consent_data(self):
+        """Снимок данных, попавших в бланк согласия."""
+        return {name: str(getattr(self, name) or "") for name in self.CONSENT_FIELDS}
+
+
+def consent_upload_path(instance, filename):
+    """Сканы согласий: в пути случайная папка, отдаются только через проверку прав."""
+    return f"consents/user-{instance.user_id}/{secrets.token_urlsafe(12)}/{filename}"
+
+
+class ConsentDocument(TimeStampedModel):
+    """
+    Скан подписанного согласия на обработку ПД.
+
+    Школьник скачивает бланк (PDF из его анкеты), подписывает сам или
+    вместе с родителем и загружает скан. С этого момента ему открыто
+    участие, а администратор проверяет скан вручную: принимает или
+    просит переслать — участнику уходит письмо с комментарием.
+
+    Старые сканы не удаляются: при споре важно видеть, что и когда
+    было прислано.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "На проверке"
+        APPROVED = "approved", "Принято"
+        REJECTED = "rejected", "Нужно переслать"
+        # Участник поменял данные анкеты после загрузки: подписанный бланк
+        # им больше не соответствует, нужен новый.
+        OUTDATED = "outdated", "Устарело (данные изменены)"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="consents",
+                             verbose_name="участник")
+    file = models.FileField("скан", upload_to=consent_upload_path)
+    original_name = models.CharField("исходное имя", max_length=255, blank=True)
+    for_minor = models.BooleanField("согласие даёт родитель", default=True)
+    data = models.JSONField("данные в бланке", default=dict, blank=True,
+                            help_text="Что было в анкете в момент загрузки")
+    status = models.CharField("статус", max_length=10, choices=Status.choices, default=Status.PENDING)
+    review_comment = models.TextField(
+        "комментарий участнику", blank=True,
+        help_text="Если просите переслать — что не так. Уйдёт участнику письмом",
+    )
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="+", verbose_name="проверил")
+    reviewed_at = models.DateTimeField("когда проверено", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "согласие на обработку ПД"
+        verbose_name_plural = "согласия на обработку ПД"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user} — {self.get_status_display()}"
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("accounts:consent_file", args=[self.pk])
+
+    @property
+    def filename(self):
+        return self.original_name or self.file.name.rsplit("/", 1)[-1]
+
+    @property
+    def grants_access(self) -> bool:
+        """Открывает ли этот скан участие.
+
+        Да — сразу после загрузки: проверка ручная и занимает дни, а
+        записаться на площадку нужно успеть. «Нужно переслать» доступ не
+        отнимает: с участником связываются, и он досылает исправленное.
+        Не открывает только устаревшее — там другие данные.
+        """
+        return self.status != self.Status.OUTDATED
 
 
 class OrganizerProfile(TimeStampedModel):

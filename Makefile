@@ -4,7 +4,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help start install dev migrations migrate seed superuser test lint fmt clean up down logs
+.PHONY: help start install dev migrations migrate seed superuser test lint fmt demo clean up down logs deploy https backup admin
 
 help:  ## показать список команд
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -60,12 +60,31 @@ clean:  ## удалить локальную базу и медиа (остор�
 	rm -f db.sqlite3
 	rm -rf media/*
 
-# --- Docker (для сервера и для тех, кому удобнее контейнеры) ---
-up:  ## поднять всё в Docker
+# --- Docker: сервер (подробно — docs/deploy.md) ---
+up:  ## поднять всё в Docker (сборка + запуск)
 	docker compose up -d --build
 
 down:  ## остановить Docker
 	docker compose down
 
-logs:  ## смотреть логи
-	docker compose logs -f web
+logs:  ## смотреть логи сайта
+	docker compose logs -f --tail=200 web
+
+deploy:  ## обновить сервер: бэкап, подтянуть код, перезапустить
+	@# Сначала бэкап: если обновление что-то сломает в базе, вернёмся к нему.
+	@# Не получился бэкап — обновление не начинается.
+	docker compose exec -T backup sh /backup.sh now
+	git rev-parse --short HEAD > .last-deployed
+	git pull --ff-only
+	docker compose up -d --build
+	docker compose ps
+	@echo "Предыдущая версия: $$(cat .last-deployed). Откат — docs/deploy.md, «Если обновление сломало сайт»."
+
+https:  ## выпустить сертификат Let's Encrypt (один раз)
+	sh deploy/https-init.sh
+
+backup:  ## сделать бэкап прямо сейчас (в ./backups)
+	docker compose exec backup sh /backup.sh now
+
+admin:  ## создать администратора на сервере
+	docker compose exec web python manage.py createsuperuser

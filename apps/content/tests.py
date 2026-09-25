@@ -490,11 +490,21 @@ class LectureCatalogTest(TestCase):
         titles = [name for name, _, _ in response.context["sections"]]
         self.assertEqual(titles, ["Программирование"])
 
-    def test_topic_filter_narrows_the_list(self):
-        response = self.client.get("/lectures/archive/?topic=python")
+    def test_season_filter_narrows_the_list(self):
+        response = self.client.get("/lectures/archive/?season=ao22")
+        self.assertTrue(response.context["lectures"])
         for lecture in response.context["lectures"]:
             with self.subTest(lecture=lecture.title):
-                self.assertEqual(lecture.topic.slug, "python")
+                self.assertEqual(lecture.season.slug, "ao22")
+        # Сезоны в фильтре подписаны учебными годами, и выбор одного
+        # сезона не убирает остальные из списка.
+        html = response.content.decode()
+        self.assertIn("2021/2022", html)
+        self.assertGreater(len(response.context["season_choices"]), 1)
+
+    def test_there_is_no_topic_filter(self):
+        html = self.client.get("/lectures/archive/").content.decode()
+        self.assertNotIn('name="topic"', html)
 
     def test_seed_is_idempotent(self):
         """Повторный запуск seed_demo не задваивает лекции."""

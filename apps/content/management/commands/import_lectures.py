@@ -175,8 +175,14 @@ class Command(BaseCommand):
         return created, updated, unmatched
 
     def _description(self, row):
-        tour = row["stage"]
-        return f"Лекция {tour} тура." if tour and tour != "-" else ""
+        """«отборочный» → «Лекция отборочного тура.»"""
+        tour = (row["stage"] or "").strip().lower()
+        if not tour or tour == "-":
+            return ""
+        # В таблице тур записан в именительном падеже: «отборочный», «финальный».
+        tour = re.sub(r"(ый|ой)$", "ого", tour)
+        tour = re.sub(r"ий$", "его", tour)
+        return f"Лекция {tour} тура."
 
     def _season(self, label):
         """«2024/25» → сезон с годом окончания 2025."""

@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.accounts.testing import make_eligible
 from apps.participation.models import Registration, VenueBooking, VenueBookingError
 from apps.seasons.models import Season, Stage
 from apps.venues.models import Venue
@@ -94,7 +95,7 @@ class VenueBookingViewTest(TestCase):
             latitude=55.0, longitude=37.0, status=Venue.Status.APPROVED,
         )
         self.venue.seasons.add(self.season)
-        self.user = User.objects.create_user("kid@b.ru", "olymp12345")
+        self.user = make_eligible(User.objects.create_user("kid@b.ru", "olymp12345"))
 
     def _book(self):
         return self.client.post(reverse("venues:book", args=[self.venue.pk]))
@@ -299,7 +300,7 @@ class BookingRulesTest(TestCase):
         ]
         for venue in self.venues:
             venue.seasons.add(self.season)
-        self.kid = User.objects.create_user("kid8@e.ru", "olymp12345")
+        self.kid = make_eligible(User.objects.create_user("kid8@e.ru", "olymp12345"))
 
     def test_registration_stays_open_after_the_round(self):
         """На площадку приходят без регистрации — их заводят задним числом."""
@@ -455,3 +456,52 @@ class VenueManagementTest(TestCase):
         self.assertEqual(
             self.client.get(reverse("venues:mail", args=[self.venue.pk])).status_code, 403
         )
+
+
+class BookingNeedsProfileTest(TestCase):
+    """На очную площадку — только с заполненной анкетой и загруженным согласием."""
+
+    def setUp(self):
+        from apps.accounts.models import ParticipantProfile
+
+        now = timezone.now()
+        season = Season.objects.create(year=2095, slug="s95", title="S", is_active=True, is_published=True)
+        self.stage = Stage.objects.create(
+            season=season, kind=Stage.Kind.OFFLINE, slug="ochny", title="Очный тур",
+            starts_at=now + timedelta(days=10), ends_at=now + timedelta(days=12),
+            registration_opens_at=now - timedelta(days=1), is_published=True,
+        )
+        self.venue = Venue.objects.create(title="Школа", region="R", city="C", address="A",
+                                          latitude=55.0, longitude=37.0, status=Venue.Status.APPROVED)
+        self.venue.seasons.add(season)
+        # Почта подтверждена, но анкета пустая — обычный человек сразу после регистрации.
+        self.kid = User.objects.create_user("new@e.ru", "olymp12345", email_confirmed=True)
+        ParticipantProfile.objects.create(user=self.kid)
+        self.client.force_login(self.kid)
+
+    def test_venue_page_shows_what_is_missing_instead_of_the_button(self):
+        html = self.client.get(reverse("venues:detail", args=[self.venue.pk])).content.decode()
+        self.assertIn("заполнить анкету участника", html)
+        self.assertNotIn(reverse("venues:book", args=[self.venue.pk]), html)
+
+    def test_direct_request_does_not_book(self):
+        """Даже в обход кнопки — запросом напрямую."""
+        response = self.client.post(reverse("venues:book", args=[self.venue.pk]))
+        self.assertRedirects(response, reverse("accounts:profile"))
+        self.assertFalse(VenueBooking.objects.exists())
+
+    def test_complete_profile_without_consent_is_not_enough(self):
+        from apps.accounts.models import ConsentDocument
+        from apps.accounts.testing import make_eligible
+
+        make_eligible(self.kid)
+        ConsentDocument.objects.filter(user=self.kid).delete()
+        self.client.post(reverse("venues:book", args=[self.venue.pk]))
+        self.assertFalse(VenueBooking.objects.exists())
+
+    def test_profile_and_consent_open_booking(self):
+        from apps.accounts.testing import make_eligible
+
+        make_eligible(self.kid)
+        self.client.post(reverse("venues:book", args=[self.venue.pk]))
+        self.assertTrue(VenueBooking.objects.filter(venue=self.venue).exists())

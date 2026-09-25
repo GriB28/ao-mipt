@@ -46,7 +46,7 @@
           <span class="playlist-meta">
             <span class="playlist-platform">{{ playlist.platform_title }}</span>
             {% if playlist.season %}
-              <span class="playlist-season">{{ playlist.season.subtitle|default:playlist.season.year }}</span>
+              <span class="playlist-season">{{ playlist.season.years_label }}</span>
             {% endif %}
           </span>
           <strong>{{ playlist.title }}</strong>
@@ -73,25 +73,16 @@
       </select>
     </label>
     <label>
-      Тема
-      <select name="topic" onchange="this.form.submit()">
-        <option value="">все темы</option>
-        {% for topic in topics %}
-          <option value="{{ topic.slug }}" {% if chosen.topic == topic.slug %}selected{% endif %}>{{ topic.title }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
       Сезон
-      <select name="year" onchange="this.form.submit()">
-        <option value="">все годы</option>
-        {% for year in years %}
-          <option value="{{ year }}" {% if chosen.year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+      <select name="season" onchange="this.form.submit()">
+        <option value="">все сезоны</option>
+        {% for s in season_choices %}
+          <option value="{{ s.slug }}" {% if chosen.season == s.slug %}selected{% endif %}>{{ s.years_label }}</option>
         {% endfor %}
       </select>
     </label>
     <noscript><button class="btn btn-small" type="submit">Показать</button></noscript>
-    {% if chosen.section or chosen.topic or chosen.year %}
+    {% if chosen.section or chosen.season %}
       <a class="btn btn-small btn-secondary" href="{% url 'content:lecture_archive' %}">Сбросить</a>
     {% endif %}
   </form>
@@ -104,7 +95,7 @@
         {% for lecture in topic_lectures %}
           <li>
             <a href="{{ lecture.get_absolute_url }}">{{ lecture.title }}</a>
-            <span class="muted">{{ lecture.season.subtitle|default:lecture.season.year }}</span>
+            <span class="muted">{{ lecture.season.years_label }}</span>
             {% if lecture.lecturer %}<span class="muted">{{ lecture.lecturer }}</span>{% endif %}
             {% if lecture.video_url %}<span class="badge">{{ lecture.platform_title }}</span>{% endif %}
           </li>

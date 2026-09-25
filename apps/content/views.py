@@ -40,7 +40,8 @@ def lecture_archive(request):
 
     Полсотни записей списком — это стена, в которой ничего не найти,
     поэтому они разложены по разделам (физика, программирование) и темам
-    внутри них. Фильтры по разделу, теме и сезону сужают выборку.
+    внутри них. Фильтры — по разделу и по сезону: тем много, и выбирать
+    из них в списке неудобно, они и так видны заголовками.
     """
     season = Season.objects.active()
     lectures = (Lecture.objects.published()
@@ -51,17 +52,19 @@ def lecture_archive(request):
         lectures = lectures.exclude(season=season)
         playlists = playlists.exclude(season=season)
 
+    # Список сезонов — по всем лекциям архива, а не по отфильтрованным:
+    # иначе после выбора сезона в списке остался бы он один.
+    season_choices = (Season.objects.filter(lectures__in=lectures)
+                      .distinct().order_by("-year"))
+
     chosen = {
         "section": request.GET.get("section", ""),
-        "topic": request.GET.get("topic", ""),
-        "year": request.GET.get("year", ""),
+        "season": request.GET.get("season", ""),
     }
     if chosen["section"]:
         lectures = lectures.filter(topic__section=chosen["section"])
-    if chosen["topic"]:
-        lectures = lectures.filter(topic__slug=chosen["topic"])
-    if chosen["year"]:
-        lectures = lectures.filter(season__year=chosen["year"])
+    if chosen["season"]:
+        lectures = lectures.filter(season__slug=chosen["season"])
 
     return render(request, "content/lecture_list.html", {
         "sections": _group_by_topic(lectures),
@@ -69,8 +72,7 @@ def lecture_archive(request):
         "playlists": playlists if not any(chosen.values()) else [],
         "season": None,
         "is_archive": True,
-        "topics": Topic.objects.filter(lectures__in=lectures).distinct(),
-        "years": sorted({lecture.season.year for lecture in lectures}, reverse=True),
+        "season_choices": season_choices,
         "chosen": chosen,
         "section_choices": Topic.Section.choices,
     })

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Подтвердите почту{% endblock %}
+{% block content %}
+<h1>Подтвердите почту</h1>
+<div class="prose">
+  <p class="lead">Мы отправили письмо со ссылкой{% if email %} на <strong>{{ email }}</strong>{% endif %}.
+    Откройте её — и сможете войти в личный кабинет.</p>
+  <ul>
+    <li>Письмо приходит за пару минут. Проверьте папку <strong>«Спам»</strong> и «Рассылки».</li>
+    <li>Ссылка действует 7 дней. Открыть её можно на любом устройстве.</li>
+    <li>Ошиблись в адресе — просто зарегистрируйтесь ещё раз с правильным.</li>
+  </ul>
+</div>
+
+<h2>Письмо не пришло</h2>
+<form method="post" action="{% url 'accounts:resend_confirmation' %}" class="form-narrow">
+  {% csrf_token %}
+  {% for field in form %}{% include "accounts/_field.html" %}{% endfor %}
+  <button class="btn btn-secondary" type="submit">Отправить ещё раз</button>
+</form>
+<p class="muted"><a href="{% url 'accounts:login' %}">Уже подтвердили? Войти →</a></p>
+{% endblock %}

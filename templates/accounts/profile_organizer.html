@@ -3,6 +3,10 @@
 {% block content %}
 <h1>Кабинет организатора</h1>
 <p class="muted">{{ user.email }}</p>
+{% if user.is_staff %}
+  {% comment %}Дублирует пункт шапки: на телефоне его там нет, места не хватает.{% endcomment %}
+  <p><a href="{% url 'admin:index' %}">Панель администратора →</a></p>
+{% endif %}
 
 <h2>Мои площадки</h2>
 <div class="grid">

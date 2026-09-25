@@ -16,18 +16,18 @@
 
   {% if my_venues %}
     <p class="organizer-bar-title">Мои площадки</p>
-    <table class="venue-table">
+    <table class="venue-table table-stack">
       <thead><tr><th>Площадка</th><th>Город</th><th>Статус</th><th>Записалось</th></tr></thead>
       <tbody>
       {% for venue in my_venues %}
         <tr>
           <td><a href="{% url 'venues:detail' venue.pk %}">{{ venue.title }}</a></td>
-          <td class="muted">{{ venue.city }}</td>
-          <td>
+          <td data-label="Город" class="muted">{{ venue.city }}</td>
+          <td data-label="Статус"><div>
             <span class="badge {% if venue.is_public %}ok{% else %}warn{% endif %}">{{ venue.get_status_display }}</span>
             {% if venue.moderation_comment %}<span class="muted">{{ venue.moderation_comment }}</span>{% endif %}
-          </td>
-          <td>{{ venue.booked_count }}</td>
+          </div></td>
+          <td data-label="Записалось">{{ venue.booked_count }}</td>
         </tr>
       {% endfor %}
       </tbody>

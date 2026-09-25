@@ -8,5 +8,6 @@
   <button class="btn" type="submit">Войти</button>
 </form>
 <p class="muted"><a href="{% url 'accounts:password_reset' %}">Забыли пароль?</a> ·
+  <a href="{% url 'accounts:resend_confirmation' %}">Не пришло письмо для подтверждения?</a> ·
   Нет аккаунта? <a href="{% url 'accounts:signup' %}">Зарегистрироваться</a></p>
 {% endblock %}

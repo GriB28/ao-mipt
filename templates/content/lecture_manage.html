@@ -9,7 +9,7 @@
 
 <p><a class="btn" href="{% url 'content:lecture_new' %}">Добавить лекцию</a></p>
 
-<table>
+<table class="table-stack">
   <thead><tr><th>Лекция</th><th>Сезон</th><th>Площадка</th><th>Статус</th><th></th></tr></thead>
   <tbody>
   {% for lecture in lectures %}
@@ -20,14 +20,14 @@
         {% else %}{{ lecture.title }}{% endif %}
         {% if lecture.lecturer %}<span class="muted">{{ lecture.lecturer }}</span>{% endif %}
       </td>
-      <td class="muted">{{ lecture.season.subtitle|default:lecture.season.year }}</td>
-      <td class="muted">{{ lecture.platform_title|default:"—" }}</td>
-      <td>
+      <td data-label="Сезон" class="muted">{{ lecture.season.years_label }}</td>
+      <td data-label="Площадка" class="muted">{{ lecture.platform_title|default:"—" }}</td>
+      <td data-label="Статус"><div>
         {% if lecture.status == "approved" %}<span class="badge ok">{{ lecture.get_status_display }}</span>
         {% elif lecture.status == "pending" %}<span class="badge warn">{{ lecture.get_status_display }}</span>
         {% else %}<span class="badge none">{{ lecture.get_status_display }}</span>{% endif %}
         {% if lecture.moderation_comment %}<p class="muted">{{ lecture.moderation_comment }}</p>{% endif %}
-      </td>
+      </div></td>
       <td><a href="{% url 'content:lecture_edit' lecture.pk %}">Изменить →</a></td>
     </tr>
   {% empty %}

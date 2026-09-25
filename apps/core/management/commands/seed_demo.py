@@ -7,22 +7,27 @@
 Команда идемпотентна — повторный запуск ничего не дублирует.
 """
 
+from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management import call_command
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.accounts.models import OrganizerProfile, ParticipantProfile, User
-from apps.content.models import News, Page, Playlist
+from apps.accounts.models import (
+    ConsentDocument,
+    DocumentType,
+    OrganizerProfile,
+    ParticipantProfile,
+    User,
+)
 from apps.contest.models import Problem, Submission, SubmissionFile
-from apps.core.legal_templates import CONSENT_TEXT, PRIVACY_POLICY, RULES_TEXT
 from apps.mailing.models import Newsletter
 from apps.participation.models import Registration, VenueBooking
-from apps.seasons.models import Season, Stage
-from apps.seasons.schedule import PRACTICE_STAGE, SEASON_YEAR, STAGES
+from apps.seasons.models import Season
+from apps.seasons.schedule import PRACTICE_STAGE, SEASON_YEAR
 from apps.venues.models import Venue
 
 DEMO_PASSWORD = "olymp12345"
@@ -31,84 +36,49 @@ DEMO_PASSWORD = "olymp12345"
 class Command(BaseCommand):
     help = "Создаёт демонстрационные данные для локальной разработки"
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--force", action="store_true",
+            help="запустить и при DEBUG=False (только для проверки Docker-сборки у себя)",
+        )
+
     def handle(self, *args, **options):
+        # На боевом сервере демо-данные — дыра: учётка admin@example.ru
+        # с паролем из README и выдуманные площадки, на которые начнут
+        # записываться школьники. Для сервера есть setup_site.
+        if not settings.DEBUG and not settings.TESTING and not options["force"]:
+            raise CommandError(
+                "Похоже, это боевой сервер (DEBUG=False): демо-данные сюда не нужны.\n"
+                "Для настройки сайта: python manage.py setup_site\n"
+                "Если это проверка Docker-сборки у себя — добавьте --force."
+            )
         now = timezone.now()
 
-        season, _ = Season.objects.get_or_create(
-            year=SEASON_YEAR,
-            defaults={
-                "slug": "ao27",
-                "title": "Аэрокосмическая олимпиада МФТИ VII",
-                "subtitle": "Сезон 2026/27",
-                "accent_color": "#2f6fed",
-                "is_active": True,
-                "is_published": True,
-            },
-        )
+        # Всё, что есть и на настоящем сайте: сезон, этапы, тренировочная
+        # задача, страницы, лекции, фото. Локально даты этапов берём из
+        # schedule.py заново, чтобы у всех разработчиков они совпадали.
+        call_command("setup_site", update_dates=True, verbosity=0)
+        season = Season.objects.get(year=SEASON_YEAR)
         Season.objects.get_or_create(
             year=2026,
             defaults={"slug": "ao26", "title": "Аэрокосмическая олимпиада МФТИ VI",
                       "subtitle": "Сезон 2025/26", "is_published": True},
         )
-
-        # Этапы берём из apps/seasons/schedule.py — там же лежат даты.
-        # Именно update_or_create, а не get_or_create: команду запускают
-        # и на уже заполненной базе, чтобы разложить новые даты по этапам.
-        # Обратная сторона — ручные правки дат в админке она перетирает.
-        stages = {}
-        for plan in STAGES + [PRACTICE_STAGE]:
-            plan = dict(plan)
-            slug = plan.pop("slug")
-            plan.setdefault("is_practice", False)
-            stages[slug], _ = Stage.objects.update_or_create(
-                season=season, slug=slug,
-                defaults={**plan, "is_published": True},
-            )
-        online = stages["otbor-1"]
+        stages = {stage.slug: stage for stage in season.stages.all()}
         practice = stages[PRACTICE_STAGE["slug"]]
 
-        # Деления на физику и программирование нет: комплект задач общий.
-        demo_problems = [
-            (1, "Туннельный гул", 10),
-            (2, "Сопло", 12),
-            (3, "Долина", 10),
-            (4, "Кто чемпион?", 15),
-            (5, "Бессонница", 15),
-        ]
-        for number, title, score in demo_problems:
-            Problem.objects.get_or_create(
-                stage=online, number=number,
-                defaults={"title": title, "max_score": Decimal(score),
-                          "status": Problem.Status.APPROVED},
-            )
-
-        # Задачи очного тура: без них ведомость площадки пустая и
+        # Задач дистанционного этапа в демо нет, как и на настоящем сайте
+        # до 15 ноября: их заводят организаторы и одобряет администратор.
+        # Задачи очного тура нужны, иначе ведомость площадки пустая и
         # непонятно, куда вписывать баллы.
         for number in (1, 2, 3):
             Problem.objects.get_or_create(
                 stage=stages["ochny"], number=number,
                 defaults={"title": f"Очная задача {number}",
                           "statement_html": "<p>Условие очной задачи.</p>",
+                          "max_score": Decimal(10),
                           "status": Problem.Status.APPROVED},
             )
-
-        Problem.objects.update_or_create(
-            stage=practice, number=1,
-            defaults={
-                "title": "Тренировочная задача",
-                "statement_html": (
-                    "<p>Это не настоящая задача, а проверка сайта: загрузите любой файл "
-                    "и убедитесь, что решение отправляется.</p>"
-                    "<p>Что происходит с файлом: он ложится на сервер в "
-                    "<code>media/solutions/&lt;сезон&gt;/problem-&lt;id&gt;/user-&lt;id&gt;/</code>, "
-                    "а запись о попытке появляется в админке: <b>Дистанционный этап → Решения</b>.</p>"
-                    "<p>Тренировочные решения на результаты не влияют, их можно удалять "
-                    "из админки в любой момент.</p>"
-                ),
-                "max_score": None,
-                "status": Problem.Status.APPROVED,
-            },
-        )
 
         venues = [
             ("Лицей № 1580 при МГТУ им. Баумана", "Москва", "Москва", "ул. Талалихина, 1к1", 55.7376, 37.6798),
@@ -125,71 +95,6 @@ class Command(BaseCommand):
             )
         for venue in Venue.objects.all():
             venue.seasons.add(season)
-
-        # Каталог лекций прошлых лет — темы, лекции и плейлисты сезонов.
-        # Лежит в apps/content/lecture_catalog.py, собран из таблицы
-        # организаторов (см. import_lectures).
-        call_command("seed_lectures", verbosity=0)
-
-        # Фотографии финалов лежат в репозитории папкой albums/ — грузим
-        # их здесь, чтобы у того, кто склонировал проект, галерея была
-        # сразу, без отдельной команды.
-        if Path("albums").is_dir():
-            call_command("import_photos", "albums", verbosity=0)
-
-        # Плейлисты, которых нет в таблице сезонов: курс по Python идёт
-        # вне сезонов, у двух ВК-плейлистов год не определить.
-        playlists = [
-            ("Лекции сезона 2021/22", 2022,
-             "https://www.youtube.com/watch?v=Z5rYrIb1ER0&list=PLncYbc2UAdLEAZeQOiW2lOEslj-DzC2w8",
-             "Разборы задач и подготовка к отборочному этапу", 20),
-            ("Лекции сезона 2023/24", 2024,
-             "https://www.youtube.com/watch?v=qAsOZwt1UMs&list=PLncYbc2UAdLGmGDtn-7AEPIO5I2fMr12N",
-             "Разборы задач и подготовка к отборочному этапу", 10),
-            ("Введение в Python", None,
-             "https://www.youtube.com/watch?v=vWDNxTdR690&list=PLncYbc2UAdLH3utmw0AKBDg08IXX8GdrP",
-             "Базовый курс для задач по программированию", 30),
-            ("Лекции во ВКонтакте — часть 1", None,
-             "https://vkvideo.ru/playlist/-17906_48144875",
-             "Укажите сезон в админке", 40),
-            ("Лекции во ВКонтакте — часть 2", None,
-             "https://vkvideo.ru/playlist/-17906_48144877",
-             "Укажите сезон в админке", 50),
-        ]
-        for title, year, url, note, order in playlists:
-            Playlist.objects.get_or_create(
-                url=url,
-                defaults={
-                    "title": title,
-                    "season": self._archive_season(year) if year else None,
-                    "description": note,
-                    "order": order,
-                },
-            )
-
-        # Лекции текущего сезона ещё не читались: в разделе «Лекции»
-        # пока пусто, и это правда, а не недоработка. Записи прошлых лет
-        # лежат в архиве лекций.
-        News.objects.get_or_create(
-            slug="registration-open",
-            defaults={"season": season, "title": "Открыта регистрация на АО VII",
-                      "summary": "Регистрация участников началась.",
-                      "body": "Регистрация открыта, задачи отборочного этапа появятся в разделе «Дистанционный этап».",
-                      "is_published": True},
-        )
-        pages = [
-            ("about", "Об олимпиаде", True, 10,
-             "<p>Аэрокосмическая олимпиада МФТИ для школьников 7–11 классов.</p>"),
-            ("rules", "Правила", True, 20, RULES_TEXT),
-            ("privacy", "Политика обработки персональных данных", False, 90, PRIVACY_POLICY),
-            ("consent", "Согласие на обработку персональных данных", False, 91, CONSENT_TEXT),
-        ]
-        for slug, title, in_menu, order, body in pages:
-            Page.objects.get_or_create(
-                slug=slug,
-                defaults={"title": title, "show_in_menu": in_menu,
-                          "menu_order": order, "body": body},
-            )
 
         users = [
             ("admin@example.ru", User.Role.ADMIN, True, True),
@@ -209,14 +114,35 @@ class Command(BaseCommand):
             if created:
                 user.set_password(DEMO_PASSWORD)
                 user.save()
+            if not user.email_confirmed:
+                user.email_confirmed = True
+                user.save(update_fields=["email_confirmed"])
             if role == User.Role.PARTICIPANT:
-                ParticipantProfile.objects.get_or_create(
+                # Анкета заполнена целиком и согласие принято: демо-участник
+                # может записываться на площадку и сдавать решения. Данные
+                # документов выдуманные.
+                profile, _ = ParticipantProfile.objects.update_or_create(
                     user=user,
-                    defaults={"last_name": "Тестов", "first_name": "Пётр", "grade": 10,
-                              "city": "Москва", "region": "Москва", "school": "Школа №1",
-                              "telegram": "@testov", "consent_given": True,
-                              "consent_given_at": now},
+                    defaults={
+                        "last_name": "Тестов", "first_name": "Пётр", "middle_name": "Иванович",
+                        "birth_date": date(2010, 3, 14), "birth_place": "г. Москва", "grade": 10,
+                        "city": "Москва", "region": "Москва", "school": "Школа №1",
+                        "phone": "+7 900 000-00-01", "telegram": "@testov",
+                        "doc_type": DocumentType.PASSPORT_RF, "doc_series": "0000",
+                        "doc_number": "000000",
+                        "doc_issued_at": date(2024, 3, 20), "doc_issued_by": "ГУ МВД России по г. Москве",
+                        "doc_division_code": "770-001",
+                        "reg_address": "101000, г. Москва, ул. Примерная, д. 1, кв. 1",
+                        "consent_given": True, "consent_given_at": now,
+                    },
                 )
+                if not user.consents.exists():
+                    ConsentDocument.objects.create(
+                        user=user, for_minor=True, data=profile.consent_data(),
+                        status=ConsentDocument.Status.APPROVED,
+                        file=ContentFile(b"%PDF-1.4\n% demo consent\n", name="soglasie.pdf"),
+                        original_name="soglasie.pdf",
+                    )
                 # Записываем в текущий сезон, иначе демо-рассылка
                 # по аудитории «участники сезона» найдёт ноль получателей.
                 Registration.objects.get_or_create(user=user, season=season, defaults={"grade": 10})
@@ -249,13 +175,13 @@ class Command(BaseCommand):
         # Одно решение в очереди проверки: иначе рабочее место организатора
         # выглядит пустым и непонятно, как оно устроено.
         student = User.objects.filter(role=User.Role.PARTICIPANT).first()
-        first_problem = Problem.objects.filter(stage=online, number=1).first()
+        first_problem = Problem.objects.filter(stage=practice, number=1).first()
         if student and first_problem and not Submission.objects.filter(
             user=student, problem=first_problem
         ).exists():
             submission = Submission.objects.create(
                 user=student, problem=first_problem,
-                comment="Решал через закон сохранения импульса, файл во вложении.",
+                comment="Проверяю, что загрузка работает.",
             )
             SubmissionFile.objects.create(
                 submission=submission,

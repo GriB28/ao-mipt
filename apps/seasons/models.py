@@ -47,6 +47,11 @@ class Season(TimeStampedModel):
         verbose_name_plural = "сезоны"
         ordering = ["-year"]
 
+    @property
+    def years_label(self) -> str:
+        """Учебные годы сезона: «2025/2026». Так сезон называют участники."""
+        return f"{self.year - 1}/{self.year}"
+
     def __str__(self):
         return self.title
 
@@ -168,6 +173,11 @@ class Stage(TimeStampedModel):
     @property
     def has_offline(self) -> bool:
         return self.kind in (self.Kind.OFFLINE, self.Kind.HYBRID)
+
+    @property
+    def is_upcoming(self) -> bool:
+        """Этап ещё не начался."""
+        return timezone.now() < self.starts_at
 
     @property
     def is_open(self) -> bool:

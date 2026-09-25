@@ -9,6 +9,7 @@ urlpatterns = [
     path("problem/<int:pk>/", views.problem_detail, name="problem_detail"),
     path("problem/<int:pk>/submit/", views.submit, name="submit"),
     path("my/", views.my_submissions, name="my_submissions"),
+    path("file/<int:pk>/", views.submission_file, name="submission_file"),
     # Проверка решений организатором — прямо на сайте, без админки.
     path("review/", views.review_list, name="review_list"),
     path("review/<int:pk>/", views.review_detail, name="review_detail"),

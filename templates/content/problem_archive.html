@@ -7,9 +7,9 @@
 <nav class="muted" style="margin-bottom:var(--space-5)">
   {% for s in seasons %}
     {% if s == selected %}
-      <strong>{{ s.year }}</strong>
+      <strong>{{ s.years_label }}</strong>
     {% else %}
-      <a href="?year={{ s.year }}">{{ s.year }}</a>
+      <a href="?year={{ s.year }}">{{ s.years_label }}</a>
     {% endif %}
     {% if not forloop.last %} · {% endif %}
   {% endfor %}

@@ -57,3 +57,19 @@ def send_confirmation(request, user) -> None:
         # человек уже создан, письмо можно переотправить из кабинета.
         fail_silently=False,
     )
+
+
+def send_consent_rejected(request, consent) -> None:
+    """Письмо «пришлите согласие заново» с комментарием администратора."""
+    context = {
+        "comment": consent.review_comment,
+        "profile_url": request.build_absolute_uri(reverse("accounts:profile") + "#consent"),
+        "contact_email": settings.CONTACT_EMAIL,
+    }
+    send_mail(
+        subject="Пришлите согласие заново — Аэрокосмическая олимпиада МФТИ",
+        message=render_to_string("accounts/email_consent_rejected.txt", context),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[consent.user.email],
+        fail_silently=True,
+    )

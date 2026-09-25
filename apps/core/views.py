@@ -1,3 +1,8 @@
+import shutil
+
+from django.conf import settings
+from django.db import connection
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -78,3 +83,25 @@ def home(request):
         "status": stage_status(season),
     }
     return render(request, "core/home.html", context)
+
+
+def healthz(request):
+    """Жив ли сайт: доступна ли база и хватает ли места для загрузок.
+
+    Дёргает Docker (healthcheck) и внешний мониторинг. Никаких данных
+    не отдаёт, только «ok» или 503 с причиной. Место на диске проверяем
+    потому, что именно оно кончается в ночь перед дедлайном — и лучше
+    узнать об этом от мониторинга, чем от школьников.
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception:
+        return HttpResponse("db unavailable", status=503, content_type="text/plain")
+    try:
+        free_gb = shutil.disk_usage(settings.MEDIA_ROOT).free / 1024 ** 3
+    except OSError:
+        free_gb = None
+    if free_gb is not None and free_gb < settings.HEALTHZ_MIN_FREE_GB:
+        return HttpResponse(f"low disk: {free_gb:.1f} GB free", status=503, content_type="text/plain")
+    return HttpResponse("ok", content_type="text/plain")

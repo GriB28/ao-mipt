@@ -1,0 +1,70 @@
+{% comment %}
+  Карточка «Ваше решение» на странице задачи.
+  sub — последняя попытка участника, earlier_submissions — остальные.
+  Балл и комментарий проверяющего видны только после публикации
+  результатов этапа (Submission.visible_grade), до того — лишь статус.
+{% endcomment %}
+<section class="card my-solution" id="my-solution">
+  <div class="my-solution-head">
+    <h2>Ваше последнее решение</h2>
+    {% with g=sub.grade %}
+      {% if not g or g.status == "new" %}<span class="badge none">ждёт проверки</span>
+      {% elif g.status == "in_review" %}<span class="badge warn">проверяется</span>
+      {% else %}<span class="badge ok">проверено</span>{% endif %}
+    {% endwith %}
+  </div>
+
+  <p class="muted">
+    Отправлено {{ sub.created_at|date:"j E Y, H:i" }}
+    {% if sub.is_late %}<span class="badge warn">после дедлайна</span>{% endif %}
+  </p>
+
+  {% if sub.answer %}<p><strong>Ответ:</strong> {{ sub.answer }}</p>{% endif %}
+  {% if sub.comment %}
+    <div class="my-solution-comment">
+      <p class="muted">Ваш комментарий</p>
+      {{ sub.comment|linebreaks }}
+    </div>
+  {% endif %}
+
+  <ul class="file-list">
+    {% for f in sub.files.all %}
+      <li>
+        <a href="{{ f.get_absolute_url }}" target="_blank" rel="noopener">{{ f.filename }}</a>
+        <span class="muted">{{ f.file.size|filesizeformat }}</span>
+        <a class="file-download" href="{{ f.get_absolute_url }}?download=1" aria-label="Скачать {{ f.filename }}">скачать</a>
+      </li>
+    {% empty %}
+      <li class="muted">Файлов нет.</li>
+    {% endfor %}
+  </ul>
+
+  {% with g=sub.visible_grade %}
+    {% if g %}
+      <div class="my-solution-grade">
+        {% if g.score is not None %}<p><strong>Балл:</strong> {{ g.score|floatformat:"-2" }}</p>{% endif %}
+        {% if g.comment %}
+          <p class="muted">Комментарий проверяющего</p>
+          {{ g.comment|linebreaks }}
+        {% endif %}
+      </div>
+    {% elif sub.grade and sub.grade.status == "graded" %}
+      <p class="muted">Балл появится, когда опубликуют результаты этапа.</p>
+    {% endif %}
+  {% endwith %}
+
+  {% if earlier_submissions %}
+    <details class="my-solution-history">
+      <summary>Предыдущие версии ({{ earlier_submissions|length }})</summary>
+      <ul>
+        {% for old in earlier_submissions %}
+          <li>
+            <span class="muted">{{ old.created_at|date:"d.m.Y H:i" }}</span>
+            {% for f in old.files.all %}<a href="{{ f.get_absolute_url }}" target="_blank" rel="noopener">{{ f.filename }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="muted">В проверку идёт только последняя версия.</p>
+    </details>
+  {% endif %}
+</section>

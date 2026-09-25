@@ -6,7 +6,16 @@
 {% include "contest/_organizer_bar.html" %}
 {% if stage %}
   <h2>{{ stage.title }}</h2>
-  <p class="lead">Приём решений до {{ stage.ends_at|date:"d.m.Y H:i" }} (МСК).</p>
+  {% if stage.is_upcoming %}
+    <p class="lead">Этап начнётся <strong>{{ stage.starts_at|date:"j E" }}</strong>.
+      Задачи появятся здесь в этот день, решения принимаются до
+      {{ stage.ends_at|date:"j E Y" }} включительно.</p>
+    {% if not user.is_authenticated %}
+      <p><a class="btn" href="{% url 'accounts:signup' %}">Зарегистрироваться заранее</a></p>
+    {% endif %}
+  {% else %}
+    <p class="lead">Приём решений до {{ stage.ends_at|date:"d.m.Y H:i" }} (МСК).</p>
+  {% endif %}
   {% if offline_twin %}
     <p class="note">
       Первый отборочный этап идёт в двух форматах: здесь дистанционно и очно
@@ -15,9 +24,9 @@
       <a href="{% url 'venues:map' %}">Посмотреть площадки →</a>
     </p>
   {% endif %}
-  {% if not stage.is_open %}
+  {% if not stage.is_open and not stage.is_upcoming %}
     <p class="badge warn">Приём решений закрыт</p>
-    <p class="muted">Этап идёт с {{ stage.starts_at|date:"d.m.Y" }} по {{ stage.ends_at|date:"d.m.Y" }}.</p>
+    <p class="muted">Этап шёл с {{ stage.starts_at|date:"d.m.Y" }} по {{ stage.ends_at|date:"d.m.Y" }}.</p>
   {% endif %}
 
   {% if stage.platform_url %}
@@ -32,8 +41,15 @@
     </p>
   {% endif %}
 
-  {% if not stage.platform_url %}
-  <table>
+  {% if not user.is_authenticated and not stage.platform_url %}
+    {% comment %}Задачи — только зарегистрированным участникам.{% endcomment %}
+    <div class="note">
+      <p>Задачи видны зарегистрированным участникам.</p>
+      <p><a class="btn btn-small" href="{% url 'accounts:signup' %}">Зарегистрироваться</a>
+        <a class="btn btn-small btn-secondary" href="{% url 'accounts:login' %}?next={{ request.path }}">Войти</a></p>
+    </div>
+  {% elif not stage.platform_url and not stage.is_upcoming %}
+  <table class="table-fit">
     <thead><tr><th>№</th><th>Задача</th>{% if not user.is_manager %}<th>Моё решение</th>{% endif %}</tr></thead>
     <tbody>
     {% for problem in problems %}
@@ -42,8 +58,9 @@
         <td><a href="{% url 'contest:problem_detail' problem.pk %}">{{ problem.title }}</a></td>
         {% if not user.is_manager %}
         <td>
-          {% if problem.pk in my_submissions %}
-            <span class="badge ok">сдано</span>
+          {% if problem.my_submission %}
+            <a class="badge ok" href="{% url 'contest:problem_detail' problem.pk %}#my-solution"
+               title="Открыть последнюю версию">сдано {{ problem.my_submission.created_at|date:"d.m H:i" }}</a>
           {% else %}
             <span class="badge none">не сдано</span>
           {% endif %}
