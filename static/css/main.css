@@ -26,7 +26,16 @@ body {
   /* iOS не увеличивает шрифт сам при повороте экрана. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Подвал прижат к низу экрана даже на короткой странице (вход,
+     пустой список новостей): фон страницы дотягивается сам, а не
+     обрывается сразу под коротким контентом. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
+
+.site-header, .site-footer { flex: none; }
+body > main { flex: 1 0 auto; }
 
 img, video, iframe { max-width: 100%; }
 
@@ -147,6 +156,11 @@ a { color: var(--text-link); }
 .muted { color: var(--text-secondary); }
 .lead { font-size: var(--text-lg); color: var(--text-secondary); }
 .prose { max-width: var(--content-width); }
+
+/* Юридические тексты (политика ПД) — длинные, набираем мельче. */
+.legal-text { font-size: var(--text-sm); line-height: 1.55; }
+.legal-text h2 { font-size: var(--text-base); margin-top: var(--space-5); }
+.legal-text th, .legal-text td { font-size: var(--text-xs); vertical-align: top; }
 
 /* --- Герой на главной ---------------------------------------------------- */
 
