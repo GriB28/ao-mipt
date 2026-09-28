@@ -162,7 +162,7 @@ a { color: var(--text-link); }
   right: var(--space-5);
   bottom: 0;
   height: 92%;
-  max-height: 220px;
+  max-height: 120px;
   width: auto;
   opacity: 0.9;
   pointer-events: none;
@@ -1116,13 +1116,13 @@ pre { overflow-x: auto; }
 .page-mascot {
   flex: none;
   width: auto;
-  height: 132px;
+  height: 72px;
   margin-bottom: calc(var(--space-2) * -1);
   pointer-events: none;
 }
 
 @media (max-width: 720px) {
-  .page-mascot { height: 76px; }
+  .page-mascot { height: 52px; }
 }
 
 /* --- Пустые состояния с маскотом ------------------------------------------ */
