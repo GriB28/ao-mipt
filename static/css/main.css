@@ -521,9 +521,7 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
 .site-footer {
   background: var(--bg-footer);
   color: var(--text-on-dark-muted);
-  /* Отступ сверху — под пингвина на краю подвала (128px), чтобы он
-     не наезжал на последний блок страницы. */
-  margin-top: calc(128px + var(--space-4));
+  margin-top: var(--space-8);
   padding: var(--space-6) 0;
   font-size: var(--text-sm);
 }
@@ -540,7 +538,7 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   position: absolute;
   right: var(--space-6);
   bottom: calc(100% + 3px);
-  height: 128px;
+  height: 64px;
   width: auto;
   pointer-events: none;
 }
@@ -604,8 +602,7 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   .hero h1 { font-size: var(--text-2xl); }
   .card { padding: var(--space-4); }
   #map { height: 380px; }
-  .site-footer { margin-top: calc(96px + var(--space-3)); }
-  .footer-mascot { height: 96px; right: var(--space-4); }
+  .site-footer { margin-top: var(--space-7); }
 
   /* Кнопка отправки формы — во всю ширину: в неё проще попасть. */
   .form-narrow .btn[type=submit], .form-wide .btn[type=submit] { width: 100%; }
