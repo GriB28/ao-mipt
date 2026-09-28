@@ -7,5 +7,5 @@
     <h1>{{ page.title }}</h1>
   </div>
 </div>
-<div>{{ page.body|clean_html }}</div>
+<div{% if page.slug == "privacy" %} class="legal-text"{% endif %}>{{ page.body|clean_html }}</div>
 {% endblock %}
