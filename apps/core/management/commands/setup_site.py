@@ -22,7 +22,6 @@ from apps.core.legal_templates import (
     CONSENT_FORM_MINOR,
     CONSENT_TEXT,
     PRIVACY_POLICY,
-    RULES_TEXT,
 )
 from apps.seasons.models import Season, Stage
 from apps.seasons.schedule import PRACTICE_STAGE, SEASON_YEAR, STAGES
@@ -98,7 +97,6 @@ class Command(BaseCommand):
         pages = [
             ("about", "Об олимпиаде", True, 10,
              "<p>Аэрокосмическая олимпиада МФТИ для школьников 7–11 классов.</p>"),
-            ("rules", "Правила", True, 20, RULES_TEXT),
             ("privacy", "Политика обработки персональных данных", False, 90, PRIVACY_POLICY),
             ("consent", "Согласие на обработку персональных данных", False, 91, CONSENT_TEXT),
         ]

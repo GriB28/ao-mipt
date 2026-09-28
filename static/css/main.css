@@ -39,10 +39,11 @@ img, video, iframe { max-width: 100%; }
 /* --- Шапка: тёмная, как баннеры олимпиады ------------------------------- */
 
 .site-header {
+  position: relative;
   background: var(--bg-header);
   color: var(--text-on-dark);
   /* Фирменная полоса под шапкой: оранжевый → лавандовый → синий. */
-  border-bottom: 3px solid transparent;
+  border-bottom: 4.5px solid transparent;
   border-image: var(--gradient-stripe) 1;
 }
 
@@ -52,6 +53,31 @@ img, video, iframe { max-width: 100%; }
   gap: var(--space-5);
   min-height: 68px;
   flex-wrap: wrap;
+}
+
+/* Логотипы партнёров — мелко и аккуратно у верхнего края шапки. */
+.header-partners {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+}
+.header-partners img { height: 20px; width: auto; opacity: 0.85; }
+
+/* Пингвин слева от основной панели (лого и вход/регистрация), выглядывает
+   мордой из-под шапки: верхний край картинки приклеен точно к нижнему
+   краю тёмной панели, будто она его и отрезает. Декор, поэтому
+   aria-hidden. Привязан к шапке целиком, а не к узкому контейнеру: на
+   широком экране остаётся в пустом поле слева от панели, а на узком,
+   где у панели нет полей, слегка наезжает на неё — так и задумано. */
+.header-mascot {
+  position: absolute;
+  left: var(--space-2);
+  top: 100%;
+  height: 60px;
+  width: auto;
+  pointer-events: none;
 }
 
 .logo {
@@ -527,18 +553,19 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
 }
 .site-footer {
   position: relative;
-  border-top: 3px solid transparent;
+  border-top: 4.5px solid transparent;
   border-image: var(--gradient-stripe) 1;
 }
 .site-footer a { color: var(--color-lavender-300); }
 .site-footer a:hover { color: var(--color-accent-500); }
 
-/* Пингвин сидит на краю подвала справа. Декор, поэтому aria-hidden. */
+/* Пингвин сидит на градиентной линии подвала справа: нижний край
+   картинки утоплен в полосу, чтобы лапы стояли прямо на линии. */
 .footer-mascot {
   position: absolute;
   right: var(--space-6);
-  bottom: calc(100% + 3px);
-  height: 64px;
+  bottom: calc(100% + 2.25px);
+  height: 128px;
   width: auto;
   pointer-events: none;
 }

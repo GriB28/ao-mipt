@@ -21,7 +21,13 @@
 </head>
 <body>
 <header class="site-header">
+  <div class="container header-partners">
+    <img src="{% static 'img/partners/mipt.png' %}" alt="МФТИ">
+    <img src="{% static 'img/partners/fakt.png' %}" alt="ФАКТ">
+    <img src="{% static 'img/partners/fck.png' %}" alt="ФЦК МФТИ">
+  </div>
   <div class="container header-inner">
+    <img class="header-mascot" src="{% static 'img/mascot/face-private.svg' %}" alt="" aria-hidden="true">
     <a class="logo" href="{% url 'core:home' %}">
       {% if current_season.logo %}<img src="{{ current_season.logo.url }}" alt="">{% endif %}
       <span>АО&nbsp;МФТИ</span>
@@ -79,12 +85,7 @@
 
     <div>
       <p class="footer-title">Связаться</p>
-      <p>Вопросы по олимпиаде:<br>
-        <a href="mailto:{{ CONTACT_EMAIL }}">{{ CONTACT_EMAIL }}</a></p>
-      {% if SUPPORT_EMAIL %}
-        <p>Проблемы с сайтом:<br>
-          <a href="mailto:{{ SUPPORT_EMAIL }}">{{ SUPPORT_EMAIL }}</a></p>
-      {% endif %}
+      <p>По всем вопросам:<br>{{ CONTACT_EMAIL }}</p>
     </div>
 
     {% if TELEGRAM_URL or TELEGRAM_CHAT_URL or VK_URL %}
@@ -101,7 +102,6 @@
     <div>
       <p class="footer-title">Документы</p>
       <ul class="footer-links">
-        <li><a href="{% url 'content:page' 'rules' %}">Правила</a></li>
         <li><a href="{% url 'content:page' 'privacy' %}">Обработка персональных данных</a></li>
       </ul>
     </div>

@@ -220,9 +220,7 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER or "olymp
 # --- Публичные контакты и ссылки (показываются в подвале) ----------------
 
 # Общие вопросы по олимпиаде.
-CONTACT_EMAIL = env("CONTACT_EMAIL", default="olymp@example.ru")
-# Технические вопросы по сайту: не работает загрузка, не приходит письмо.
-SUPPORT_EMAIL = env("SUPPORT_EMAIL", default="")
+CONTACT_EMAIL = env("CONTACT_EMAIL", default="ao@phystech.edu")
 # Телеграм-канал олимпиады.
 TELEGRAM_URL = env("TELEGRAM_URL", default="")
 # Телеграм-чат для участников (если отдельный от канала).

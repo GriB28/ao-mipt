@@ -94,7 +94,6 @@ class Command(BaseCommand):
             ("/online/my/", "my-submissions.html", student),
             ("/online/review/", "review.html", organizer),
             ("/page/about/", "about.html", None),
-            ("/page/rules/", "rules.html", None),
             ("/page/consent/", "consent.html", None),
             ("/page/privacy/", "privacy.html", None),
         ]
