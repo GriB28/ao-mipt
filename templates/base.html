@@ -87,13 +87,14 @@
       <p>По всем вопросам:<br>{{ CONTACT_EMAIL }}</p>
     </div>
 
-    {% if TELEGRAM_URL or TELEGRAM_CHAT_URL or VK_URL %}
+    {% if TELEGRAM_URL or TELEGRAM_CHAT_URL or VK_URL or MAX_URL %}
     <div>
       <p class="footer-title">Мы в соцсетях</p>
       <ul class="footer-links">
         {% if TELEGRAM_URL %}<li><a href="{{ TELEGRAM_URL }}" rel="noopener">Телеграм-канал</a></li>{% endif %}
         {% if TELEGRAM_CHAT_URL %}<li><a href="{{ TELEGRAM_CHAT_URL }}" rel="noopener">Чат участников</a></li>{% endif %}
         {% if VK_URL %}<li><a href="{{ VK_URL }}" rel="noopener">ВКонтакте</a></li>{% endif %}
+        {% if MAX_URL %}<li><a href="{{ MAX_URL }}" rel="noopener">MAX</a></li>{% endif %}
       </ul>
     </div>
     {% endif %}

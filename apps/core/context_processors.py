@@ -8,5 +8,6 @@ def site_settings(request):
         "TELEGRAM_URL": settings.TELEGRAM_URL,
         "TELEGRAM_CHAT_URL": settings.TELEGRAM_CHAT_URL,
         "VK_URL": settings.VK_URL,
+        "MAX_URL": settings.MAX_URL,
         "YANDEX_MAPS_API_KEY": settings.YANDEX_MAPS_API_KEY,
     }

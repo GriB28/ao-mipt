@@ -227,6 +227,8 @@ TELEGRAM_URL = env("TELEGRAM_URL", default="")
 TELEGRAM_CHAT_URL = env("TELEGRAM_CHAT_URL", default="")
 # Сообщество ВКонтакте — там же выкладываются лекции.
 VK_URL = env("VK_URL", default="")
+# Канал в MAX.
+MAX_URL = env("MAX_URL", default="")
 # Адрес сайта — называется в согласии на распространение ПД (где публикуются
 # результаты). По умолчанию https://DOMAIN из той же настройки, что и для HTTPS.
 SITE_URL = env("SITE_URL", default="").strip() or (
