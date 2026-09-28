@@ -40,6 +40,9 @@ img, video, iframe { max-width: 100%; }
 
 .site-header {
   position: relative;
+  /* Выше .hero (тоже position:relative): иначе она перекрывает собой
+     хвост .header-mascot там, где он заходит на её верхний край. */
+  z-index: 2;
   background: var(--bg-header);
   color: var(--text-on-dark);
   /* Фирменная полоса под шапкой: оранжевый → лавандовый → синий. */
@@ -54,16 +57,6 @@ img, video, iframe { max-width: 100%; }
   min-height: 68px;
   flex-wrap: wrap;
 }
-
-/* Логотипы партнёров — мелко и аккуратно у верхнего края шапки. */
-.header-partners {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-4);
-  padding-top: var(--space-2);
-}
-.header-partners img { height: 20px; width: auto; opacity: 0.85; }
 
 /* Пингвин слева от основной панели (лого и вход/регистрация), выглядывает
    мордой из-под шапки: верхний край картинки приклеен точно к нижнему
@@ -173,30 +166,45 @@ a { color: var(--text-link); }
   gap: var(--space-4);
   overflow: hidden;
 }
-.hero-main { min-width: 0; position: relative; z-index: 1; }
+.hero-main { min-width: 0; position: relative; z-index: 1; flex: 1 1 auto; }
 .hero h1 { margin: 0 0 var(--space-1); font-size: var(--text-3xl); }
 .hero .lead { margin: 0; color: var(--text-on-dark-muted); font-size: var(--text-base); }
-.hero .deadline { margin: var(--space-2) 0 0; color: var(--text-on-dark-muted); }
+.hero .deadline { margin: 0; color: var(--text-on-dark-muted); }
 .hero .deadline strong { color: var(--color-accent-500); }
 .hero .btn { flex: none; position: relative; z-index: 1; }
 
+/* Кнопка регистрации — под названием олимпиады, примерно на одной
+   строке со статусом этапа (а не в правом углу героя). */
+.hero-cta-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+}
+
 /* Маскот-пингвин фоном в углу героя — чисто декоративный, поэтому
-   aria-hidden и без alt-текста. На узких экранах убираем совсем:
-   там ему негде поместиться, не наезжая на текст. */
+   aria-hidden и без alt-текста. Отражён по горизонтали, чтобы смотрел
+   в сторону текста. На узких экранах убираем совсем: там ему негде
+   поместиться, не наезжая на текст. */
 .hero-mascot {
   position: absolute;
   right: var(--space-5);
   bottom: 0;
   height: 92%;
-  max-height: 120px;
+  max-height: 144px;
   width: auto;
   opacity: 0.9;
   pointer-events: none;
   z-index: 0;
+  transform: scaleX(-1);
 }
 
 @media (max-width: 720px) {
-  .hero { padding: var(--space-5) var(--space-4); }
+  /* Отступ от шапки увеличен в 1.5 раза (16px → 24px): héro начинается
+     ниже, оставляя место голове Рядового, которая заходит на его
+     верхний край сверху — см. .header-mascot в мобильном медиазапросе. */
+  .hero { padding: var(--space-5) var(--space-4); margin-top: var(--space-5); }
   .hero-mascot { display: none; }
 }
 
@@ -586,6 +594,11 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
 .footer-links { list-style: none; padding: 0; margin: 0; }
 .footer-links li { margin-bottom: var(--space-2); }
 
+/* Логотипы спонсоров — мелко, в одну строку, чтобы не растягивать
+   подвал по высоте: по размеру примерно как заголовок колонки. */
+.footer-sponsors { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.footer-sponsors img { height: 28px; width: auto; opacity: 0.9; }
+
 /* --- Мобильные ----------------------------------------------------------- */
 
 /* Рассчитано на ширину 360–430px (большинство смартфонов) и не
@@ -599,6 +612,15 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
     padding-block: var(--space-3) 0;
     min-height: 0;
   }
+  /* На телефоне — справа (там теперь пусто, партнёрский логотип
+     переехал в подвал), и с явным нахлёстом: голова должна лечь
+     поверх верхнего края héro, а не спрятаться под ним. */
+  .header-mascot {
+    left: auto;
+    right: var(--space-3);
+    top: calc(100% + 8px);
+  }
+  .footer-mascot { right: var(--space-3); }
   .user-nav { gap: var(--space-3); margin-left: auto; }
   .main-nav + .user-nav { margin-left: auto; }
   .main-nav {
@@ -1140,6 +1162,10 @@ pre { overflow-x: auto; }
 }
 .page-head > :first-child { min-width: 0; flex: 1; }
 .page-head > :first-child > :last-child { margin-bottom: 0; }
+/* Для крупного (--lg) маскота: заголовок остаётся первым рядом без
+   отступа сверху, а лишняя высота картинки уходит вниз, за текст,
+   вместо того чтобы отодвигать заголовок вниз (как при flex-end). */
+.page-head--top { align-items: flex-start; }
 .page-mascot {
   flex: none;
   width: auto;
@@ -1147,9 +1173,14 @@ pre { overflow-x: auto; }
   margin-bottom: calc(var(--space-2) * -1);
   pointer-events: none;
 }
+.page-mascot--flip { transform: scaleX(-1); }
+.page-mascot--lg { height: 144px; margin-bottom: 0; margin-top: var(--space-4); }
 
 @media (max-width: 720px) {
   .page-mascot { height: 52px; }
+  /* Крупный маскот на телефоне не помещается рядом с заголовком —
+     убираем совсем, остаётся только Рядовой в шапке. */
+  .page-mascot--lg { display: none; }
 }
 
 /* --- Пустые состояния с маскотом ------------------------------------------ */
@@ -1164,6 +1195,7 @@ pre { overflow-x: auto; }
   padding: var(--space-4) 0;
 }
 .empty-state img { flex: none; width: 72px; height: 72px; }
+.empty-state img.empty-state-mascot--lg { width: 108px; height: 108px; }
 .empty-state .muted { margin: 0; }
 
 /* Маленький пингвин в пустой строке таблицы. */

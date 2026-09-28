@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Очный тур — площадки{% endblock %}
 {% block content %}
-<div class="page-head">
+<div class="page-head page-head--top">
   <div>
     <h1>Очный тур</h1>
   </div>
-  {% include "components/_mascot.html" with name="face-rico.svg" %}
+  {% include "components/_mascot.html" with name="penguin-reading.svg" extra_class="page-mascot--flip page-mascot--lg" %}
 </div>
 {% if stage %}
   <p class="lead prose">
