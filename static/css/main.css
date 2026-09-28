@@ -58,15 +58,12 @@ img, video, iframe { max-width: 100%; }
   flex-wrap: wrap;
 }
 
-/* Пингвин слева от основной панели (лого и вход/регистрация), выглядывает
-   мордой из-под шапки: верхний край картинки приклеен точно к нижнему
-   краю тёмной панели, будто она его и отрезает. Декор, поэтому
-   aria-hidden. Привязан к шапке целиком, а не к узкому контейнеру: на
-   широком экране остаётся в пустом поле слева от панели, а на узком,
-   где у панели нет полей, слегка наезжает на неё — так и задумано. */
+/* Пингвин справа в шапке, выглядывает мордой из-под неё: верхний край
+   картинки приклеен точно к нижнему краю тёмной панели, будто она его
+   и отрезает. Декор, поэтому aria-hidden. */
 .header-mascot {
   position: absolute;
-  left: var(--space-2);
+  right: var(--space-2);
   top: 100%;
   height: 60px;
   width: auto;
@@ -571,8 +568,8 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
    картинки утоплен в полосу, чтобы лапы стояли прямо на линии. */
 .footer-mascot {
   position: absolute;
-  right: var(--space-6);
-  bottom: calc(100% + 2.25px);
+  right: var(--space-5);
+  bottom: calc(100% - 2px);
   height: 128px;
   width: auto;
   pointer-events: none;
@@ -597,7 +594,11 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
 /* Логотипы спонсоров — мелко, в одну строку, чтобы не растягивать
    подвал по высоте: по размеру примерно как заголовок колонки. */
 .footer-sponsors { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.footer-sponsors img { height: 28px; width: auto; opacity: 0.9; }
+.footer-sponsors img { height: 28px; width: auto; max-width: 100%; opacity: 0.9; }
+
+@media (max-width: 720px) {
+  .footer-sponsors img { height: 22px; }
+}
 
 /* --- Мобильные ----------------------------------------------------------- */
 
@@ -612,14 +613,9 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
     padding-block: var(--space-3) 0;
     min-height: 0;
   }
-  /* На телефоне — справа (там теперь пусто, партнёрский логотип
-     переехал в подвал), и с явным нахлёстом: голова должна лечь
-     поверх верхнего края héro, а не спрятаться под ним. */
-  .header-mascot {
-    left: auto;
-    right: var(--space-3);
-    top: calc(100% + 8px);
-  }
+  /* Ближе к краю, чем на широком экране, но так же приклеен к шапке
+     (top: 100% из базового правила) — без зазора до полосы. */
+  .header-mascot { right: var(--space-3); }
   .footer-mascot { right: var(--space-3); }
   .user-nav { gap: var(--space-3); margin-left: auto; }
   .main-nav + .user-nav { margin-left: auto; }
@@ -1162,10 +1158,6 @@ pre { overflow-x: auto; }
 }
 .page-head > :first-child { min-width: 0; flex: 1; }
 .page-head > :first-child > :last-child { margin-bottom: 0; }
-/* Для крупного (--lg) маскота: заголовок остаётся первым рядом без
-   отступа сверху, а лишняя высота картинки уходит вниз, за текст,
-   вместо того чтобы отодвигать заголовок вниз (как при flex-end). */
-.page-head--top { align-items: flex-start; }
 .page-mascot {
   flex: none;
   width: auto;
@@ -1173,14 +1165,16 @@ pre { overflow-x: auto; }
   margin-bottom: calc(var(--space-2) * -1);
   pointer-events: none;
 }
-.page-mascot--flip { transform: scaleX(-1); }
-.page-mascot--lg { height: 144px; margin-bottom: 0; margin-top: var(--space-4); }
 
 @media (max-width: 720px) {
   .page-mascot { height: 52px; }
-  /* Крупный маскот на телефоне не помещается рядом с заголовком —
-     убираем совсем, остаётся только Рядовой в шапке. */
-  .page-mascot--lg { display: none; }
+}
+
+/* Принудительный перенос строки — только на телефоне, например
+   в длинном заголовке страницы. */
+.br-mobile-only { display: none; }
+@media (max-width: 720px) {
+  .br-mobile-only { display: inline; }
 }
 
 /* --- Пустые состояния с маскотом ------------------------------------------ */

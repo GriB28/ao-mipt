@@ -1,6 +1,5 @@
 {% load static %}{% comment %}
   Пингвин рядом с заголовком страницы. Декоративный: alt пустой.
   name — файл из static/img/mascot/, например "face-skipper.svg".
-  extra_class — необязательные модификаторы через пробел, например
-  "page-mascot--flip page-mascot--lg".
+  extra_class — необязательный модификатор через пробел (CSS-класс).
 {% endcomment %}<img class="page-mascot{% if extra_class %} {{ extra_class }}{% endif %}" src="{% static 'img/mascot/'|add:name %}" alt="" aria-hidden="true">
