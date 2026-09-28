@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{% if is_archive %}Архив лекций{% else %}Лекции{% endif %}{% endblock %}
 {% block content %}
 <h1>{% if is_archive %}Архив лекций{% else %}Лекции{% if season %} — {{ season.title }}{% endif %}{% endif %}</h1>
@@ -120,11 +121,14 @@
       {% if lecture.slides %}<span class="badge">слайды</span>{% endif %}
     </div>
   {% empty %}
-    <p class="muted prose">
-      Лекции этого сезона ещё не начались. Записи будут выкладываться
-      во ВКонтакте и появляться здесь по одной.
-      А пока посмотрите <a href="{% url 'content:lecture_archive' %}">лекции прошлых лет</a>
-      — их больше полусотни, разложены по темам.
+    <p class="empty-state prose">
+      <img src="{% static 'img/mascot/penguin-clock.svg' %}" alt="" width="72" height="72" loading="lazy">
+      <span class="muted">
+        Лекции этого сезона ещё не начались. Записи будут выкладываться
+        во ВКонтакте и появляться здесь по одной.
+        А пока посмотрите <a href="{% url 'content:lecture_archive' %}">лекции прошлых лет</a>
+        — их больше полусотни, разложены по темам.
+      </span>
     </p>
   {% endfor %}
   </div>

@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Подтвердите почту{% endblock %}
 {% block content %}
-<h1>Подтвердите почту</h1>
+<div class="page-head">
+  <div>
+    <h1>Подтвердите почту</h1>
+  </div>
+  {% include "components/_mascot.html" with name="penguin-burst.svg" %}
+</div>
 <div class="prose">
   <p class="lead">Мы отправили письмо со ссылкой{% if email %} на <strong>{{ email }}</strong>{% endif %}.
     Откройте её — и сможете войти в личный кабинет.</p>

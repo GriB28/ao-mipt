@@ -1,8 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ stage.title }}{% endblock %}
 {% block content %}
-<h1>{{ stage.title }}</h1>
-<p class="lead">{{ stage.short_note }}</p>
+<div class="page-head">
+  <div>
+    <h1>{{ stage.title }}</h1>
+    <p class="lead">{{ stage.short_note }}</p>
+  </div>
+  {% include "components/_mascot.html" with name="penguin-clock.svg" %}
+</div>
 
 <div class="note prose">
   <p>

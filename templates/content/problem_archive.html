@@ -1,8 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Архив задач{% endblock %}
 {% block content %}
-<h1>Архив задач</h1>
-<p class="lead prose">Условия, разборы и данные всех прошедших сезонов олимпиады.</p>
+<div class="page-head">
+  <div>
+    <h1>Архив задач</h1>
+    <p class="lead prose">Условия, разборы и данные всех прошедших сезонов олимпиады.</p>
+  </div>
+  {% include "components/_mascot.html" with name="penguin-reading.svg" %}
+</div>
 
 <nav class="muted" style="margin-bottom:var(--space-5)">
   {% for s in seasons %}
@@ -52,9 +57,11 @@
       </ul>
     {% endfor %}
   {% empty %}
-    {% if not problems %}<p class="muted">Материалы этого сезона пока не выложены.</p>{% endif %}
+    {% if not problems %}
+      {% include "components/_empty_state.html" with text="Материалы этого сезона пока не выложены." mascot="img/mascot/penguin-reading.svg" %}
+    {% endif %}
   {% endfor %}
 {% else %}
-  <p class="muted">Архив пока пуст.</p>
+  {% include "components/_empty_state.html" with text="Архив пока пуст." mascot="img/mascot/penguin-reading.svg" %}
 {% endif %}
 {% endblock %}

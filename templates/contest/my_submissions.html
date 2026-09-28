@@ -1,7 +1,13 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Мои решения{% endblock %}
 {% block content %}
-<h1>Мои решения</h1>
+<div class="page-head">
+  <div>
+    <h1>Мои решения</h1>
+  </div>
+  {% include "components/_mascot.html" with name="penguin-reading.svg" %}
+</div>
 
 {% if scores %}
   <h2>Результаты</h2>
@@ -45,7 +51,7 @@
       </td>
     </tr>
   {% empty %}
-    <tr><td colspan="5" class="muted">Вы пока ничего не отправляли.</td></tr>
+    <tr><td colspan="5" class="muted"><span class="cell-mascot"><img src="{% static 'img/mascot/face-kowalski.svg' %}" alt="" width="40" height="40">Вы пока ничего не отправляли.</span></td></tr>
   {% endfor %}
   </tbody>
 </table>

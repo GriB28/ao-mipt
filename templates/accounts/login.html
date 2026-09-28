@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Вход{% endblock %}
 {% block content %}
-<h1>Вход</h1>
+<div class="page-head">
+  <div>
+    <h1>Вход</h1>
+  </div>
+  {% include "components/_mascot.html" with name="face-skipper.svg" %}
+</div>
 <form method="post" class="form-narrow">
   {% csrf_token %}
   {{ form.as_p }}

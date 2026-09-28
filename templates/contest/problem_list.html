@@ -1,7 +1,13 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Дистанционный тур{% endblock %}
 {% block content %}
-<h1>Дистанционный тур</h1>
+<div class="page-head">
+  <div>
+    <h1>Дистанционный тур</h1>
+  </div>
+  {% include "components/_mascot.html" with name="face-kowalski.svg" %}
+</div>
 
 {% include "contest/_organizer_bar.html" %}
 {% if stage %}
@@ -68,7 +74,7 @@
         {% endif %}
       </tr>
     {% empty %}
-      <tr><td colspan="3" class="muted">Задачи появятся после начала этапа.</td></tr>
+      <tr><td colspan="3" class="muted"><span class="cell-mascot"><img src="{% static 'img/mascot/face-kowalski.svg' %}" alt="" width="40" height="40">Задачи появятся после начала этапа.</span></td></tr>
     {% endfor %}
     </tbody>
   </table>

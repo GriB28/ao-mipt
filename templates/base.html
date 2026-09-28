@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Аэрокосмическая олимпиада МФТИ{% endblock %}</title>
+  <link rel="icon" href="{% static 'img/favicon.ico' %}" sizes="any">
+  <link rel="icon" href="{% static 'img/favicon-32.png' %}" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="{% static 'img/apple-touch-icon.png' %}">
   <link rel="stylesheet" href="{% static 'css/main.css' %}">
   {% if current_season and current_season.accent_color %}
   {% comment %}
@@ -51,7 +54,7 @@
         </form>
       {% else %}
         <a href="{% url 'accounts:login' %}">Войти</a>
-        <a class="btn btn-small" href="{% url 'accounts:signup' %}">Регистрация</a>
+        <a class="btn btn-small btn-accent" href="{% url 'accounts:signup' %}">Регистрация</a>
       {% endif %}
     </div>
   </div>
@@ -67,6 +70,7 @@
 </main>
 
 <footer class="site-footer">
+  <img class="footer-mascot" src="{% static 'img/mascot/penguin-portrait.svg' %}" alt="" aria-hidden="true">
   <div class="container footer-grid">
     <div>
       <p class="footer-title">Аэрокосмическая олимпиада МФТИ</p>

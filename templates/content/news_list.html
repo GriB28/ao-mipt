@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Новости{% endblock %}
 {% block content %}
-<h1>Новости</h1>
+<div class="page-head">
+  <div>
+    <h1>Новости</h1>
+  </div>
+  {% include "components/_mascot.html" with name="face-rico.svg" %}
+</div>
 <div class="grid">
 {% for item in news %}
   <div class="card">
@@ -10,7 +15,7 @@
     <p>{{ item.summary }}</p>
   </div>
 {% empty %}
-  <p class="muted">Новостей пока нет.</p>
+  {% include "components/_empty_state.html" with text="Новостей пока нет." mascot="img/mascot/penguin-portrait.svg" %}
 {% endfor %}
 </div>
 {% endblock %}

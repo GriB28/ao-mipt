@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Заявка отправлена</h1>
-<p class="lead">Мы свяжемся с вами после проверки. Площадка появится на карте после одобрения.</p>
+<div class="page-head">
+  <div>
+    <h1>Заявка отправлена</h1>
+    <p class="lead">Мы свяжемся с вами после проверки. Площадка появится на карте после одобрения.</p>
+  </div>
+  {% include "components/_mascot.html" with name="penguin-burst.svg" %}
+</div>
 <p><a class="btn btn-secondary" href="{% url 'core:home' %}">На главную</a></p>
 {% endblock %}

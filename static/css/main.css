@@ -16,7 +16,9 @@ body {
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   color: var(--text-primary);
-  background: var(--bg-page);
+  background-color: var(--bg-page);
+  background-image: var(--bg-page-decor);
+  background-repeat: no-repeat;
   -webkit-font-smoothing: antialiased;
   /* Длинные слова и адреса (имена файлов, e-mail) переносятся,
      а не распирают страницу вбок на телефоне. */
@@ -39,6 +41,9 @@ img, video, iframe { max-width: 100%; }
 .site-header {
   background: var(--bg-header);
   color: var(--text-on-dark);
+  /* Фирменная полоса под шапкой: оранжевый → лавандовый → синий. */
+  border-bottom: 3px solid transparent;
+  border-image: var(--gradient-stripe) 1;
 }
 
 .header-inner {
@@ -73,7 +78,13 @@ img, video, iframe { max-width: 100%; }
   transition: color var(--transition);
 }
 .main-nav a:hover { color: var(--text-on-dark); }
-.main-nav a[aria-current="page"] { color: var(--text-on-dark); }
+.main-nav a[aria-current="page"] {
+  color: var(--text-on-dark);
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-500);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 8px;
+}
 
 .user-nav {
   margin-left: auto;
@@ -84,6 +95,7 @@ img, video, iframe { max-width: 100%; }
 }
 .user-nav a { color: var(--text-on-dark-muted); text-decoration: none; }
 .user-nav a:hover { color: var(--text-on-dark); }
+.user-nav .btn-accent, .user-nav .btn-accent:hover { color: var(--button-accent-text); }
 
 .inline-form { display: inline; }
 .link-button {
@@ -97,6 +109,20 @@ img, video, iframe { max-width: 100%; }
 
 h1 { font-family: var(--font-display); font-size: var(--text-3xl); line-height: var(--leading-tight); margin: var(--space-6) 0 var(--space-2); }
 h2 { font-size: var(--text-xl); margin: var(--space-6) 0 var(--space-2); }
+
+/* Короткая оранжевая черта под заголовком страницы — единственный
+   постоянный тёплый акцент в светлой части сайта. */
+main > h1::after,
+.page-head h1::after,
+.not-found h1::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 4px;
+  margin-top: var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--gradient-accent);
+}
 h3 { font-size: var(--text-lg); margin: 0 0 var(--space-2); }
 
 a { color: var(--text-link); }
@@ -108,6 +134,7 @@ a { color: var(--text-link); }
 /* --- Герой на главной ---------------------------------------------------- */
 
 .hero {
+  position: relative;
   background: var(--bg-hero);
   color: var(--text-on-dark);
   border-radius: var(--radius-lg);
@@ -118,15 +145,33 @@ a { color: var(--text-link); }
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  overflow: hidden;
 }
-.hero-main { min-width: 0; }
+.hero-main { min-width: 0; position: relative; z-index: 1; }
 .hero h1 { margin: 0 0 var(--space-1); font-size: var(--text-3xl); }
 .hero .lead { margin: 0; color: var(--text-on-dark-muted); font-size: var(--text-base); }
-.hero .deadline { margin: var(--space-2) 0 0; color: var(--color-lavender-300); }
-.hero .btn { flex: none; }
+.hero .deadline { margin: var(--space-2) 0 0; color: var(--text-on-dark-muted); }
+.hero .deadline strong { color: var(--color-accent-500); }
+.hero .btn { flex: none; position: relative; z-index: 1; }
+
+/* Маскот-пингвин фоном в углу героя — чисто декоративный, поэтому
+   aria-hidden и без alt-текста. На узких экранах убираем совсем:
+   там ему негде поместиться, не наезжая на текст. */
+.hero-mascot {
+  position: absolute;
+  right: var(--space-5);
+  bottom: 0;
+  height: 92%;
+  max-height: 220px;
+  width: auto;
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 0;
+}
 
 @media (max-width: 720px) {
   .hero { padding: var(--space-5) var(--space-4); }
+  .hero-mascot { display: none; }
 }
 
 /* --- Кнопки -------------------------------------------------------------- */
@@ -151,6 +196,17 @@ a { color: var(--text-link); }
 
 .btn-small { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); }
 
+/* Кнопка призыва: регистрация и главное действие на экране. Одна на
+   экран, не больше — иначе оранжевый перестаёт выделять. Текст тёмный:
+   белый на оранжевом не проходит контраст. */
+.btn-accent {
+  background: var(--gradient-accent);
+  color: var(--button-accent-text);
+  box-shadow: var(--shadow-accent);
+}
+.btn-accent:hover { background: var(--gradient-accent-hover); }
+.btn-accent:active { background: var(--color-accent-600); }
+
 .btn-secondary {
   background: var(--bg-muted);
   color: var(--text-primary);
@@ -174,7 +230,7 @@ a { color: var(--text-link); }
   background: var(--bg-card);
   transition: box-shadow var(--transition);
 }
-.card:hover { box-shadow: var(--shadow-md); }
+.card:hover { box-shadow: var(--shadow-md); border-color: var(--color-lavender-300); }
 .card > :first-child { margin-top: 0; }
 .card > :last-child { margin-bottom: 0; }
 .card a { text-decoration: none; }
@@ -407,7 +463,7 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   height: 34px;
   margin: -17px 0 0 -17px;
   border-radius: var(--radius-full);
-  background: rgba(6, 3, 57, 0.72);
+  background: var(--overlay-dark);
   transition: background var(--transition);
 }
 .playlist-play::after {
@@ -419,7 +475,7 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   border-block: 7px solid transparent;
 }
 .playlist-card:hover .playlist-play { background: var(--color-brand-500); }
-.playlist-card .playlist-cover img ~ .playlist-play { background: rgba(6, 3, 57, 0.72); }
+.playlist-card .playlist-cover img ~ .playlist-play { background: var(--overlay-dark); }
 
 .playlist-body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .playlist-body strong { font-size: var(--text-base); line-height: var(--leading-tight); }
@@ -436,7 +492,7 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
 
 /* Цвет метки площадки: видно с одного взгляда, где что лежит. */
 .platform-vk .playlist-platform { color: var(--color-brand-500); }
-.platform-youtube .playlist-platform { color: var(--color-accent-500); }
+.platform-youtube .playlist-platform { color: var(--color-accent-700); }
 
 .playlist-season {
   font-size: var(--text-xs);
@@ -465,11 +521,29 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
 .site-footer {
   background: var(--bg-footer);
   color: var(--text-on-dark-muted);
-  margin-top: var(--space-8);
+  /* Отступ сверху — под пингвина на краю подвала (128px), чтобы он
+     не наезжал на последний блок страницы. */
+  margin-top: calc(128px + var(--space-4));
   padding: var(--space-6) 0;
   font-size: var(--text-sm);
 }
+.site-footer {
+  position: relative;
+  border-top: 3px solid transparent;
+  border-image: var(--gradient-stripe) 1;
+}
 .site-footer a { color: var(--color-lavender-300); }
+.site-footer a:hover { color: var(--color-accent-500); }
+
+/* Пингвин сидит на краю подвала справа. Декор, поэтому aria-hidden. */
+.footer-mascot {
+  position: absolute;
+  right: var(--space-6);
+  bottom: calc(100% + 3px);
+  height: 128px;
+  width: auto;
+  pointer-events: none;
+}
 
 .footer-grid {
   display: grid;
@@ -521,7 +595,7 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
     padding: var(--space-3) 0;
     border-bottom: 2px solid transparent;
   }
-  .main-nav a[aria-current="page"] { border-bottom-color: var(--color-brand-500); }
+  .main-nav a[aria-current="page"] { border-bottom-color: var(--color-accent-500); text-decoration: none; }
 
   h1 { font-size: var(--text-2xl); margin-top: var(--space-5); }
   h2 { margin-top: var(--space-5); }
@@ -530,7 +604,8 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   .hero h1 { font-size: var(--text-2xl); }
   .card { padding: var(--space-4); }
   #map { height: 380px; }
-  .site-footer { margin-top: var(--space-7); }
+  .site-footer { margin-top: calc(96px + var(--space-3)); }
+  .footer-mascot { height: 96px; right: var(--space-4); }
 
   /* Кнопка отправки формы — во всю ширину: в неё проще попасть. */
   .form-narrow .btn[type=submit], .form-wide .btn[type=submit] { width: 100%; }
@@ -741,7 +816,7 @@ pre { overflow-x: auto; }
   font-size: 11px;
   padding: 1px var(--space-2);
   border-radius: var(--radius-full);
-  background: var(--color-accent-500);
+  background: var(--color-accent-700);
   color: var(--text-on-dark);
   white-space: nowrap;
 }
@@ -853,34 +928,23 @@ pre { overflow-x: auto; }
 
 .scheme { margin-bottom: var(--space-6); }
 
-/* Скошенные углы у всех трёх областей. Считаем один раз здесь:
-   clip-path с восемью точками срезает все четыре угла одинаково. */
-.scheme-all,
-.scheme-qualifying,
-.scheme-primary {
-  clip-path: polygon(
-    var(--scheme-cut) 0,
-    calc(100% - var(--scheme-cut)) 0,
-    100% var(--scheme-cut),
-    100% calc(100% - var(--scheme-cut)),
-    calc(100% - var(--scheme-cut)) 100%,
-    var(--scheme-cut) 100%,
-    0 calc(100% - var(--scheme-cut)),
-    0 var(--scheme-cut)
-  );
-}
-
+/* Скруглённые углы у всех трёх областей. Внутренняя скругляется на
+   величину отступа меньше внешней — так дуги вложенных углов идут
+   параллельно, а не «разъезжаются». */
 .scheme-all {
   display: grid;
   grid-template-columns: minmax(0, 3fr) auto minmax(190px, 1fr);
   align-items: stretch;
   gap: var(--space-4);
   padding: var(--space-5);
+  border-radius: var(--scheme-radius);
   background: var(--scheme-bg-all);
+  box-shadow: var(--shadow-sm);
 }
 
 .scheme-qualifying {
   padding: var(--space-4);
+  border-radius: calc(var(--scheme-radius) - var(--space-2));
   background: var(--scheme-bg-qualifying);
 }
 
@@ -905,6 +969,7 @@ pre { overflow-x: auto; }
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-4);
+  border-radius: calc(var(--scheme-radius) - var(--space-3));
   background: var(--scheme-bg-primary);
 }
 
@@ -942,7 +1007,7 @@ pre { overflow-x: auto; }
      граница пропадает, и белая карточка сливается с фоном. Этот тон
      держит контраст не ниже 4.8 на всех трёх подложках. */
   border: 1px solid var(--color-space-600);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--bg-card);
   color: var(--text-primary);
   text-align: center;
@@ -953,8 +1018,15 @@ pre { overflow-x: auto; }
 .stage-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
-  border-color: var(--color-brand-600);
+  border-color: var(--color-accent-500);
 }
+
+/* Финал — цель всей олимпиады: единственная карточка с тёплым акцентом. */
+.scheme-final .stage-card {
+  border-color: var(--color-accent-500);
+  box-shadow: inset 0 3px 0 var(--color-accent-500);
+}
+.scheme-final .stage-card-icon { color: var(--color-accent-700); }
 
 .stage-card:focus-visible {
   outline: 2px solid var(--color-brand-700);
@@ -977,13 +1049,13 @@ pre { overflow-x: auto; }
 .stage-card-dates { font-size: var(--text-sm); color: var(--text-secondary); }
 .stage-card-place { font-size: var(--text-xs); color: var(--text-secondary); }
 
-/* Стрелка между группами. Маленькая и нейтральная: она отмечает порядок,
-   а не тянет на себя внимание. */
+/* Стрелка между группами. Небольшая, но оранжевая: показывает, куда
+   двигаться дальше, — это и есть «путь участника». */
 .scheme-arrow {
   align-self: center;
-  width: 14px;
-  height: 8px;
-  background: var(--color-lavender-400);
+  width: 16px;
+  height: 10px;
+  background: var(--color-accent-700);
   clip-path: polygon(0 35%, 55% 35%, 55% 0, 100% 50%, 55% 100%, 55% 65%, 0 65%);
 }
 
@@ -1001,8 +1073,8 @@ pre { overflow-x: auto; }
   .scheme-primary-cards { grid-template-columns: minmax(0, 1fr); }
   .scheme-arrow {
     justify-self: center;
-    width: 8px;
-    height: 14px;
+    width: 10px;
+    height: 16px;
     clip-path: polygon(35% 0, 35% 55%, 0 55%, 50% 100%, 100% 55%, 65% 55%, 65% 0);
   }
 }
@@ -1030,3 +1102,62 @@ pre { overflow-x: auto; }
 }
 
 .lecture-list a { font-weight: var(--weight-medium); }
+
+/* --- Заголовок страницы с маскотом ---------------------------------------- */
+
+/* Заголовок и вводный абзац слева, пингвин справа — стоит на нижней
+   линии блока. У каждого раздела свой пингвин, чтобы разделы узнавались
+   с одного взгляда. */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+.page-head > :first-child { min-width: 0; flex: 1; }
+.page-head > :first-child > :last-child { margin-bottom: 0; }
+.page-mascot {
+  flex: none;
+  width: auto;
+  height: 132px;
+  margin-bottom: calc(var(--space-2) * -1);
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .page-mascot { height: 76px; }
+}
+
+/* --- Пустые состояния с маскотом ------------------------------------------ */
+
+/* «Новостей пока нет», «архив пуст» и т.п. — маскот делает голое
+   сообщение дружелюбнее. Картинка декоративная (alt=""), сам текст
+   всё ещё несёт смысл для скринридера. */
+.empty-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+}
+.empty-state img { flex: none; width: 72px; height: 72px; }
+.empty-state .muted { margin: 0; }
+
+/* Маленький пингвин в пустой строке таблицы. */
+.cell-mascot { display: inline-flex; align-items: center; gap: var(--space-3); }
+.cell-mascot img { flex: none; width: 40px; height: 40px; }
+
+/* --- Страница 404 --------------------------------------------------------- */
+
+.not-found {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: var(--space-7) 0;
+}
+.not-found img { flex: none; width: 240px; height: auto; }
+.not-found h1 { margin-top: 0; }
+
+@media (max-width: 640px) {
+  .not-found { flex-direction: column; align-items: flex-start; gap: var(--space-4); }
+  .not-found img { width: 160px; }
+}

@@ -1,0 +1,11 @@
+{% load static %}
+{% comment %}
+  Пустое состояние с маскотом: используется вместо голого текста там, где
+  список может быть пуст (новости, лекции, архив).
+  Параметры: text (обязателен), mascot — путь внутри static/, например
+  "img/mascot/penguin-clock.svg".
+{% endcomment %}
+<p class="empty-state">
+  <img src="{% static mascot %}" alt="" width="72" height="72" loading="lazy">
+  <span class="muted">{{ text }}</span>
+</p>

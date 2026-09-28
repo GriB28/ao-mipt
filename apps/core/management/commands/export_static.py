@@ -125,6 +125,11 @@ class Command(BaseCommand):
         self.url_map["/accounts/confirm/resend/"] = "profile.html"
         self.url_map["/static/css/main.css"] = "css/main.css"
         self.url_map["/static/js/compress.js"] = "js/compress.js"
+        img_root = Path(settings.BASE_DIR) / "static" / "img"
+        for f in img_root.rglob("*"):
+            if f.is_file():
+                rel = f.relative_to(img_root).as_posix()
+                self.url_map[f"/static/img/{rel}"] = f"img/{rel}"
 
         self.venue_list_html = self._venue_list(Venue.objects.public())
 
@@ -142,6 +147,7 @@ class Command(BaseCommand):
             shutil.copy(Path(settings.BASE_DIR) / "static" / "css" / css, out / "css" / css)
         (out / "js").mkdir(exist_ok=True)
         shutil.copy(Path(settings.BASE_DIR) / "static" / "js" / "compress.js", out / "js" / "compress.js")
+        shutil.copytree(img_root, out / "img")
 
         # GitHub Pages по умолчанию прогоняет файлы через Jekyll, а тот
         # выбрасывает всё, что начинается с подчёркивания. Пустой файл

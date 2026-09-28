@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Очный тур — площадки{% endblock %}
 {% block content %}
-<h1>Очный тур</h1>
+<div class="page-head">
+  <div>
+    <h1>Очный тур</h1>
+  </div>
+  {% include "components/_mascot.html" with name="face-rico.svg" %}
+</div>
 {% if stage %}
   <p class="lead prose">
     {{ stage.starts_at|date:"d.m.Y" }} — {{ stage.ends_at|date:"d.m.Y" }}.

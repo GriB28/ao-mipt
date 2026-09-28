@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Страница не найдена{% endblock %}
+{% block content %}
+<section class="not-found">
+  <img src="{% static 'img/mascot/penguin-burst.svg' %}" alt="" aria-hidden="true">
+  <div>
+    <h1>Такой страницы нет</h1>
+    <p class="lead">Похоже, пингвин провалился под лёд вместе с этой ссылкой.
+      Возможно, адрес набран с ошибкой или страницу перенесли.</p>
+    <p class="actions">
+      <a class="btn btn-accent" href="{% url 'core:home' %}">На главную</a>
+      <a class="btn btn-secondary" href="{% url 'contest:problem_list' %}">К задачам</a>
+    </p>
+  </div>
+</section>
+{% endblock %}
