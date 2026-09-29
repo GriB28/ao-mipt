@@ -205,9 +205,10 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 EMAIL_TIMEOUT = 10  # чтобы регистрация не висела, если SMTP не отвечает
 
-if EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and not (TESTING or DEBUG):
+if EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
@@ -216,7 +217,11 @@ else:
 # других SMTP отвергают письмо, если отправитель не совпадает с тем, под
 # кем вошли. Отдельное значение нужно, только если провайдер разрешает
 # отправку от имени другого адреса.
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER or "olymp@example.ru")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER)
+
+print(EMAIL_HOST, EMAIL_HOST_PASSWORD,EMAIL_USE_SSL, EMAIL_USE_TLS, EMAIL_TIMEOUT, EMAIL_BACKEND, DEFAULT_FROM_EMAIL, EMAIL_HOST_USER, EMAIL_PORT)
+
+
 # --- Публичные контакты и ссылки (показываются в подвале) ----------------
 
 # Общие вопросы по олимпиаде.
