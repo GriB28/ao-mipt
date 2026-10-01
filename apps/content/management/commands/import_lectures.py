@@ -12,8 +12,9 @@
 
 --- О разбиении по темам ---
 
-В таблице темы нет, есть только название лекции. Тема определяется по
-ключевым словам в названии (TOPIC_RULES). Правила проверяются сверху
+В таблице темы нет, есть название лекции и столбец «подтемы». Тема
+определяется по ключевым словам в названии (TOPIC_RULES), а если оно
+ничего не говорит — по подтемам. Правила проверяются сверху
 вниз, побеждает первое совпавшее — поэтому частные правила стоят выше
 общих: «Знакомство с Python. Решение ОДУ» должно попасть в численные
 методы, а не в основы языка.
@@ -33,19 +34,25 @@ from django.utils.text import slugify
 from apps.content.models import Lecture, Topic
 from apps.seasons.models import Season
 
-# Темы: код, название, раздел, порядок внутри раздела.
+# Темы: код, название, раздел, порядок внутри раздела. Разбиение уточнено
+# по столбцу «подтемы» (октябрь 2026): ракеты отделены от небесной механики,
+# излучение — от оптики, колебания и сигналы — в своей теме, а блокноты
+# с численным решением уравнений движения — в численных методах.
 TOPICS = [
     ("mechanics", "Механика", Topic.Section.PHYSICS, 10),
-    ("celestial", "Небесная механика и баллистика", Topic.Section.PHYSICS, 20),
-    ("fluids", "Гидро- и аэродинамика", Topic.Section.PHYSICS, 30),
+    ("oscillations", "Колебания, волны и сигналы", Topic.Section.PHYSICS, 15),
+    ("rockets", "Ракеты и реактивное движение", Topic.Section.PHYSICS, 20),
+    ("celestial", "Небесная механика", Topic.Section.PHYSICS, 25),
+    ("fluids", "Гидро- и газодинамика", Topic.Section.PHYSICS, 30),
     ("thermo", "Термодинамика и атмосфера", Topic.Section.PHYSICS, 40),
-    ("electricity", "Электричество и магнетизм", Topic.Section.PHYSICS, 50),
-    ("optics", "Оптика и излучение", Topic.Section.PHYSICS, 60),
+    ("electricity", "Электричество, магнетизм и плазма", Topic.Section.PHYSICS, 50),
+    ("optics", "Оптика", Topic.Section.PHYSICS, 60),
+    ("astro", "Излучение и астрофизика", Topic.Section.PHYSICS, 65),
     ("math", "Математический аппарат", Topic.Section.PHYSICS, 70),
     ("python", "Основы Python", Topic.Section.PROGRAMMING, 10),
-    ("numerical", "Численные методы", Topic.Section.PROGRAMMING, 20),
+    ("numerical", "Численные методы и моделирование", Topic.Section.PROGRAMMING, 20),
     ("algorithms", "Алгоритмы", Topic.Section.PROGRAMMING, 30),
-    ("data", "Данные, статистика и машинное обучение", Topic.Section.PROGRAMMING, 40),
+    ("data", "Анализ данных и машинное обучение", Topic.Section.PROGRAMMING, 40),
     ("solutions", "Разборы задач", Topic.Section.COMMON, 10),
     ("about", "Об олимпиаде", Topic.Section.COMMON, 20),
 ]
@@ -54,21 +61,25 @@ TOPICS = [
 TOPIC_RULES = [
     ("solutions", ["разбор"]),
     ("about", ["юбиле"]),
-    ("numerical", ["решение оду", "интерполляц", "численны", "вычислительная"]),
+    # «Интегрирование уравнений движения» — блокнот на Python, а не механика.
+    ("numerical", ["решение оду", "интерполляц", "интерполяц", "численны", "вычислительная",
+                   "интегрирование уравнений", "метод эйлера"]),
     ("data", ["статистик", "машинное обучение"]),
     ("algorithms", ["бинарный поиск", "сортировк", "алгоритм", "структуры данных"]),
     ("python", ["python", "numpy", "matplotlib"]),
-    ("celestial", ["небесн", "кеплер", "ракет", "мещерск", "реактивн",
-                   "солнечный парус", "орбит", "баллистик"]),
+    ("rockets", ["ракет", "мещерск", "реактивн", "циолковск", "сопло"]),
+    ("celestial", ["небесн", "кеплер", "орбит", "солнечный парус", "баллистик"]),
     ("fluids", ["бернулли", "эйлер", "аэродинамик", "ударные волны",
                 "поверхностное натяжение", "сопротивление движению", "жидкост"]),
-    ("optics", ["оптик", "фотометри", "звездны", "рефракц", "излучени",
-                "стефана", "освещенн", "спектр", "резонанс"]),
+    # Излучение выше оптики: фотометрия и звёздные величины — астрофизика.
+    ("astro", ["фотометри", "звездн", "излучени", "стефана", "черное тело"]),
+    ("optics", ["оптик", "оптическ", "рефракц", "освещенн", "линз", "интерференц"]),
+    ("oscillations", ["колебани", "резонанс", "спектр", "сигнал", "фурье"]),
     ("electricity", ["электрич", "магнит", "индукцион", "гаусса", "rc-цеп",
-                     "плазма", "магнетизм"]),
+                     "плазм", "магнетизм"]),
     # Механика выше термодинамики: лекция «Вращательное движение. Закон
     # Гука. Тепловое расширение» — про механику, хотя и упоминает нагрев.
-    ("mechanics", ["механик", "движени", "колебани", "система отсчета",
+    ("mechanics", ["механик", "движени", "система отсчета",
                    "системы отсчета", "гука", "вращательн", "зси", "зсэ"]),
     ("thermo", ["барометрическ", "тепловое расширение", "термодинамик", "атмосфер"]),
     ("math", ["производная", "интеграл. вектор", "вектор-функц"]),
@@ -127,15 +138,16 @@ class Command(BaseCommand):
                 continue  # заголовок
             # В режиме read_only строки бывают короче пяти колонок —
             # дополняем, чтобы не ловить IndexError на пустых хвостах.
-            values = [str(c).strip() if c is not None else "" for c in row[:5]]
-            values += [""] * (5 - len(values))
+            values = [str(c).strip() if c is not None else "" for c in row[:7]]
+            values += [""] * (7 - len(values))
             season = values[0] or season
             stage = values[1] or stage
             title, lecturer, url = values[2], values[3], values[4]
             if not title or not url:
                 continue
             yield {"season": season, "stage": stage, "title": title,
-                   "lecturer": lecturer, "url": url}
+                   "lecturer": lecturer, "url": url, "subtopics": values[5],
+                   "notebook": values[6]}
 
     def _ensure_topics(self):
         topics = {}
@@ -155,7 +167,7 @@ class Command(BaseCommand):
                 continue
 
             slug = self._slug(season, row["title"], position)
-            topic_slug = match_topic(row["title"])
+            topic_slug = match_topic(row["title"], row["subtopics"])
             if topic_slug is None:
                 unmatched.append(row["title"])
 
@@ -165,6 +177,7 @@ class Command(BaseCommand):
                     "title": row["title"],
                     "lecturer": row["lecturer"],
                     "video_url": row["url"],
+                    "notebook_url": row["notebook"],
                     "topic": topics.get(topic_slug),
                     "description": self._description(row),
                     # Каталог заводят сами организаторы, одобрение не нужно.
@@ -175,14 +188,18 @@ class Command(BaseCommand):
         return created, updated, unmatched
 
     def _description(self, row):
-        """«отборочный» → «Лекция отборочного тура.»"""
+        """«отборочный» + подтемы → «Лекция отборочного тура.» и с новой строки «Темы: …»."""
+        parts = []
         tour = (row["stage"] or "").strip().lower()
-        if not tour or tour == "-":
-            return ""
-        # В таблице тур записан в именительном падеже: «отборочный», «финальный».
-        tour = re.sub(r"(ый|ой)$", "ого", tour)
-        tour = re.sub(r"ий$", "его", tour)
-        return f"Лекция {tour} тура."
+        if tour and tour != "-":
+            # В таблице тур записан в именительном падеже: «отборочный», «финальный».
+            tour = re.sub(r"(ый|ой)$", "ого", tour)
+            tour = re.sub(r"ий$", "его", tour)
+            parts.append(f"Лекция {tour} тура.")
+        subtopics = subtopics_text(row.get("subtopics", ""))
+        if subtopics:
+            parts.append(f"Темы: {subtopics}.")
+        return "\n".join(parts)
 
     def _season(self, label):
         """«2024/25» → сезон с годом окончания 2025."""
@@ -216,17 +233,28 @@ class Command(BaseCommand):
     def _report(self, rows):
         by_topic = {}
         for row in rows:
-            by_topic.setdefault(match_topic(row["title"]) or "— без темы —", []).append(row["title"])
+            topic = match_topic(row["title"], row["subtopics"]) or "— без темы —"
+            by_topic.setdefault(topic, []).append(row["title"])
         for slug, titles in sorted(by_topic.items()):
             self.stdout.write(f"{slug} ({len(titles)}):")
             for title in titles:
                 self.stdout.write(f"    {title}")
 
 
-def match_topic(title: str):
-    """Тема по названию лекции или None, если не опознали."""
-    lowered = title.lower().replace("ё", "е")
-    for slug, keywords in TOPIC_RULES:
-        if any(word in lowered for word in keywords):
-            return slug
+def match_topic(title: str, subtopics: str = ""):
+    """Тема по названию лекции, а если не опознали — по подтемам; иначе None."""
+    for text in (title, subtopics):
+        lowered = (text or "").lower().replace("ё", "е")
+        for slug, keywords in TOPIC_RULES:
+            if any(word in lowered for word in keywords):
+                return slug
     return None
+
+
+def subtopics_text(raw: str) -> str:
+    """Подтемы из таблицы — аккуратной строкой: без хвостовых запятых
+    и с маленькой буквы («Оптические атмосферные явления, » → «оптические …»)."""
+    items = [item.strip() for item in (raw or "").split(",")]
+    items = [item[0].lower() + item[1:] if item[:2].isalpha() and not item[:2].isupper()
+             else item for item in items if item]
+    return ", ".join(items)

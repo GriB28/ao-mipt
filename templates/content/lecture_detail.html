@@ -26,6 +26,9 @@
 
 {% if lecture.description %}<div class="prose">{{ lecture.description|linebreaks }}</div>{% endif %}
 
+{% if lecture.notebook_url %}
+  <p><a class="btn btn-secondary" href="{{ lecture.notebook_url }}" target="_blank" rel="noopener">Открыть блокнот лекции</a></p>
+{% endif %}
 {% if lecture.slides %}
   <p><a class="btn btn-secondary" href="{{ lecture.slides.url }}">Скачать презентацию</a></p>
 {% endif %}

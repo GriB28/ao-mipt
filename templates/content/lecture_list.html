@@ -99,6 +99,7 @@
             <span class="muted">{{ lecture.season.years_label }}</span>
             {% if lecture.lecturer %}<span class="muted">{{ lecture.lecturer }}</span>{% endif %}
             {% if lecture.video_url %}<span class="badge">{{ lecture.platform_title }}</span>{% endif %}
+            {% if lecture.notebook_url %}<a class="badge" href="{{ lecture.notebook_url }}" target="_blank" rel="noopener">блокнот</a>{% endif %}
           </li>
         {% endfor %}
       </ul>
@@ -116,9 +117,10 @@
       <p class="muted">
         {{ lecture.lecturer }}{% if lecture.held_at %} · {{ lecture.held_at|date:"d.m.Y" }}{% endif %}
       </p>
-      <p>{{ lecture.description|truncatewords:22 }}</p>
+      <p>{{ lecture.description|truncatechars:180|linebreaksbr }}</p>
       {% if lecture.video_url %}<span class="badge">{{ lecture.platform_title }}</span>{% endif %}
       {% if lecture.slides %}<span class="badge">слайды</span>{% endif %}
+      {% if lecture.notebook_url %}<a class="badge" href="{{ lecture.notebook_url }}" target="_blank" rel="noopener">блокнот</a>{% endif %}
     </div>
   {% empty %}
     <p class="empty-state prose">

@@ -17,7 +17,7 @@ class LectureForm(forms.ModelForm):
     class Meta:
         model = Lecture
         fields = ("season", "title", "lecturer", "held_at", "video_url",
-                  "description", "slides", "cover")
+                  "description", "notebook_url", "slides", "cover")
         widgets = {
             "held_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "description": forms.Textarea(attrs={"rows": 4}),

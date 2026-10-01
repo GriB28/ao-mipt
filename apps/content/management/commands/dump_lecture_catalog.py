@@ -45,7 +45,7 @@ class Command(BaseCommand):
         lines += ["]", "", "# Плейлисты сезонов целиком.", "SEASON_PLAYLISTS = ["]
         for year, url in SEASON_PLAYLISTS:
             lines.append(f"    ({year}, {url!r}),")
-        lines += ["]", "", "# Лекции: год сезона, тема, название, лектор, ссылка, описание.",
+        lines += ["]", "", "# Лекции: год сезона, тема, название, лектор, ссылка, описание, блокнот.",
                   "LECTURES = ["]
 
         lectures = (Lecture.objects.exclude(topic__isnull=True)
@@ -54,7 +54,8 @@ class Command(BaseCommand):
         for lecture in lectures:
             lines.append(
                 f"    ({lecture.season.year}, {lecture.topic.slug!r}, {lecture.title!r}, "
-                f"{lecture.lecturer!r}, {lecture.video_url!r}, {lecture.description!r}),"
+                f"{lecture.lecturer!r}, {lecture.video_url!r}, {lecture.description!r}, "
+                f"{lecture.notebook_url!r}),"
             )
         lines += ["]", ""]
 

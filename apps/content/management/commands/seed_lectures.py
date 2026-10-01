@@ -29,7 +29,7 @@ class Command(BaseCommand):
             )
 
         created = skipped = 0
-        for position, (year, topic_slug, title, lecturer, url, note) in enumerate(LECTURES):
+        for position, (year, topic_slug, title, lecturer, url, note, notebook) in enumerate(LECTURES):
             season = self._season(year)
             # Ссылка на видео уникальна и не меняется — по ней и узнаём,
             # заводили мы уже эту лекцию или нет.
@@ -42,6 +42,7 @@ class Command(BaseCommand):
                 title=title,
                 lecturer=lecturer,
                 video_url=url,
+                notebook_url=notebook,
                 description=note,
                 topic=topics.get(topic_slug),
                 status=Lecture.Status.APPROVED,

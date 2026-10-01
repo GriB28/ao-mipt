@@ -128,6 +128,10 @@ class Lecture(TimeStampedModel):
                   "скопируйте адрес из строки браузера, видео заиграет прямо на сайте. "
                   "Ссылка на плейлист не встраивается: для плейлистов есть отдельный раздел.",
     )
+    notebook_url = models.URLField(
+        "ссылка на блокнот", blank=True,
+        help_text="Блокнот с кодом или конспектом лекции: Google Drive, Colab, GitHub",
+    )
     slides = models.FileField("презентация", upload_to="lectures/", blank=True, validators=[validate_upload_size])
     cover = models.ImageField("превью", upload_to="lectures/covers/", blank=True)
 

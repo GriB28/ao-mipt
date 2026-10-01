@@ -9,7 +9,7 @@ from apps.content.management.commands.import_archive import (
     problem_number,
     roman,
 )
-from apps.content.models import ArchiveMaterial
+from apps.content.models import ArchiveMaterial, Lecture
 
 
 class SeasonMappingTest(TestCase):
@@ -481,9 +481,22 @@ class LectureCatalogTest(TestCase):
 
     def test_topics_group_the_lectures(self):
         html = self.client.get("/lectures/archive/").content.decode()
-        for topic in ("Основы Python", "Небесная механика и баллистика", "Оптика и излучение"):
+        for topic in ("Основы Python", "Небесная механика", "Ракеты и реактивное движение",
+                      "Излучение и астрофизика"):
             with self.subTest(topic=topic):
                 self.assertIn(topic, html)
+
+    def test_notebook_links_are_shown(self):
+        html = self.client.get("/lectures/archive/").content.decode()
+        self.assertIn("colab.research.google.com", html)
+        lecture = Lecture.objects.exclude(notebook_url="").first()
+        page = self.client.get(lecture.get_absolute_url()).content.decode()
+        self.assertIn("Открыть блокнот лекции", page)
+
+    def test_subtopics_go_on_a_new_line(self):
+        lecture = Lecture.objects.get(title="Уравнение Мещерского")
+        page = self.client.get(lecture.get_absolute_url()).content.decode()
+        self.assertIn("Лекция финального тура.<br>Темы: уравнение Мещерского", page)
 
     def test_section_filter_narrows_the_list(self):
         response = self.client.get("/lectures/archive/?section=programming")
@@ -539,6 +552,35 @@ class TopicMatchingTest(TestCase):
         from apps.content.management.commands.import_lectures import match_topic
 
         self.assertEqual(match_topic("Разбор заданий теор. тура"), "solutions")
+
+    def test_finer_topics(self):
+        """Ракеты, излучение, колебания и блокноты с численным решением — отдельно."""
+        from apps.content.management.commands.import_lectures import match_topic
+
+        for title, topic in (("Интегрирование уравнений движения", "numerical"),
+                             ("Уравнение Мещерского", "rockets"),
+                             ("Как запускают ракеты?", "rockets"),
+                             ("Небесная механика", "celestial"),
+                             ("Фотометрия и звездные величины", "astro"),
+                             ("Глаз как оптическая система. Освещенность", "optics"),
+                             ("Механические колебания", "oscillations"),
+                             ("Резонансы и спектры", "oscillations"),
+                             ("Плазма", "electricity")):
+            with self.subTest(title=title):
+                self.assertEqual(match_topic(title), topic)
+
+    def test_subtopics_decide_when_title_is_vague(self):
+        from apps.content.management.commands.import_lectures import match_topic
+
+        self.assertEqual(match_topic("Лекция гостя", "Сопло Лаваля, сила тяги"), "rockets")
+
+    def test_subtopics_text_is_tidied(self):
+        from apps.content.management.commands.import_lectures import subtopics_text
+
+        self.assertEqual(subtopics_text("Оптические атмосферные явления,  "),
+                         "оптические атмосферные явления")
+        self.assertEqual(subtopics_text("ЗСЭ, RC-цепи, Закон Бернулли"),
+                         "ЗСЭ, RC-цепи, закон Бернулли")
 
     def test_unknown_title_is_left_without_a_topic(self):
         """Лучше показать «без темы», чем засунуть лекцию не туда."""
