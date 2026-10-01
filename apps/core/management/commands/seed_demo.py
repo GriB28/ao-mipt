@@ -133,7 +133,7 @@ class Command(BaseCommand):
                         "doc_issued_at": date(2024, 3, 20), "doc_issued_by": "ГУ МВД России по г. Москве",
                         "doc_division_code": "770-001",
                         "reg_address": "101000, г. Москва, ул. Примерная, д. 1, кв. 1",
-                        "consent_given": True, "consent_given_at": now,
+                        "consent_given": True, "consent_given_at": now, "acknowledged_at": now,
                     },
                 )
                 if not user.consents.exists():

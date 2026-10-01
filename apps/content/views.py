@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -183,6 +184,10 @@ def problem_archive(request):
 
 
 def page(request, slug):
+    # Своей политики нет — ведём на Политику МФТИ. Старые ссылки
+    # (письма, закладки) на /page/privacy/ не должны ломаться.
+    if slug == "privacy":
+        return redirect(settings.PRIVACY_POLICY_URL)
     return render(request, "content/page.html",
                   {"page": get_object_or_404(Page.objects.published(), slug=slug)})
 

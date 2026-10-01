@@ -15,5 +15,5 @@
   {% for field in form %}{% include "accounts/_field.html" %}{% endfor %}
   <button class="btn" type="submit">Зарегистрироваться</button>
 </form>
-<p class="muted"><a href="{% url 'content:page' 'privacy' %}">Политика обработки персональных данных</a></p>
+<p class="muted"><a href="{{ PRIVACY_POLICY_URL }}" rel="noopener">Политика обработки персональных данных МФТИ</a></p>
 {% endblock %}

@@ -3,6 +3,7 @@
 from datetime import date
 
 from django.core.files.base import ContentFile
+from django.utils import timezone
 
 from .models import ConsentDocument, DocumentType, ParticipantProfile
 
@@ -22,6 +23,7 @@ def make_eligible(user, **profile_fields):
         "phone": "+7 900 000-00-00", "telegram": "@testov", "doc_type": DocumentType.PASSPORT_RF,
         "doc_series": "0000", "doc_number": "000000", "doc_issued_at": date(2024, 1, 10),
         "doc_issued_by": "МВД", "doc_division_code": "770-001", "reg_address": "Москва",
+        "acknowledged_at": timezone.now(),
     } | profile_fields
     profile, _ = ParticipantProfile.objects.update_or_create(user=user, defaults=defaults)
     ConsentDocument.objects.create(user=user, data=profile.consent_data(),

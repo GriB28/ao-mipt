@@ -1,14 +1,17 @@
+import io
 from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
+from django.core.files.base import ContentFile
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
+from PIL import Image, ImageOps
 
 from apps.core.files import protected_file_response
 from apps.participation.models import Registration, VenueBooking
@@ -209,7 +212,15 @@ def consent_upload(request):
             messages.error(request, error)
         return redirect(reverse("accounts:profile") + "#consent")
 
-    upload = form.cleaned_data["file"]
+    files = form.cleaned_data["file"]
+    upload = files[0]
+    if len(files) > 1:
+        try:
+            upload = _photos_to_pdf(files)
+        except (OSError, Image.DecompressionBombError):
+            messages.error(request, "Не получилось открыть фото. Сохраните их в JPG или PNG "
+                                    "и загрузите ещё раз — или пришлите один PDF.")
+            return redirect(reverse("accounts:profile") + "#consent")
     with transaction.atomic():
         # Двойное нажатие не должно дать два скана подряд.
         User.objects.select_for_update().filter(pk=request.user.pk).first()
@@ -223,6 +234,18 @@ def consent_upload(request):
     messages.success(request, "Согласие загружено — участие открыто. Мы проверим скан вручную "
                               "и напишем на почту, если его понадобится переслать.")
     return redirect(reverse("accounts:profile") + "#consent")
+
+
+def _photos_to_pdf(files):
+    """Фото страниц бланка → один PDF: администратор открывает один файл."""
+    pages = []
+    for f in files:
+        with Image.open(f) as image:
+            image = ImageOps.exif_transpose(image)  # фото с телефона бывают повёрнуты
+            pages.append(image.convert("RGB"))
+    buffer = io.BytesIO()
+    pages[0].save(buffer, format="PDF", save_all=True, append_images=pages[1:], resolution=150)
+    return ContentFile(buffer.getvalue(), name="soglasie-foto.pdf")
 
 
 @login_required

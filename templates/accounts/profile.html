@@ -74,6 +74,10 @@
 {% if profile.is_complete and consent and consent.grants_access and not form.errors %}</details>{% endif %}
 
 <h2 id="consent">Согласие на обработку персональных данных</h2>
+<p class="muted prose">В бланке два документа: на первой странице — согласие на обработку
+  персональных данных, на второй — согласие на их распространение (публикацию результатов
+  и фотографий с очных этапов на сайте). Подробнее — в
+  <a href="{{ PRIVACY_POLICY_URL }}" rel="noopener">Политике обработки персональных данных МФТИ</a>.</p>
 {% if not profile.is_complete %}
   <p class="muted prose">Бланк собирается из анкеты — сначала заполните её целиком.
     {% with missing=profile.missing_fields %}{% if missing %}
@@ -104,16 +108,18 @@
         <a class="btn btn-secondary" href="{% url 'accounts:consent_blank' %}">Скачать бланк (PDF)</a>
         <span class="helptext">В бланк уже вписаны данные из анкеты. Проверьте их.</span>
       </li>
-      <li>Распечатайте и подпишите.
-        {% if profile.is_minor %}Ваши данные в бланк уже вписаны. <strong>Родитель</strong>
-          вписывает от руки свои ФИО, паспортные данные и адрес регистрации — на сайт их вводить
-          не нужно. Подписываете вы оба и ставите дату.{% else %}Ваши данные в бланк уже
-          вписаны — от руки только подпись и дата.{% endif %}</li>
+      <li>Распечатайте и подпишите <strong>обе страницы</strong>.
+        {% if profile.is_minor %}Ваши данные в бланк уже вписаны. <strong>Законный
+          представитель</strong> вписывает от руки свои ФИО, паспортные данные,
+          адрес регистрации и документ, подтверждающий полномочия (например, ваше свидетельство
+          о рождении), — на сайт их вводить не нужно. Подписываете вы оба на каждой странице
+          и ставите дату.{% else %}Ваши данные в бланк уже вписаны — от руки только подписи
+          и даты.{% endif %}</li>
       <li>
         <form method="post" action="{% url 'accounts:consent_upload' %}" enctype="multipart/form-data" class="form-narrow">
           {% csrf_token %}
           {% for field in upload_form %}{% include "accounts/_field.html" %}{% endfor %}
-          <button class="btn" type="submit">Загрузить согласие</button>
+          <button class="btn" type="submit">Загрузить бланк</button>
         </form>
       </li>
     </ol>

@@ -1,10 +1,14 @@
 import re
+from pathlib import Path
 
 from django import forms
 from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.utils import timezone
+from django.utils.html import format_html
 
+from apps.contest.forms import MultipleFileField
+from apps.core.legal_templates import ACKNOWLEDGEMENTS
 from apps.core.validators import validate_consent_file
 
 from .models import DOC_TYPES_WITH_SERIES, DocumentType, OrganizerProfile, ParticipantProfile, User
@@ -114,6 +118,14 @@ class DayMonthYearWidget(forms.SelectDateWidget):
         return context
 
 
+def _doc_link(url, text):
+    """Ссылка на документ в новой вкладке; «#» — заглушка, пока документа нет."""
+    if url == "#":
+        return format_html('<a href="#" title="Документ скоро будет опубликован" '
+                           'onclick="return false">{}</a>', text)
+    return format_html('<a href="{}" target="_blank" rel="noopener">{}</a>', url, text)
+
+
 def _years(back, forward=0):
     this = timezone.localdate().year
     return list(range(this + forward, this - back - 1, -1))
@@ -128,6 +140,9 @@ class ProfileForm(forms.ModelForm):
 
     region = forms.ChoiceField(label="Регион", choices=[("", "— выберите регион —")] + [
         c for c in REGION_CHOICES if c[0]])
+    # Не часть согласия (так требует закон), а отдельные отметки.
+    ack_rules = forms.BooleanField()
+    ack_data = forms.BooleanField(label=ACKNOWLEDGEMENTS[1])
 
     class Meta:
         model = ParticipantProfile
@@ -165,6 +180,7 @@ class ProfileForm(forms.ModelForm):
          ("doc_type", "doc_series", "doc_number", "doc_issued_at", "doc_issued_by",
           "doc_division_code", "reg_address")),
         ("Учёба и связь", ("grade", "school", "city", "region", "phone", "telegram")),
+        ("Подтверждение", ("ack_rules", "ack_data")),
     )
 
     def __init__(self, *args, **kwargs):
@@ -175,11 +191,25 @@ class ProfileForm(forms.ModelForm):
         self.fields["doc_issued_at"].widget = DayMonthYearWidget(years=_years(back=25))
         self.fields["grade"].widget.attrs.update({"min": 1, "max": 11})
         self.fields["doc_type"].choices = [("", "— выберите документ —")] + DocumentType.choices
+        self.fields["ack_rules"].label = format_html(
+            "Я ознакомлен(-а) с {}, {} и {} проведения олимпиады школьников "
+            "«Аэрокосмическая олимпиада МФТИ».",
+            _doc_link(settings.OLYMPIAD_ORDER_URL, "Порядком проведения олимпиад школьников"),
+            _doc_link(settings.OLYMPIAD_STATUTE_URL, "Положением"),
+            _doc_link(settings.OLYMPIAD_REGULATIONS_URL, "Регламентом"))
+        if self.instance.acknowledged_at:
+            self.fields["ack_rules"].initial = self.fields["ack_data"].initial = True
         # Регион, записанный до появления списка, мог в него не попасть —
         # не выбрасываем анкету из-за этого, а добавляем значение в choices.
         current = self.instance.region if self.instance and self.instance.pk else ""
         if current and current not in dict(REGION_CHOICES):
             self.fields["region"].choices = list(self.fields["region"].choices) + [(current, current)]
+
+    def save(self, commit=True):
+        # Время первой отметки: когда человек их подтвердил впервые.
+        if not self.instance.acknowledged_at:
+            self.instance.acknowledged_at = timezone.now()
+        return super().save(commit)
 
     def sections(self):
         return [(title, [self[n] for n in names]) for title, names in self.SECTIONS]
@@ -282,8 +312,13 @@ class ResendConfirmationForm(forms.Form):
 
 
 class ConsentUploadForm(forms.Form):
-    file = forms.FileField(label="Скан или фото подписанного согласия",
-                           validators=[validate_consent_file])
+    """Бланк — две страницы: один PDF-скан или фото страниц (склеим в PDF)."""
+
+    #: Больше фото не нужно: страниц две, запас — на переснятую.
+    MAX_PHOTOS = 4
+
+    file = MultipleFileField(label="Скан или фото подписанного бланка (обе страницы)",
+                             validators=[validate_consent_file])
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -291,8 +326,18 @@ class ConsentUploadForm(forms.Form):
         self.fields["file"].widget.attrs.update({"data-max-mb": f"{limit:g}",
                                                  "accept": ".pdf,.jpg,.jpeg,.png,image/*"})
         self.fields["file"].help_text = (
-            f"PDF, JPG или PNG до {limit:g} МБ. Фото с телефона уменьшится автоматически."
+            f"Один PDF с обеими страницами или фото каждой страницы (можно выбрать несколько). "
+            f"До {limit:g} МБ на файл, фото с телефона уменьшатся автоматически."
         )
+
+    def clean_file(self):
+        files = self.cleaned_data["file"]
+        if len(files) > 1:
+            if any(Path(f.name).suffix.lower() == ".pdf" for f in files):
+                raise forms.ValidationError("PDF загружайте одним файлом, без фото.")
+            if len(files) > self.MAX_PHOTOS:
+                raise forms.ValidationError(f"Не больше {self.MAX_PHOTOS} фото.")
+        return files
 
 
 class OrganizerProfileForm(forms.ModelForm):

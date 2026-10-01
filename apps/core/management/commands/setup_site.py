@@ -17,12 +17,7 @@ from django.core.management.base import BaseCommand
 
 from apps.content.models import News, Page, Playlist
 from apps.contest.models import Problem
-from apps.core.legal_templates import (
-    CONSENT_FORM_ADULT,
-    CONSENT_FORM_MINOR,
-    CONSENT_TEXT,
-    PRIVACY_POLICY,
-)
+from apps.core.legal_templates import CONSENT_PAGES
 from apps.seasons.models import Season, Stage
 from apps.seasons.schedule import PRACTICE_STAGE, SEASON_YEAR, STAGES
 
@@ -97,8 +92,6 @@ class Command(BaseCommand):
         pages = [
             ("about", "Об олимпиаде", True, 10,
              "<p>Аэрокосмическая олимпиада МФТИ для школьников 7–11 классов.</p>"),
-            ("privacy", "Политика обработки персональных данных", False, 90, PRIVACY_POLICY),
-            ("consent", "Согласие на обработку персональных данных", False, 91, CONSENT_TEXT),
         ]
         for slug, title, in_menu, order, body in pages:
             Page.objects.get_or_create(
@@ -107,12 +100,9 @@ class Command(BaseCommand):
                           "menu_order": order, "body": body},
             )
 
-        # Тексты бланков согласия (PDF в кабинете). Страницы не публикуются —
+        # Тексты бланка согласий (PDF в кабинете). Страницы не публикуются —
         # это заготовки с подстановками {{ … }}, их правят в админке.
-        for slug, title, body in [
-            ("consent-form-minor", "Бланк согласия: законный представитель", CONSENT_FORM_MINOR),
-            ("consent-form-adult", "Бланк согласия: участник старше 18", CONSENT_FORM_ADULT),
-        ]:
+        for slug, title, body in CONSENT_PAGES:
             Page.objects.get_or_create(
                 slug=slug,
                 defaults={"title": title, "body": body, "is_published": False,

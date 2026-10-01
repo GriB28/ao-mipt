@@ -1,6 +1,7 @@
 """Регистрация и вход — через них проходит каждый участник."""
 
 import tempfile
+from datetime import date
 
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -68,6 +69,7 @@ def profile_data(**extra):
         "doc_issued_by": "ГУ МВД России по г. Москве", "doc_division_code": "770001",
         "reg_address": "101000, Москва, ул. Мира, 1", "grade": "10", "school": "Школа № 1",
         "city": "Москва", "region": "Москва", "phone": "+7 900 123-45-67", "telegram": "@vasya_p",
+        "ack_rules": "on", "ack_data": "on",
     } | extra
 
 
@@ -104,6 +106,39 @@ class ParticipationStepsTest(TestCase):
         self.assertTrue(consent.for_minor)
         self.assertEqual((consent.data["doc_series"], consent.data["doc_number"]), ("4510", "123456"))
         self.assertTrue(User.objects.get(pk=self.user.pk).can_participate)
+
+    def _photo(self, name):
+        import io
+
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (60, 80), "white").save(buffer, format="JPEG")
+        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/jpeg")
+
+    def test_photos_of_both_pages_become_one_pdf(self):
+        self._save_profile()
+        self.client.post(reverse("accounts:consent_upload"),
+                         {"file": [self._photo("p1.jpg"), self._photo("p2.jpg")]})
+        consent = ConsentDocument.objects.get(user=self.user)
+        self.assertTrue(consent.file.name.endswith(".pdf"))
+        self.assertTrue(consent.file.read().startswith(b"%PDF"))
+
+    def test_pdf_and_photos_together_are_rejected(self):
+        self._save_profile()
+        pdf = SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")
+        self.client.post(reverse("accounts:consent_upload"), {"file": [pdf, self._photo("p.jpg")]})
+        self.assertFalse(ConsentDocument.objects.filter(user=self.user).exists())
+
+    def test_acknowledgements_are_required_and_dated(self):
+        """Ознакомление с документами олимпиады — отметками в анкете, не в согласии."""
+        response = self._save_profile(ack_rules="")
+        self.assertFormError(response.context["form"], "ack_rules", "Обязательное поле.")
+        self.assertFalse(ParticipantProfile.objects.get(user=self.user).is_complete)
+        self._save_profile()
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertIsNotNone(profile.acknowledged_at)
+        self.assertTrue(profile.is_complete)
 
     def test_passport_series_and_number_are_checked(self):
         response = self._save_profile(doc_series="12", doc_number="12345")
@@ -262,12 +297,18 @@ class ConsentAccessTest(TestCase):
 
 
 class ConsentPdfTest(TestCase):
-    """Бланк по шаблону оргкомитета: данные из анкеты, от руки — только подписи."""
+    """Бланк — два документа: согласие на обработку и на распространение."""
 
     def _kid(self, **fields):
         from .testing import make_eligible
 
         return make_eligible(User.objects.create_user("kid@e.ru", "olymp12345"), **fields)
+
+    def _text(self, profile, kind):
+        from . import consent_pdf
+
+        return " ".join(consent_pdf._blocks(consent_pdf.fill(
+            consent_pdf.template_text(profile.is_minor, kind), consent_pdf.values_for(profile))))
 
     def test_values_come_from_the_profile(self):
         from . import consent_pdf
@@ -278,34 +319,59 @@ class ConsentPdfTest(TestCase):
         self.assertIn("код подразделения 770-001", values["participant_document"])
         self.assertFalse(any(key.startswith("parent_") for key in values))
 
-    def test_minor_text_is_about_the_child_and_both_sign(self):
+    def test_processing_text_for_minor(self):
+        text = self._text(self._kid().profile, "form")
+        self.assertIn("Я, участник олимпиады", text)
+        # Представитель даёт согласие сам, прямо, и на свои данные тоже (3.9, 3.11).
+        self.assertIn("Я, законный представитель участника", text)
+        self.assertIn("ст. 26 Гражданского кодекса РФ", text)
+        self.assertIn("на обработку моих персональных данных — фамилии", text)
+        self.assertNotIn("также даёт", text)
+        self.assertNotIn("(родитель)", text)
+        for part in ("ИНН 5008006211", "ОГРН 1027739386135", "117303, г. Москва",
+                     "3 (три) года с даты подписания", "141701", "ao@phystech.edu",
+                     "– адрес регистрации по паспорту;", "– дата и место рождения;",
+                     "прокторинг", "третьим лицам по поручению оператора не передаётся"):
+            self.assertIn(part, text)
+        # Распространение — только отдельным документом; ознакомление — в анкете.
+        for part in ("(распространение", "ознакомлен", "до достижения целей", "{{"):
+            self.assertNotIn(part, text)
+
+    def test_processing_text_for_adult_has_no_representative(self):
+        text = self._text(self._kid(birth_date=date(2000, 1, 1)).profile, "form")
+        self.assertIn("Я, участник олимпиады", text)
+        self.assertNotIn("представител", text)
+
+    def test_distribution_text(self):
+        """Приказ Роскомнадзора № 18: оператор с ИНН и ОГРН, ресурс, перечень, срок."""
+        kid = self._kid()
+        text = self._text(kid.profile, "dist")
+        for part in ("ИНН 5008006211", "https://ao.mipt.ru", "– результаты участия в олимпиаде;",
+                     "фотографии с очных этапов", "152.1 Гражданского кодекса РФ",
+                     "3 (три) года с даты подписания", "требования о прекращении распространения",
+                     "принимаю на себя ответственность"):
+            self.assertIn(part, text)
+        for part in ("видеозапис", "паспорт", "{{"):
+            self.assertNotIn(part, text)
         from . import consent_pdf
 
-        kid = self._kid()
-        text = " ".join(consent_pdf._blocks(consent_pdf.fill(
-            consent_pdf.template_text(minor=True), consent_pdf.values_for(kid.profile))))
-        # Согласие даёт участник, законный представитель присоединяется к нему.
-        self.assertIn("Я, участник олимпиады", text)
-        self.assertIn("Мой законный представитель (родитель)", text)
-        self.assertNotIn("подопечн", text)
-        self.assertIn("117303, г. Москва", text)  # адрес оператора
-        self.assertIn("до достижения целей обработки", text)  # срок действия
-        # Перечень — ровно то, что собирает сайт; рекламы нет.
-        self.assertIn("– адрес регистрации по паспорту;", text)
-        self.assertIn("– дата и место рождения;", text)
-        for extra in ("гражданство", "пол,", "места жительства", "рекламн"):
-            self.assertNotIn(extra, text)
-        self.assertNotIn("{{", text)
-        self.assertTrue(consent_pdf.build(kid.profile).startswith(b"%PDF"))
+        self.assertNotIn("представител", consent_pdf.template_text(False, "dist"))
 
-    def test_blank_fits_one_page_even_with_long_addresses(self):
-        """Скан загружается одним файлом — вторая страница с подписями потерялась бы."""
+    def test_blank_has_two_pages_even_with_long_addresses(self):
+        """Каждый документ — на своей странице, подписи не уезжают от текста."""
+        import re
+
         from . import consent_pdf
 
         long = "141701, Московская область, городской округ Долгопрудный, г. Долгопрудный, " * 3
         kid = self._kid(reg_address=long, doc_issued_by=long)
-        _, pages = consent_pdf._render(kid.profile, consent_pdf._Styles(consent_pdf.FONT_SIZES[-1]))
-        self.assertEqual(pages, 1)
+        for make in (consent_pdf._processing, consent_pdf._distribution):
+            with self.subTest(make=make.__name__):
+                _, pages = consent_pdf._pdf(consent_pdf._fit(make, kid.profile))
+                self.assertEqual(pages, 1)
+        pdf = consent_pdf.build(kid.profile)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertEqual(len(re.findall(rb"/Type /Page\b(?!s)", pdf)), 2)
 
     def test_unknown_placeholder_becomes_a_blank_line(self):
         from . import consent_pdf
@@ -313,43 +379,15 @@ class ConsentPdfTest(TestCase):
         self.assertEqual(consent_pdf.fill("Я, {{ nobody }}.", {}),
                          f"Я, {consent_pdf.legal_templates.BLANK}.")
 
-    def test_adult_text_has_no_representative(self):
+    def test_admin_page_overrides_text(self):
+        from apps.content.models import Page
+
         from . import consent_pdf
 
-        text = consent_pdf.template_text(minor=False)
-        self.assertNotIn("несовершеннолетнего", text)
-        self.assertIn("Я, участник олимпиады", text)
-
-    def test_texts_are_first_person_and_complete(self):
-        """Ч. 4 ст. 9 152-ФЗ: цель, действия, срок, отзыв, оператор; публикуется только перечень."""
-        import re
-
-        from apps.core import legal_templates
-
-        for minor, text in ((True, legal_templates.CONSENT_FORM_MINOR),
-                            (False, legal_templates.CONSENT_FORM_ADULT)):
-            with self.subTest(minor=minor):
-                self.assertFalse(re.search(r"\bМы\b", text))
-                for part in ("Цель обработки", "Действия с персональными данными", "уничтожение",
-                             "Согласие действует", "письменным заявлением", "{{ operator }}",
-                             "только следующих", "Остальные персональные данные не распространяются"):
-                    self.assertIn(part, text)
-                self.assertIn("Федеральным законом от 27.07.2006 № 152-ФЗ", " ".join(text.split()))
-                self.assertNotIn("стать", text)  # ссылка на закон целиком
-        # Абзац о представителе — только у несовершеннолетних.
-        self.assertNotIn("законный представитель", legal_templates.CONSENT_FORM_ADULT)
-        # Данные родителя сайт не обрабатывает — согласия на их обработку нет.
-        self.assertNotIn("персональных данных представителя", legal_templates.CONSENT_FORM_MINOR)
-
-    def test_distribution_names_the_site(self):
-        """Правила РКН к согласию на распространение: назвать ресурс публикации."""
-        from . import consent_pdf
-
-        kid = self._kid()
-        with self.settings(SITE_URL="https://aero.example.ru"):
-            text = consent_pdf.fill(consent_pdf.template_text(minor=True),
-                                    consent_pdf.values_for(kid.profile))
-        self.assertIn("на сайте олимпиады https://aero.example.ru", " ".join(text.split()))
+        Page.objects.create(slug="consent-dist-minor", title="т", body="<p>Свой текст</p>",
+                            is_published=False)
+        self.assertEqual(consent_pdf.template_text(True, "dist"), "<p>Свой текст</p>")
+        self.assertIn("Я, участник олимпиады", consent_pdf.template_text(True, "form"))
 
 
 class EmailConfirmTest(TestCase):
@@ -520,6 +558,12 @@ class OrganizerAccessTest(TestCase):
 
 
 class ConsentTest(TestCase):
-    def test_signup_page_links_to_privacy_policy(self):
+    """Своей политики нет — ссылки ведут на Политику МФТИ."""
+
+    def test_signup_page_links_to_mipt_policy(self):
         html = self.client.get(reverse("accounts:signup")).content.decode()
-        self.assertIn(reverse("content:page", args=["privacy"]), html)
+        self.assertIn('href="https://mipt.ru/privacy"', html)
+
+    def test_old_policy_address_redirects(self):
+        response = self.client.get(reverse("content:page", args=["privacy"]))
+        self.assertRedirects(response, "https://mipt.ru/privacy", fetch_redirect_response=False)

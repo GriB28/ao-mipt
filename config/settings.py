@@ -234,11 +234,16 @@ TELEGRAM_CHAT_URL = env("TELEGRAM_CHAT_URL", default="")
 VK_URL = env("VK_URL", default="")
 # Канал в MAX.
 MAX_URL = env("MAX_URL", default="")
-# Адрес сайта — называется в согласии на распространение ПД (где публикуются
-# результаты). По умолчанию https://DOMAIN из той же настройки, что и для HTTPS.
-SITE_URL = env("SITE_URL", default="").strip() or (
-    f"https://{env('DOMAIN', default='').strip()}" if env("DOMAIN", default="").strip() else ""
-)
+# Своей политики обработки ПД у олимпиады нет: юрист МФТИ подтвердил, что
+# достаточно ссылки на Политику МФТИ. Ведут на неё подвал и /page/privacy/.
+PRIVACY_POLICY_URL = env("PRIVACY_POLICY_URL", default="https://mipt.ru/privacy")
+# Документы, с которыми участник подтверждает ознакомление в анкете.
+# Порядок — приказ Минобрнауки России от 16.01.2026 № 16 (действует с 2026/27).
+OLYMPIAD_ORDER_URL = env("OLYMPIAD_ORDER_URL",
+                         default="http://publication.pravo.gov.ru/document/0001202602240023")
+# Положение и Регламент олимпиады — пока не опубликованы: ссылка-заглушка «#».
+OLYMPIAD_STATUTE_URL = env("OLYMPIAD_STATUTE_URL", default="#")
+OLYMPIAD_REGULATIONS_URL = env("OLYMPIAD_REGULATIONS_URL", default="#")
 
 # --- Карты ----------------------------------------------------------------
 # Если ключ задан, карта площадок рисуется Яндекс.Картами.

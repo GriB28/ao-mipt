@@ -1,17 +1,20 @@
 """
-Бланк согласия на обработку ПД в PDF — по шаблону оргкомитета.
+Бланк согласий в PDF: две страницы — два самостоятельных документа.
 
-Собирается из анкеты: школьник скачивает его, печатает, подписывает и
-загружает скан обратно. Сверху — данные участника в строках с подписями
-под ними, как в бумажном шаблоне; дальше — текст согласия; внизу — ФИО,
-подпись и дата каждого, кто подписывает.
+Стр. 1 — согласие на обработку персональных данных, стр. 2 — согласие
+на распространение (по закону оно оформляется отдельно от других). У
+каждого свой заголовок, свои подписи, и каждый помещается на свою
+страницу. Собирается из анкеты: школьник скачивает бланк, печатает,
+подписывает обе страницы и загружает скан или фото обеих страниц.
 
-Если участнику нет 18, согласие даёт законный представитель (родитель):
-свои ФИО, паспорт и адрес он вписывает от руки в пустые строки — на
-сайте его данных нет, — и подписывают бланк двое: родитель и участник.
+Сверху — данные участника в строках с подписями под ними, как в бумажном
+шаблоне; дальше — текст; внизу — ФИО, подпись и дата каждого, кто
+подписывает. Если участнику нет 18, законный представитель вписывает
+свои данные от руки в пустые строки — на сайте их нет, — и подписывают
+оба: участник и представитель.
 
-Текст берётся со страницы consent-form-minor / consent-form-adult, если
-её завели в админке, иначе — из apps/core/legal_templates.py.
+Текст берётся со страниц consent-form-* (стр. 1) и consent-dist-* (стр. 2),
+если их завели в админке, иначе — из apps/core/legal_templates.py.
 Подстановки {{ имя }} заменяются простой заменой строк, а не шаблонами
 Django: текст пишут в админке, и исполнять в нём ничего не нужно.
 """
@@ -31,6 +34,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -84,14 +88,22 @@ def _passport_line(profile, prefix):
     return f"{label}: " + ", ".join(parts)
 
 
-def template_text(minor: bool) -> str:
+#: Документ бланка → (слаг страницы в админке без суффикса, текст по умолчанию).
+_TEXTS = {
+    "form": ("consent-form", legal_templates.CONSENT_FORM_MINOR, legal_templates.CONSENT_FORM_ADULT),
+    "dist": ("consent-dist", legal_templates.CONSENT_DIST_MINOR, legal_templates.CONSENT_DIST_ADULT),
+}
+
+
+def template_text(minor: bool, kind: str = "form") -> str:
+    """Текст документа: kind="form" — согласие на обработку, "dist" — на распространение."""
     from apps.content.models import Page
 
-    slug = "consent-form-minor" if minor else "consent-form-adult"
-    page = Page.objects.filter(slug=slug).first()
+    prefix, for_minor, for_adult = _TEXTS[kind]
+    page = Page.objects.filter(slug=f"{prefix}-{'minor' if minor else 'adult'}").first()
     if page and page.body.strip():
         return page.body
-    return legal_templates.CONSENT_FORM_MINOR if minor else legal_templates.CONSENT_FORM_ADULT
+    return for_minor if minor else for_adult
 
 
 def fill(text: str, values: dict) -> str:
@@ -115,9 +127,9 @@ def values_for(profile) -> dict:
         "participant_document": _passport_line(profile, "") if profile.doc_type else "",
         "participant_address": profile.reg_address,
         "operator": legal_templates.CONSENT_OPERATOR,
-        # Где публикуются результаты: правила Роскомнадзора к согласию на
-        # распространение требуют назвать информационный ресурс.
-        "site": f"сайте олимпиады {settings.SITE_URL}" if settings.SITE_URL else "сайте олимпиады",
+        # Для текстов, переписанных в админке до октября 2026: адрес сайта
+        # теперь вписан в сам текст (legal_templates.SITE).
+        "site": f"сайте олимпиады {legal_templates.SITE}",
         "contact_email": settings.CONTACT_EMAIL,
         "today": _date(timezone.localdate()),
         "email": profile.user.email,
@@ -235,66 +247,72 @@ def _signatures(signers, styles):
 DOCUMENT_CAPTION = ("Документ, удостоверяющий личность: вид, серия, номер, "
                     "кем и когда выдан, код подразделения")
 
+#: Основание полномочий (п. 2 ч. 4 ст. 9 152-ФЗ). Представителем может быть
+#: не только родитель, поэтому документ вписывается от руки.
+AUTHORITY_CAPTION = ("Документ, подтверждающий полномочия законного представителя "
+                     "(например, свидетельство о рождении участника)")
+
 #: Размеры основного шрифта, которые пробуем по очереди.
 FONT_SIZES = (10.5, 10, 9.5, 9, 8.5, 8)
 
 
 def build(profile) -> bytes:
-    """PDF-бланк для этой анкеты. Для несовершеннолетнего — вместе с представителем.
+    """PDF для этой анкеты: согласие на обработку и на распространение.
 
-    Бланк должен уместиться на одну страницу: скан загружается одним
-    файлом, и вторая страница с подписями потерялась бы. Длинный адрес или
-    «кем выдан» могут столкнуть подписи вниз — тогда собираем заново
-    шрифтом чуть мельче.
+    Каждый документ должен уместиться на свою страницу — иначе подписи
+    уедут на следующую, отдельно от текста. Длинный адрес или «кем выдан»
+    могут столкнуть подписи вниз — тогда документ собирается шрифтом
+    чуть мельче.
     """
-    _register_fonts()
-    for size in FONT_SIZES:
-        pdf, pages = _render(profile, _Styles(size))
-        if pages == 1:
-            break
+    story = _fit(_processing, profile) + [PageBreak()] + _fit(_distribution, profile)
+    pdf, _ = _pdf(story)
     return pdf
 
 
-def _render(profile, styles):
+def _fit(make, profile):
+    """История документа самым крупным шрифтом, при котором он на одной странице."""
+    _register_fonts()  # абзацы разбирают шрифт уже при создании
+    for size in FONT_SIZES:
+        story = make(profile, _Styles(size))
+        _, pages = _pdf(make(profile, _Styles(size)))
+        if pages == 1:
+            break
+    return story
+
+
+def _pdf(story):
     """Собрать PDF; вернуть (байты, число страниц)."""
-    _register_fonts()
-    minor = profile.is_minor
-    values = values_for(profile)
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=15 * mm,
+                            topMargin=10 * mm, bottomMargin=10 * mm,
+                            title="Согласие на обработку персональных данных",
+                            author="Аэрокосмическая олимпиада МФТИ")
+    doc.build(story)
+    return buffer.getvalue(), doc.page
 
-    story = [Paragraph("СОГЛАСИЕ", styles.title),
-             Paragraph("на обработку персональных данных", styles.title),
-             Spacer(1, 3 * mm)]
 
-    # Документ участника и представителя — одной строкой и под одной
-    # подписью: так бланк читается одинаково сверху донизу.
-    if minor:
-        story.append(Paragraph("Участник олимпиады (субъект персональных данных)", styles.heading))
-    story += _fields([
-        [("ФИО", profile.full_name, 0.46), ("Дата рождения", _date(profile.birth_date), 0.18),
-         ("Место рождения", profile.birth_place, 0.36)],
-        [(DOCUMENT_CAPTION, values["participant_document"], 1.0)],
-        [("Адрес регистрации по паспорту", profile.reg_address, 1.0)],
-    ], styles)
+def _title(lines, styles):
+    return [*(Paragraph(line, styles.title) for line in lines), Spacer(1, 3 * mm)]
 
-    if minor:
-        # Основание полномочий — обязательная часть согласия представителя
-        # (п. 2 ч. 4 ст. 9 152-ФЗ). Согласие дают родители: их полномочия
-        # следуют из закона.
-        story.append(Paragraph(
-            "Законный представитель Участника <i>(на основании п. 1 ст. 64 "
-            "Семейного кодекса РФ)</i>", styles.heading))
-        # Данные родителя — от руки: на сайте их нет.
-        story += _blank_fields([
-            ("ФИО законного представителя (полностью)", 1),
-            ("Паспорт: серия, номер, кем и когда выдан, код подразделения", 2),
-            ("Адрес регистрации по паспорту", 2),
-        ], styles)
-    story.append(Spacer(1, 2 * mm))
 
-    # Пункты списка подряд собираем в две колонки: бланк должен уместиться
-    # на одну страницу — скан загружается одним файлом.
-    items = []
-    for block in _blocks(fill(template_text(minor), values)) + [""]:
+def _representative(styles, full=True):
+    """Строки представителя — от руки. В согласии на распространение
+    (full=False) паспорт и адрес не нужны: приказ Роскомнадзора № 18 их
+    не требует, а на стр. 1 они уже есть."""
+    rows = [("ФИО законного представителя (полностью)", 1)]
+    if full:
+        rows += [("Паспорт: серия, номер, кем и когда выдан, код подразделения", 2),
+                 ("Адрес регистрации по паспорту", 1)]
+    rows.append((AUTHORITY_CAPTION, 1))
+    return [Paragraph("Законный представитель участника", styles.heading),
+            *_blank_fields(rows, styles)]
+
+
+def _text(text, values, styles):
+    """Текст документа. Пункты списка подряд — в две колонки, так бланк
+    короче и помещается на страницу."""
+    story, items = [], []
+    for block in _blocks(fill(text, values)) + [""]:
         if block.startswith("– "):
             items.append(Paragraph(block, styles.item))
             continue
@@ -311,26 +329,61 @@ def _render(profile, styles):
             items = []
         if block:
             story.append(Paragraph(block, styles.body))
+    return story
 
-    # Первым подписывает участник — согласие даёт он, затем представитель.
-    if minor:
-        signers = [(profile.full_name, "ФИО участника (субъекта персональных данных)"),
-                   ("", "ФИО законного представителя")]
-    else:
-        signers = [(profile.full_name, "ФИО участника")]
-    story.append(KeepTogether([
+
+def _signed(profile, values, styles):
+    """Подписи: первым — участник, он даёт согласие; затем представитель."""
+    signers = [(profile.full_name, "ФИО участника (субъекта персональных данных)")]
+    if profile.is_minor:
+        signers.append(("", "ФИО законного представителя"))
+    return KeepTogether([
         Spacer(1, 3 * mm),
         _signatures(signers, styles),
         Spacer(1, 2 * mm),
         Paragraph(
             f"Сформировано на сайте олимпиады {values['today']}, учётная запись "
             f"{html.escape(values['email'])} (№ {profile.user_id}).", styles.small),
-    ]))
+    ])
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=15 * mm,
-                            topMargin=10 * mm, bottomMargin=10 * mm,
-                            title="Согласие на обработку персональных данных",
-                            author="Аэрокосмическая олимпиада МФТИ")
-    doc.build(story)
-    return buffer.getvalue(), doc.page
+
+def _processing(profile, styles):
+    """Стр. 1 — согласие на обработку персональных данных."""
+    minor = profile.is_minor
+    values = values_for(profile)
+    story = _title(["СОГЛАСИЕ", "на обработку персональных данных"], styles)
+    if minor:
+        story.append(Paragraph("Участник олимпиады (субъект персональных данных)", styles.heading))
+    story += _fields([
+        [("ФИО", profile.full_name, 0.46), ("Дата рождения", _date(profile.birth_date), 0.18),
+         ("Место рождения", profile.birth_place, 0.36)],
+        [(DOCUMENT_CAPTION, values["participant_document"], 1.0)],
+        [("Адрес регистрации по паспорту", profile.reg_address, 1.0)],
+    ], styles)
+    if minor:
+        story += _representative(styles)
+    story.append(Spacer(1, 2 * mm))
+    story += _text(template_text(minor, "form"), values, styles)
+    story.append(_signed(profile, values, styles))
+    return story
+
+
+def _distribution(profile, styles):
+    """Стр. 2 — согласие на распространение (приказ Роскомнадзора № 18):
+    ФИО и контакт участника, условия и запреты — от руки по желанию."""
+    minor = profile.is_minor
+    values = values_for(profile)
+    story = _title(["СОГЛАСИЕ", "на обработку персональных данных, разрешённых",
+                    "субъектом персональных данных для распространения"], styles)
+    if minor:
+        story.append(Paragraph("Участник олимпиады (субъект персональных данных)", styles.heading))
+    # Контактной информации хватает одной: e-mail есть у каждого участника.
+    story += _fields([[("ФИО", profile.full_name, 0.6), ("E-mail", profile.user.email, 0.4)]], styles)
+    if minor:
+        story += _representative(styles, full=False)
+    story.append(Spacer(1, 2 * mm))
+    story += _text(template_text(minor, "dist"), values, styles)
+    story += _blank_fields([(legal_templates.PROHIBITIONS, 2),
+                            (legal_templates.TRANSFER_CONDITIONS, 1)], styles)
+    story.append(_signed(profile, values, styles))
+    return story

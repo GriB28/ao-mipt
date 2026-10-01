@@ -69,7 +69,7 @@ class ExportStaticTest(TestCase):
     def test_export_produces_linked_pages(self):
         out = self._export()
         for name in ["index.html", "online.html", "offline.html", "archive.html",
-                     "signup.html", "lectures.html", "consent.html",
+                     "signup.html", "lectures.html",
                      "css/main.css", "css/tokens.css"]:
             self.assertTrue((out / name).exists(), f"нет файла {name}")
 

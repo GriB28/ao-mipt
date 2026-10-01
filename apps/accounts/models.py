@@ -207,6 +207,11 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     reg_address = models.CharField("адрес регистрации по паспорту", max_length=500, blank=True,
                                    help_text="Как в паспорте, с индексом")
 
+    # Отметки в анкете: ознакомлен(-а) с Порядком, Положением и Регламентом,
+    # данные верны. По закону их нельзя вписывать в текст согласия —
+    # поэтому отдельно, с датой.
+    acknowledged_at = models.DateTimeField("отметки об ознакомлении", null=True, blank=True)
+
     #: Без чего анкета участника не считается заполненной.
     #: Серия не входит: у иностранных документов её бывает нет.
     REQUIRED_FIELDS = ("last_name", "first_name", "birth_date", "birth_place", "grade", "school", "city",
@@ -251,6 +256,8 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     def missing_fields(self):
         """Названия незаполненных полей — чтобы показать, что осталось."""
         missing = [n for n in self.REQUIRED_FIELDS if not getattr(self, n)]
+        if not self.acknowledged_at:
+            missing.append("acknowledged_at")
         if self.doc_type in DOC_TYPES_WITH_SERIES and not self.doc_series:
             missing.append("doc_series")
         if self.doc_type == DocumentType.PASSPORT_RF and not self.doc_division_code:
