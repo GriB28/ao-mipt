@@ -37,11 +37,7 @@ def read_token(token: str):
 
 
 def send_confirmation(request, user) -> None:
-    """Отправить письмо со ссылкой подтверждения.
-
-    В DEBUG письма печатаются в консоль (EMAIL_BACKEND=console), поэтому
-    локально ссылку видно в том же терминале, где запущен runserver.
-    """
+    """Отправить письмо со ссылкой подтверждения."""
     path = reverse("accounts:confirm_email", args=[make_token(user)])
     context = {
         "confirm_url": request.build_absolute_uri(path),
@@ -51,11 +47,10 @@ def send_confirmation(request, user) -> None:
     send_mail(
         subject="Подтвердите почту — Аэрокосмическая олимпиада МФТИ",
         message=render_to_string("accounts/email_confirm.txt", context),
+        html_message=render_to_string("accounts/email_confirm.html", context),
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
-        # Регистрация не должна падать из-за недоступного SMTP:
-        # человек уже создан, письмо можно переотправить из кабинета.
-        fail_silently=False,
+        fail_silently=True,
     )
 
 
@@ -69,6 +64,7 @@ def send_consent_rejected(request, consent) -> None:
     send_mail(
         subject="Пришлите согласие заново — Аэрокосмическая олимпиада МФТИ",
         message=render_to_string("accounts/email_consent_rejected.txt", context),
+        html_message=render_to_string("accounts/email_consent_rejected.html", context),
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[consent.user.email],
         fail_silently=True,

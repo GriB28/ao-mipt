@@ -37,6 +37,7 @@ if not SECRET_KEY:
         )
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=True)
 
 if DEBUG or TESTING:
     # Локально сайт всегда открывают с localhost, а в .env обычно лежат
@@ -218,8 +219,6 @@ else:
 # кем вошли. Отдельное значение нужно, только если провайдер разрешает
 # отправку от имени другого адреса.
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER)
-
-print(EMAIL_HOST, EMAIL_HOST_PASSWORD,EMAIL_USE_SSL, EMAIL_USE_TLS, EMAIL_TIMEOUT, EMAIL_BACKEND, DEFAULT_FROM_EMAIL, EMAIL_HOST_USER, EMAIL_PORT)
 
 
 # --- Публичные контакты и ссылки (показываются в подвале) ----------------

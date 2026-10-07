@@ -56,7 +56,7 @@
               // GeoJSON хранит [долгота, широта], Яндекс ждёт [широта, долгота].
               var coords = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
               collection.add(new ymaps.Placemark(coords, {
-                balloonContentHeader: p.title,
+                balloonContentHeader: p.short_title || p.title,
                 balloonContentBody:
                   p.address + '<br>Записалось: ' + p.booked +
                   '<br><a href="' + p.url + '">Подробнее и записаться</a>',
@@ -180,7 +180,7 @@
             onEachFeature: function (feature, lyr) {
               var p = feature.properties;
               lyr.bindPopup(
-                '<strong>' + p.title + '</strong><br>' + p.address +
+                '<strong>' + (p.short_title || p.title) + '</strong><br>' + p.address +
                 '<br>Записалось: ' + p.booked +
                 '<br><a href="' + p.url + '">Подробнее и записаться</a>'
               );
