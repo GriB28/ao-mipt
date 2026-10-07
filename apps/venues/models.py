@@ -115,6 +115,7 @@ class Venue(TimeStampedModel):
             "properties": {
                 "id": self.pk,
                 "title": self.title,
+                "short_title": self.short_title or self.title,
                 "city": self.city,
                 "region": self.region,
                 "address": self.address,
