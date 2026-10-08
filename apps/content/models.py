@@ -253,7 +253,7 @@ class ArchiveMaterial(TimeStampedModel):
 
     file = models.FileField("файл", upload_to="archive/%Y/", blank=True,
                             validators=[validate_upload_size])
-    external_url = models.URLField("внешняя ссылка", blank=True,
+    external_url = models.URLField("внешняя ссылка", blank=True, max_length=1000,
                                    help_text="Для больших файлов и видео: Яндекс.Диск, VK Видео")
     size_bytes = models.BigIntegerField("размер, байт", null=True, blank=True)
 
