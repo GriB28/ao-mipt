@@ -57,10 +57,9 @@ fi
 cat <<MSG
 
 Сервер готов. Дальше:
-  1. nano $DIR/.env — впишите DOMAIN, ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS,
-     LETSENCRYPT_EMAIL и почту (EMAIL_HOST_USER / EMAIL_HOST_PASSWORD).
+  1. nano $DIR/.env — впишите DOMAIN, ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS
+     и почту (EMAIL_HOST_USER / EMAIL_HOST_PASSWORD).
   2. cd $DIR && docker compose up -d --build
-  3. sh deploy/https-init.sh
-  4. docker compose exec web python manage.py createsuperuser
+  3. docker compose exec web python manage.py createsuperuser
 Подробно — docs/deploy.md.
 MSG

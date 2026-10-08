@@ -1,6 +1,6 @@
-# Сайт олимпиады целиком: база, приложение, nginx с HTTPS, продление
-# сертификата, рассылки и ежедневный бэкап. Всё поднимается одной
-# командой `docker compose up -d --build`, crontab на сервере не нужен.
+# Сайт олимпиады целиком: база, приложение, nginx, рассылки
+# и ежедневный бэкап. Всё поднимается одной командой `docker compose up -d --build`,
+# crontab на сервере не нужен.
 #
 # Настройки — в .env (образец: .env.example). Порядок развёртывания —
 # docs/deploy.md.
@@ -69,31 +69,15 @@ services:
     ports:
       - "127.0.0.1:8888:80"
     environment:
-      DOMAIN: ${DOMAIN:-}
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-100m}
     volumes:
       - ./deploy/nginx/40-olymp-config.sh:/docker-entrypoint.d/40-olymp-config.sh:ro
       - ./deploy/nginx:/etc/nginx/olymp:ro
       - media:/var/www/media:ro
-      - letsencrypt:/etc/letsencrypt:ro
-      - certbot-www:/var/www/certbot:ro
     depends_on:
       - web
     restart: unless-stopped
     logging: *logging
-
-  # Продлевает сертификат Let's Encrypt (проверка дважды в сутки,
-  # реально продлевает за 30 дней до конца). Первый выпуск — make https.
-
-  # фигня это всё, а не сертбот. у нас ревёрс прокси будет и продление сертификатов должно глобально хэндлиться
-  # certbot:
-  #   image: certbot/certbot
-  #   entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
-  #   volumes:
-  #     - letsencrypt:/etc/letsencrypt
-  #     - certbot-www:/var/www/certbot
-  #   restart: unless-stopped
-  #   logging: *logging
 
   # Ежедневный бэкап базы и загрузок в ./backups (см. deploy/backup.sh).
   backup:
@@ -119,5 +103,3 @@ services:
 volumes:
   pgdata:
   media:
-  letsencrypt:
-  certbot-www:

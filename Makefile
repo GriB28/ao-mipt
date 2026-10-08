@@ -4,7 +4,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help start install dev migrations migrate seed superuser test lint fmt demo clean up down logs deploy https backup admin
+.PHONY: help start install dev migrations migrate seed superuser test lint fmt demo clean up down logs deploy backup admin
 
 help:  ## показать список команд
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -79,9 +79,6 @@ deploy:  ## обновить сервер: бэкап, подтянуть код
 	docker compose up -d --build
 	docker compose ps
 	@echo "Предыдущая версия: $$(cat .last-deployed). Откат — docs/deploy.md, «Если обновление сломало сайт»."
-
-https:  ## выпустить сертификат Let's Encrypt (один раз)
-	sh deploy/https-init.sh
 
 backup:  ## сделать бэкап прямо сейчас (в ./backups)
 	docker compose exec backup sh /backup.sh now
