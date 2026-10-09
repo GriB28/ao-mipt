@@ -41,8 +41,8 @@ class NewsletterAudienceTest(TestCase):
             Registration.objects.create(user=user, season=self.season)
         return user
 
-    def _emails(self, audience, season=None):
-        n = Newsletter.objects.create(subject="t", body="b", audience=audience, season=season)
+    def _emails(self, audience, season=None, venue=None):
+        n = Newsletter.objects.create(subject="t", body="b", audience=audience, season=season, venue=venue)
         return set(n.get_recipients().values_list("email", flat=True))
 
     def test_all_participants_excludes_organizers(self):
@@ -70,6 +70,122 @@ class NewsletterAudienceTest(TestCase):
 
     def test_season_audience_without_season_sends_to_nobody(self):
         self.assertEqual(self._emails(Newsletter.Audience.SEASON_PARTICIPANTS), set())
+
+    def test_organizers_audience(self):
+        from apps.venues.models import Venue
+        venue = Venue.objects.create(title="Площадка", region="МСК", city="МСК", address="А", latitude=0, longitude=0)
+        venue_mgr = User.objects.create_user("mgr@e.ru", "pass12345", role=User.Role.PARTICIPANT)
+        venue.managers.add(venue_mgr)
+
+        got = self._emails(Newsletter.Audience.ORGANIZERS)
+        self.assertIn("org@e.ru", got)
+        self.assertIn("mgr@e.ru", got)
+        self.assertNotIn("idle@e.ru", got)
+
+    def test_admins_audience(self):
+        admin_user = User.objects.create_user("admin@e.ru", "pass12345", role=User.Role.ADMIN)
+        superuser = User.objects.create_superuser("super@e.ru", "pass12345")
+
+        got = self._emails(Newsletter.Audience.ADMINS)
+        self.assertIn("admin@e.ru", got)
+        self.assertIn("super@e.ru", got)
+        self.assertNotIn("org@e.ru", got)
+        self.assertNotIn("idle@e.ru", got)
+
+    def test_venue_audiences(self):
+        from apps.venues.models import Venue
+        from apps.participation.models import VenueBooking
+
+        v1 = Venue.objects.create(title="П1", region="МСК", city="МСК", address="А1", latitude=0, longitude=0)
+        v2 = Venue.objects.create(title="П2", region="МСК", city="МСК", address="А2", latitude=0, longitude=0)
+
+        org1 = User.objects.create_user("org1@e.ru", "pass12345", role=User.Role.ORGANIZER)
+        org2 = User.objects.create_user("org2@e.ru", "pass12345", role=User.Role.ORGANIZER)
+        v1.managers.add(org1)
+        v2.managers.add(org2)
+
+        p1 = self._participant("p1@e.ru")
+        p2 = self._participant("p2@e.ru")
+        p_cancelled = self._participant("pc@e.ru")
+
+        reg1 = p1.registrations.get(season=self.season)
+        reg2 = p2.registrations.get(season=self.season)
+        reg_c = p_cancelled.registrations.get(season=self.season)
+
+        VenueBooking.objects.create(registration=reg1, stage=self.stage, venue=v1, status=VenueBooking.Status.CONFIRMED)
+        VenueBooking.objects.create(registration=reg2, stage=self.stage, venue=v2, status=VenueBooking.Status.CONFIRMED)
+        VenueBooking.objects.create(registration=reg_c, stage=self.stage, venue=v1, status=VenueBooking.Status.CANCELLED)
+
+        # Venue organizers
+        got_v1_org = self._emails(Newsletter.Audience.VENUE_ORGANIZERS, venue=v1)
+        self.assertEqual(got_v1_org, {"org1@e.ru"})
+        self.assertEqual(self._emails(Newsletter.Audience.VENUE_ORGANIZERS, venue=None), set())
+
+        # Venue participants
+        got_v1_part = self._emails(Newsletter.Audience.VENUE_PARTICIPANTS, venue=v1)
+        self.assertEqual(got_v1_part, {"p1@e.ru"})
+        self.assertEqual(self._emails(Newsletter.Audience.VENUE_PARTICIPANTS, venue=None), set())
+
+
+class NewsletterAdminFormTest(TestCase):
+    def setUp(self):
+        from apps.mailing.admin import NewsletterAdminForm
+        from apps.venues.models import Venue
+        self.form_class = NewsletterAdminForm
+        self.season = Season.objects.create(year=2099, slug="s", title="S")
+        self.venue = Venue.objects.create(title="П", region="МСК", city="МСК", address="А", latitude=0, longitude=0)
+
+    def test_venue_required_for_venue_audiences(self):
+        form = self.form_class(data={
+            "subject": "Тест",
+            "body": "Тест",
+            "audience": Newsletter.Audience.VENUE_ORGANIZERS,
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("venue", form.errors)
+
+        form_valid = self.form_class(data={
+            "subject": "Тест",
+            "body": "Тест",
+            "audience": Newsletter.Audience.VENUE_ORGANIZERS,
+            "venue": self.venue.pk,
+            "season": self.season.pk,
+        })
+        self.assertTrue(form_valid.is_valid())
+        # Season is cleared when venue audience is used
+        self.assertIsNone(form_valid.cleaned_data["season"])
+
+    def test_season_required_for_season_audiences(self):
+        form = self.form_class(data={
+            "subject": "Тест",
+            "body": "Тест",
+            "audience": Newsletter.Audience.SEASON_PARTICIPANTS,
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("season", form.errors)
+
+        form_valid = self.form_class(data={
+            "subject": "Тест",
+            "body": "Тест",
+            "audience": Newsletter.Audience.SEASON_PARTICIPANTS,
+            "season": self.season.pk,
+            "venue": self.venue.pk,
+        })
+        self.assertTrue(form_valid.is_valid())
+        # Venue is cleared when season audience is used
+        self.assertIsNone(form_valid.cleaned_data["venue"])
+
+    def test_global_audiences_clear_season_and_venue(self):
+        form = self.form_class(data={
+            "subject": "Тест",
+            "body": "Тест",
+            "audience": Newsletter.Audience.ALL_PARTICIPANTS,
+            "season": self.season.pk,
+            "venue": self.venue.pk,
+        })
+        self.assertTrue(form.is_valid())
+        self.assertIsNone(form.cleaned_data["season"])
+        self.assertIsNone(form.cleaned_data["venue"])
 
 
 class NewsletterSendingTest(TestCase):

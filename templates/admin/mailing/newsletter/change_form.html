@@ -8,3 +8,38 @@
   {% endif %}
   {{ block.super }}
 {% endblock %}
+
+{% block admin_change_form_document_ready %}
+  {{ block.super }}
+  <script>
+  (function() {
+    function updateAudienceFields() {
+      var audienceSelect = document.getElementById('id_audience');
+      if (!audienceSelect) return;
+
+      var val = audienceSelect.value;
+      var venueRow = document.querySelector('.form-row.field-venue') || document.querySelector('.field-venue');
+      var seasonRow = document.querySelector('.form-row.field-season') || document.querySelector('.field-season');
+
+      var venueAudiences = ['venue', 'venue_organizers'];
+      var seasonAudiences = ['season', 'submitted', 'not_submitted', 'venue_booked'];
+
+      var needsVenue = venueAudiences.indexOf(val) !== -1;
+      var needsSeason = seasonAudiences.indexOf(val) !== -1;
+
+      if (venueRow) {
+        venueRow.style.display = needsVenue ? '' : 'none';
+      }
+      if (seasonRow) {
+        seasonRow.style.display = needsSeason ? '' : 'none';
+      }
+    }
+
+    var audienceSelect = document.getElementById('id_audience');
+    if (audienceSelect) {
+      audienceSelect.addEventListener('change', updateAudienceFields);
+    }
+    updateAudienceFields();
+  })();
+  </script>
+{% endblock %}
