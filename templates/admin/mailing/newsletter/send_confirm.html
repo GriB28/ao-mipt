@@ -6,7 +6,8 @@
 <div style="max-width:720px">
   <p><strong>Тема:</strong> {{ newsletter.subject }}</p>
   <p><strong>Кому:</strong> {{ newsletter.get_audience_display }}
-     {% if newsletter.season %}({{ newsletter.season }}){% endif %}</p>
+     {% if newsletter.season %}({{ newsletter.season }}){% endif %}
+     {% if newsletter.venue %}({{ newsletter.venue }}){% endif %}</p>
 
   {% if count %}
     <p style="font-size:18px">
@@ -31,7 +32,7 @@
     </form>
   {% else %}
     <p style="color:#b3261e"><strong>Получателей не найдено.</strong>
-      Проверьте выбранную аудиторию и сезон.</p>
+      Проверьте выбранную аудиторию, сезон или площадку.</p>
     <p><a href="{% url 'admin:mailing_newsletter_change' newsletter.pk %}">Вернуться</a></p>
   {% endif %}
 </div>

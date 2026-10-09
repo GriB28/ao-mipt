@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin, messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
@@ -5,6 +6,43 @@ from django.utils.html import format_html
 
 from .models import Delivery, Newsletter
 from .services import queue_newsletter, render_body
+
+
+class NewsletterAdminForm(forms.ModelForm):
+    class Meta:
+        model = Newsletter
+        fields = ("subject", "body", "audience", "season", "venue")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        audience = cleaned_data.get("audience")
+        venue = cleaned_data.get("venue")
+        season = cleaned_data.get("season")
+
+        venue_audiences = (
+            Newsletter.Audience.VENUE_PARTICIPANTS,
+            Newsletter.Audience.VENUE_ORGANIZERS,
+        )
+        season_audiences = (
+            Newsletter.Audience.SEASON_PARTICIPANTS,
+            Newsletter.Audience.SEASON_SUBMITTED,
+            Newsletter.Audience.SEASON_NOT_SUBMITTED,
+            Newsletter.Audience.VENUE_BOOKED,
+        )
+
+        if audience in venue_audiences:
+            if not venue:
+                self.add_error("venue", "Для этой аудитории необходимо выбрать площадку.")
+            cleaned_data["season"] = None
+        elif audience in season_audiences:
+            if not season:
+                self.add_error("season", "Для этой аудитории необходимо выбрать сезон.")
+            cleaned_data["venue"] = None
+        else:
+            cleaned_data["season"] = None
+            cleaned_data["venue"] = None
+
+        return cleaned_data
 
 
 class DeliveryInline(admin.TabularInline):
@@ -29,8 +67,9 @@ class NewsletterAdmin(admin.ModelAdmin):
     случайно разослать письмо тысяче школьников одним кликом.
     """
 
-    list_display = ("subject", "audience", "season", "status", "progress", "created_at")
-    list_filter = ("status", "audience", "season")
+    form = NewsletterAdminForm
+    list_display = ("subject", "audience", "season", "venue", "status", "progress", "created_at")
+    list_filter = ("status", "audience", "season", "venue")
     search_fields = ("subject", "body")
     readonly_fields = ("status", "created_by", "queued_at", "finished_at",
                        "last_error", "progress", "recipients_preview")
@@ -38,7 +77,7 @@ class NewsletterAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ("Письмо", {"fields": ("subject", "body")}),
-        ("Кому", {"fields": ("audience", "season", "recipients_preview")}),
+        ("Кому", {"fields": ("audience", "season", "venue", "recipients_preview")}),
         ("Отправка", {"fields": ("status", "progress", "queued_at", "finished_at", "last_error")}),
     )
 
@@ -48,9 +87,20 @@ class NewsletterAdmin(admin.ModelAdmin):
             return "Сохраните рассылку, чтобы посчитать получателей."
         count = obj.recipients_count
         if count == 0:
+            if obj.audience in (Newsletter.Audience.VENUE_PARTICIPANTS, Newsletter.Audience.VENUE_ORGANIZERS) and not obj.venue:
+                hint = "Проверьте аудиторию и выбранную площадку."
+            elif obj.audience in (
+                Newsletter.Audience.SEASON_PARTICIPANTS,
+                Newsletter.Audience.SEASON_SUBMITTED,
+                Newsletter.Audience.SEASON_NOT_SUBMITTED,
+                Newsletter.Audience.VENUE_BOOKED,
+            ) and not obj.season:
+                hint = "Проверьте аудиторию и выбранный сезон."
+            else:
+                hint = "Проверьте аудиторию, сезон или площадку."
             return format_html(
-                '<strong style="color:#b3261e">0 получателей.</strong> '
-                "Проверьте аудиторию и выбранный сезон."
+                '<strong style="color:#b3261e">0 получателей.</strong> {}',
+                hint,
             )
         return format_html("<strong>{}</strong> получателей", count)
 

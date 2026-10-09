@@ -44,8 +44,8 @@ def render_body(newsletter: Newsletter, user) -> str:
     """
     profile = getattr(user, "profile", None)
     values = {
-        "first_name": getattr(profile, "first_name", "") or "",
-        "last_name": getattr(profile, "last_name", "") or "",
+        "first_name": (getattr(profile, "first_name", "") or "") or getattr(user, "first_name", "") or "",
+        "last_name": (getattr(profile, "last_name", "") or "") or getattr(user, "last_name", "") or "",
         "email": user.email,
     }
     return re.sub(r"\{\{\s*(\w+)\s*\}\}",
