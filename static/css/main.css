@@ -206,10 +206,11 @@ a { color: var(--text-link); }
   height: 92%;
   max-height: 144px;
   width: auto;
-  opacity: 0.9;
+  opacity: 1;
   pointer-events: none;
   z-index: 0;
   transform: scaleX(-1);
+  filter: var(--hero-mascot-filter);
 }
 
 @media (max-width: 720px) {
