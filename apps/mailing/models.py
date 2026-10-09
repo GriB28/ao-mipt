@@ -28,7 +28,9 @@ class Newsletter(TimeStampedModel):
         SEASON_NOT_SUBMITTED = "not_submitted", "Зарегистрированные, но ничего не сдавшие"
         VENUE_BOOKED = "venue_booked", "Записавшиеся на очный тур"
         VENUE_PARTICIPANTS = "venue", "Записавшиеся на выбранную площадку"
-        ORGANIZERS = "organizers", "Организаторы"
+        VENUE_ORGANIZERS = "venue_organizers", "Организаторы выбранной площадки"
+        ORGANIZERS = "organizers", "Все организаторы"
+        ADMINS = "admins", "Администраторы"
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Черновик"
@@ -43,7 +45,7 @@ class Newsletter(TimeStampedModel):
         help_text="Можно использовать {{ first_name }} и {{ last_name }} — подставится имя получателя.",
     )
 
-    audience = models.CharField("кому", max_length=20, choices=Audience.choices,
+    audience = models.CharField("кому", max_length=25, choices=Audience.choices,
                                 default=Audience.ALL_PARTICIPANTS)
     season = models.ForeignKey(Season, on_delete=models.SET_NULL, null=True, blank=True,
                                verbose_name="сезон",
@@ -80,7 +82,13 @@ class Newsletter(TimeStampedModel):
         if self.audience == a.ALL_PARTICIPANTS:
             return base.filter(role=User.Role.PARTICIPANT)
         if self.audience == a.ORGANIZERS:
-            return base.filter(role=User.Role.ORGANIZER)
+            return base.filter(
+                models.Q(role=User.Role.ORGANIZER) | models.Q(managed_venues__isnull=False)
+            ).distinct()
+        if self.audience == a.ADMINS:
+            return base.filter(
+                models.Q(role=User.Role.ADMIN) | models.Q(is_superuser=True)
+            ).distinct()
         if self.audience == a.VENUE_PARTICIPANTS:
             # Единственная аудитория, которой сезон не нужен: площадка
             # уже задаёт и сезон, и круг людей.
@@ -89,6 +97,10 @@ class Newsletter(TimeStampedModel):
             return (base.filter(registrations__bookings__venue=self.venue)
                         .exclude(registrations__bookings__status="cancelled")
                         .distinct())
+        if self.audience == a.VENUE_ORGANIZERS:
+            if not self.venue:
+                return base.none()
+            return base.filter(managed_venues=self.venue).distinct()
 
         if not self.season:
             return base.none()
