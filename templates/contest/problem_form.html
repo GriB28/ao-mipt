@@ -29,14 +29,16 @@
   {% for field in form %}
     {% if field.name == "statement_html" %}
       <div class="field-statement-tabs">
-        <div class="statement-tabs-nav" role="tablist" aria-label="Редактор условия">
-          <button type="button" class="tab-btn active" id="tab-btn-edit" role="tab" aria-selected="true" aria-controls="tab-pane-edit">Редактор</button>
-          <button type="button" class="tab-btn" id="tab-btn-preview" role="tab" aria-selected="false" aria-controls="tab-pane-preview">Предпросмотр</button>
+        <div class="statement-tabs-header">
+          <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="required" aria-hidden="true"> *</span>{% endif %}</label>
+          <div class="statement-tabs-nav" role="tablist" aria-label="Редактор условия">
+            <button type="button" class="tab-btn active" id="tab-btn-edit" role="tab" aria-selected="true" aria-controls="tab-pane-edit">Редактор</button>
+            <button type="button" class="tab-btn" id="tab-btn-preview" role="tab" aria-selected="false" aria-controls="tab-pane-preview">Предпросмотр</button>
+          </div>
         </div>
 
         <div id="tab-pane-edit" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-edit">
           <p>
-            {{ field.label_tag }}
             {{ field }}
             {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
             {{ field.errors }}
@@ -46,7 +48,6 @@
         <div id="tab-pane-preview" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-preview" hidden>
           <div class="statement-preview-header">
             <strong>Предпросмотр условия:</strong>
-            <span class="muted text-sm">(формулы в $...$ и $$...$$)</span>
           </div>
           <div id="statement-preview-content" class="card prose math statement-preview-box"></div>
         </div>
