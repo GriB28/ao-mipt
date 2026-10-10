@@ -25,7 +25,41 @@
 
 <form method="post" enctype="multipart/form-data" class="form-wide">
   {% csrf_token %}
-  {{ form.as_p }}
+
+  {% for field in form %}
+    {% if field.name == "statement_html" %}
+      <div class="field-statement-tabs">
+        <div class="statement-tabs-nav" role="tablist" aria-label="Редактор условия">
+          <button type="button" class="tab-btn active" id="tab-btn-edit" role="tab" aria-selected="true" aria-controls="tab-pane-edit">Редактор</button>
+          <button type="button" class="tab-btn" id="tab-btn-preview" role="tab" aria-selected="false" aria-controls="tab-pane-preview">Предпросмотр</button>
+        </div>
+
+        <div id="tab-pane-edit" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-edit">
+          <p>
+            {{ field.label_tag }}
+            {{ field }}
+            {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+            {{ field.errors }}
+          </p>
+        </div>
+
+        <div id="tab-pane-preview" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-preview" hidden>
+          <div class="statement-preview-header">
+            <strong>Предпросмотр условия:</strong>
+            <span class="muted text-sm">(формулы в $...$ и $$...$$)</span>
+          </div>
+          <div id="statement-preview-content" class="card prose math statement-preview-box"></div>
+        </div>
+      </div>
+    {% else %}
+      <p>
+        {{ field.label_tag }}
+        {{ field }}
+        {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+        {{ field.errors }}
+      </p>
+    {% endif %}
+  {% endfor %}
 
   {% if is_admin %}
     {% comment %}
@@ -52,4 +86,97 @@
     </p>
   {% endif %}
 </form>
+{% endblock %}
+
+{% block scripts %}
+  {% include "_katex.html" %}
+  <script>
+    (function () {
+      const editBtn = document.getElementById("tab-btn-edit");
+      const previewBtn = document.getElementById("tab-btn-preview");
+      const editPane = document.getElementById("tab-pane-edit");
+      const previewPane = document.getElementById("tab-pane-preview");
+      const previewContent = document.getElementById("statement-preview-content");
+      const textarea = document.getElementById("id_statement_html");
+
+      if (!editBtn || !previewBtn || !editPane || !previewPane || !textarea || !previewContent) {
+        return;
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function updatePreview() {
+        const raw = textarea.value.trim();
+        if (!raw) {
+          previewContent.innerHTML = '<p class="muted"><em>Условие пока не введено...</em></p>';
+          return;
+        }
+
+        // Если текст уже содержит HTML-разметку (например теги <p>, <div>, <ul>),
+        // используем как есть (KaTeX обработает внутри неё формулы).
+        // Если это простой текст с абзацами (\n\n), разбиваем на параграфы <p>.
+        const hasHtmlTags = /<\/?[a-z][\s\S]*>/i.test(raw);
+        if (hasHtmlTags) {
+          previewContent.innerHTML = raw;
+        } else {
+          const paragraphs = raw.split(/\n\s*\n/);
+          previewContent.innerHTML = paragraphs
+            .map(function (p) {
+              return "<p>" + escapeHtml(p).replace(/\n/g, "<br>") + "</p>";
+            })
+            .join("");
+        }
+
+        if (window.renderMathInElement) {
+          renderMathInElement(previewContent, {
+            delimiters: [
+              { left: "$$", right: "$$", display: true },
+              { left: "$", right: "$", display: false },
+              { left: "\\[", right: "\\]", display: true },
+              { left: "\\(", right: "\\)", display: false },
+            ],
+            throwOnError: false,
+          });
+        }
+      }
+
+      function switchTab(target) {
+        if (target === "preview") {
+          editBtn.classList.remove("active");
+          editBtn.setAttribute("aria-selected", "false");
+          previewBtn.classList.add("active");
+          previewBtn.setAttribute("aria-selected", "true");
+
+          editPane.hidden = true;
+          previewPane.hidden = false;
+
+          updatePreview();
+        } else {
+          previewBtn.classList.remove("active");
+          previewBtn.setAttribute("aria-selected", "false");
+          editBtn.classList.add("active");
+          editBtn.setAttribute("aria-selected", "true");
+
+          previewPane.hidden = true;
+          editPane.hidden = false;
+          textarea.focus();
+        }
+      }
+
+      editBtn.addEventListener("click", function () {
+        switchTab("edit");
+      });
+
+      previewBtn.addEventListener("click", function () {
+        switchTab("preview");
+      });
+    })();
+  </script>
 {% endblock %}
