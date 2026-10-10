@@ -20,7 +20,7 @@
     </ul>
 
     <h2>Как будет выглядеть письмо</h2>
-    <pre style="background:#f4f6fd;padding:16px;border-radius:8px;white-space:pre-wrap">{{ preview }}</pre>
+    <pre style="background:var(--darkened-bg, #f8f8f8);color:var(--body-fg, #333333);border:1px solid var(--border-color, #cccccc);padding:16px;border-radius:8px;white-space:pre-wrap">{{ preview }}</pre>
 
     <form method="post">
       {% csrf_token %}
@@ -31,7 +31,7 @@
          style="margin-left:16px">Отмена</a>
     </form>
   {% else %}
-    <p style="color:#b3261e"><strong>Получателей не найдено.</strong>
+    <p style="color:var(--error-fg, #b3261e)"><strong>Получателей не найдено.</strong>
       Проверьте выбранную аудиторию, сезон или площадку.</p>
     <p><a href="{% url 'admin:mailing_newsletter_change' newsletter.pk %}">Вернуться</a></p>
   {% endif %}
