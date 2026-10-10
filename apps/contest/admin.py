@@ -27,6 +27,18 @@ class ProblemAdmin(admin.ModelAdmin):
     inlines = [AttachmentInline]
     actions = ["approve", "reject"]
 
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "reviewers":
+            from apps.accounts.models import User
+            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "created_by":
+            from apps.accounts.models import User
+            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
     @admin.display(description="проверяющих")
     def reviewer_count(self, obj):
         # Автор задачи проверяет всегда, поэтому считаем «плюс автор».
@@ -88,6 +100,12 @@ class GradeAdmin(admin.ModelAdmin):
     list_display = ("submission", "score", "status", "reviewer")
     list_filter = ("status", "reviewer", "submission__problem")
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "reviewer":
+            from apps.accounts.models import User
+            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 
 @admin.register(Score)
 class ScoreAdmin(admin.ModelAdmin):
@@ -97,3 +115,9 @@ class ScoreAdmin(admin.ModelAdmin):
     list_filter = ("problem__stage", "venue", "problem")
     search_fields = ("registration__user__email", "registration__user__profile__last_name")
     list_select_related = ("registration__user", "problem", "venue")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "entered_by":
+            from apps.accounts.models import User
+            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)

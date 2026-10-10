@@ -24,6 +24,12 @@ class VenueAdmin(admin.ModelAdmin):
     actions = ["approve", "reject"]
     readonly_fields = ("created_by", "created_at", "updated_at")
 
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "managers":
+            from apps.accounts.models import User
+            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
     def get_queryset(self, request):
         """Заявки на модерации — наверх списка.
 

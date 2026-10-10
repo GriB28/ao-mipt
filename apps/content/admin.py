@@ -37,6 +37,12 @@ class LectureAdmin(admin.ModelAdmin):
     autocomplete_fields = ("created_by",)
     actions = ["approve", "reject"]
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "created_by":
+            from apps.accounts.models import User
+            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
     @admin.action(description="Одобрить выбранные лекции")
     def approve(self, request, queryset):
         updated = queryset.update(status=Lecture.Status.APPROVED)
