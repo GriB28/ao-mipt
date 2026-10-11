@@ -4,6 +4,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
 
+from apps.core.plural import plural_ru
 from .models import Delivery, Newsletter
 from .services import queue_newsletter, render_body
 
@@ -102,7 +103,8 @@ class NewsletterAdmin(admin.ModelAdmin):
                 '<strong style="color:#b3261e">0 получателей.</strong> {}',
                 hint,
             )
-        return format_html("<strong>{}</strong> получателей", count)
+        word = plural_ru(count, "получатель", "получателя", "получателей")
+        return format_html("<strong>{}</strong> {}", count, word)
 
     @admin.display(description="прогресс")
     def progress(self, obj):
@@ -147,9 +149,10 @@ class NewsletterAdmin(admin.ModelAdmin):
             else:
                 count = queue_newsletter(newsletter)
                 if count:
+                    word = plural_ru(count, "получатель", "получателя", "получателей")
                     messages.success(
                         request,
-                        f"Рассылка поставлена в очередь: {count} получателей. "
+                        f"Рассылка поставлена в очередь: {count} {word}. "
                         f"Письма уходят порциями, статус обновляется на этой странице.",
                     )
                 else:

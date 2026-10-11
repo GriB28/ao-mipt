@@ -1,4 +1,5 @@
 {% extends "admin/base_site.html" %}
+{% load ru_plural %}
 
 {% block content %}
 <h1>Отправить рассылку?</h1>
@@ -11,12 +12,12 @@
 
   {% if count %}
     <p style="font-size:18px">
-      Письмо получат <strong>{{ count }}</strong> человек. Это действие нельзя отменить.
+      Письмо {{ count|ru_plural:"получит,получат,получат" }} <strong>{{ count }}</strong> {{ count|ru_plural:"человек,человека,человек" }}. Это действие нельзя отменить.
     </p>
 
     <h2>Первые получатели</h2>
     <ul>{% for u in sample %}<li>{{ u.email }}</li>{% endfor %}
-      {% if count > 10 %}<li>…и ещё {{ count|add:"-10" }}</li>{% endif %}
+      {% if count > 10 %}<li>…и ещё {{ count|add:"-10" }} {{ count|add:"-10"|ru_plural:"человек,человека,человек" }}</li>{% endif %}
     </ul>
 
     <h2>Как будет выглядеть письмо</h2>
@@ -25,7 +26,7 @@
     <form method="post">
       {% csrf_token %}
       <button type="submit" class="default" style="padding:10px 20px">
-        Да, отправить {{ count }} письмам
+        Да, отправить {{ count }} {{ count|ru_plural:"письмо,письма,писем" }}
       </button>
       <a href="{% url 'admin:mailing_newsletter_change' newsletter.pk %}"
          style="margin-left:16px">Отмена</a>

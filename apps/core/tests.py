@@ -171,3 +171,140 @@ class HealthzDiskTest(TestCase):
             response = self.client.get(reverse("core:healthz"))
         self.assertEqual(response.status_code, 503)
         self.assertIn(b"low disk", response.content)
+
+
+class PluralizationTest(TestCase):
+    def test_plural_ru(self):
+        from apps.core.plural import plural_ru
+
+        forms = ("письмо", "письма", "писем")
+        cases = {
+            0: "писем",
+            1: "письмо",
+            2: "письма",
+            3: "письма",
+            4: "письма",
+            5: "писем",
+            6: "писем",
+            10: "писем",
+            11: "писем",
+            12: "писем",
+            14: "писем",
+            19: "писем",
+            20: "писем",
+            21: "письмо",
+            22: "письма",
+            25: "писем",
+            101: "письмо",
+            111: "писем",
+            112: "писем",
+            121: "письмо",
+            122: "письма",
+            125: "писем",
+        }
+        for count, expected in cases.items():
+            with self.subTest(count=count):
+                self.assertEqual(plural_ru(count, *forms), expected)
+
+    def test_get_model_plural(self):
+        from apps.core.plural import get_model_plural
+        from apps.mailing.models import Delivery, Newsletter
+        from apps.accounts.models import User
+        from apps.venues.models import Venue
+        from apps.contest.models import Problem, Submission
+        from apps.content.models import Lecture, News
+
+        self.assertEqual(get_model_plural(Delivery, 1), "письмо")
+        self.assertEqual(get_model_plural(Delivery, 2), "письма")
+        self.assertEqual(get_model_plural(Delivery, 6), "писем")
+        self.assertEqual(get_model_plural(Delivery, 21), "письмо")
+
+        self.assertEqual(get_model_plural(Newsletter, 1), "рассылка")
+        self.assertEqual(get_model_plural(Newsletter, 2), "рассылки")
+        self.assertEqual(get_model_plural(Newsletter, 6), "рассылок")
+
+        self.assertEqual(get_model_plural(User, 1), "пользователь")
+        self.assertEqual(get_model_plural(User, 2), "пользователя")
+        self.assertEqual(get_model_plural(User, 6), "пользователей")
+
+        self.assertEqual(get_model_plural(Venue, 6), "площадок")
+        self.assertEqual(get_model_plural(Problem, 6), "задач")
+        self.assertEqual(get_model_plural(Lecture, 6), "лекций")
+        self.assertEqual(get_model_plural(News, 6), "новостей")
+        self.assertEqual(get_model_plural(Submission, 6), "решений")
+
+    def test_template_tags(self):
+        from django.template import Context, Template
+
+        t1 = Template('{% load ru_plural %}{{ count|ru_plural:"письмо,письма,писем" }}')
+        self.assertEqual(t1.render(Context({"count": 6})), "писем")
+        self.assertEqual(t1.render(Context({"count": 1})), "письмо")
+        self.assertEqual(t1.render(Context({"count": 2})), "письма")
+
+        t2 = Template('{% load ru_plural %}{{ count|ru_plural_format:"письмо,письма,писем" }}')
+        self.assertEqual(t2.render(Context({"count": 6})), "6 писем")
+
+        from apps.mailing.models import Delivery
+        t3 = Template('{% load ru_plural %}{% ru_model_plural opts count %}')
+        self.assertEqual(t3.render(Context({"opts": Delivery._meta, "count": 6})), "писем")
+
+    def test_admin_pagination_declension(self):
+        from django.template import Context, Template
+        from django.template.loader import render_to_string
+        from apps.mailing.models import Delivery
+
+        class DummyCL:
+            def __init__(self, count):
+                self.result_count = count
+                self.opts = Delivery._meta
+                self.formset = None
+                self.pagination_required = False
+
+        html6 = render_to_string("admin/pagination.html", {"cl": DummyCL(6), "pagination_required": False})
+        self.assertIn("6 писем", html6)
+        self.assertNotIn("6 письма", html6)
+
+        html1 = render_to_string("admin/pagination.html", {"cl": DummyCL(1), "pagination_required": False})
+        self.assertIn("1 письмо", html1)
+
+        html2 = render_to_string("admin/pagination.html", {"cl": DummyCL(2), "pagination_required": False})
+        self.assertIn("2 письма", html2)
+
+        html21 = render_to_string("admin/pagination.html", {"cl": DummyCL(21), "pagination_required": False})
+        self.assertIn("21 письмо", html21)
+
+    def test_model_ngettext_patch(self):
+        from django.contrib.admin.utils import model_ngettext
+        from apps.mailing.models import Delivery
+
+        self.assertEqual(model_ngettext(Delivery, 1), "письмо")
+        self.assertEqual(model_ngettext(Delivery, 2), "письма")
+        self.assertEqual(model_ngettext(Delivery, 6), "писем")
+
+    def test_send_confirm_template_declensions(self):
+        from django.template.loader import render_to_string
+        from apps.mailing.models import Newsletter
+
+        newsletter = Newsletter(subject="Тест")
+        ctx = {
+            "newsletter": newsletter,
+            "count": 6,
+            "sample": [],
+            "preview": "Привет!",
+        }
+        html6 = render_to_string("admin/mailing/newsletter/send_confirm.html", ctx)
+        self.assertIn("Письмо получат <strong>6</strong> человек", html6)
+        self.assertIn("Да, отправить 6 писем", html6)
+        self.assertNotIn("Да, отправить 6 письмам", html6)
+        self.assertNotIn("6 письма", html6)
+
+        ctx["count"] = 1
+        html1 = render_to_string("admin/mailing/newsletter/send_confirm.html", ctx)
+        self.assertIn("Письмо получит <strong>1</strong> человек", html1)
+        self.assertIn("Да, отправить 1 письмо", html1)
+
+        ctx["count"] = 2
+        html2 = render_to_string("admin/mailing/newsletter/send_confirm.html", ctx)
+        self.assertIn("Письмо получат <strong>2</strong> человека", html2)
+        self.assertIn("Да, отправить 2 письма", html2)
+

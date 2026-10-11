@@ -45,6 +45,10 @@ class VenueAdmin(admin.ModelAdmin):
             )
         ).order_by("_moderation_first", "region", "city", "title")
 
+    @admin.display(description="записалось")
+    def booked_count(self, obj):
+        return obj.booked_count()
+
     @admin.display(description="статус", ordering="status")
     def status_badge(self, obj):
         if obj.status == Venue.Status.PENDING:
