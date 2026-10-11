@@ -59,7 +59,11 @@ class UserAdmin(AdminsOnly, BaseUserAdmin):
 
     list_display = ("email", "get_full_name", "role", "email_confirmed", "is_active")
     list_filter = ("role", "is_active", "email_confirmed", "is_staff")
-    search_fields = ("email", "profile__last_name", "profile__first_name")
+    search_fields = (
+        "email",
+        "profile__last_name", "profile__first_name",
+        "organizer_profile__last_name", "organizer_profile__first_name",
+    )
     ordering = ("email",)
     inlines = [ProfileInline]
     fieldsets = (
@@ -76,6 +80,11 @@ class UserAdmin(AdminsOnly, BaseUserAdmin):
 class OrganizerProfileAdmin(AdminsOnly, admin.ModelAdmin):
     list_display = ("full_name", "user", "phone", "telegram")
     search_fields = ("last_name", "first_name", "user__email")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "user":
+            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(ParticipantProfile)
