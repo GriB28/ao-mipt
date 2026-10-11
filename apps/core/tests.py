@@ -308,3 +308,59 @@ class PluralizationTest(TestCase):
         self.assertIn("Письмо получат <strong>2</strong> человека", html2)
         self.assertIn("Да, отправить 2 письма", html2)
 
+    def test_get_model_accusative(self):
+        from apps.core.plural import get_model_accusative
+        from apps.mailing.models import Newsletter
+        from apps.venues.models import Venue
+        from apps.contest.models import Problem, Grade
+        from apps.content.models import Lecture, Topic, Photo
+        from apps.accounts.models import User, OrganizerProfile
+
+        self.assertEqual(get_model_accusative(Newsletter), "рассылку")
+        self.assertEqual(get_model_accusative(Venue), "площадку")
+        self.assertEqual(get_model_accusative(Problem), "задачу")
+        self.assertEqual(get_model_accusative(Lecture), "лекцию")
+        self.assertEqual(get_model_accusative(Topic), "тему лекций")
+        self.assertEqual(get_model_accusative(Photo), "фотографию")
+        self.assertEqual(get_model_accusative(Grade), "оценку")
+        self.assertEqual(get_model_accusative(User), "пользователя")
+        self.assertEqual(get_model_accusative(OrganizerProfile), "анкету организатора")
+
+    def test_change_list_add_button_declension(self):
+        from django.template.loader import render_to_string
+        from apps.mailing.models import Newsletter
+
+        class DummyCL:
+            opts = Newsletter._meta
+
+        ctx = {
+            "cl": DummyCL(),
+            "has_add_permission": True,
+            "is_popup": False,
+            "to_field": None,
+        }
+        html = render_to_string("admin/change_list_object_tools.html", ctx)
+        self.assertIn("Добавить рассылку", html)
+        self.assertNotIn("Добавить рассылка", html)
+
+    def test_change_form_title_declension(self):
+        from django.contrib.admin import AdminSite
+        from apps.mailing.admin import NewsletterAdmin
+        from apps.mailing.models import Newsletter
+        from django.test import RequestFactory
+
+        from apps.accounts.models import User
+
+        site = AdminSite()
+        admin = NewsletterAdmin(Newsletter, site)
+        req = RequestFactory().get("/admin/mailing/newsletter/add/")
+        req.user = User(is_superuser=True, is_staff=True, role=User.Role.ADMIN)
+        mock_form = type("F", (), {"is_multipart": lambda s: False})()
+        mock_adminform = type("AF", (), {"form": mock_form})()
+        context = {"adminform": mock_adminform, "inline_admin_formsets": []}
+
+        # render_change_form with add=True
+        resp = admin.render_change_form(req, context, add=True)
+        self.assertEqual(resp.context_data["title"], "Добавить рассылку")
+
+
