@@ -587,3 +587,60 @@ class TopicMatchingTest(TestCase):
         from apps.content.management.commands.import_lectures import match_topic
 
         self.assertIsNone(match_topic("Что-то совершенно новое"))
+
+
+class ImportPhotosTest(TestCase):
+    """Загрузка фотографий финалов из папки albums/."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from django.test import override_settings
+
+        media = override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="olymp-test-media-"))
+        media.enable()
+        self.addCleanup(media.disable)
+        self.folder = Path(tempfile.mkdtemp(prefix="olymp-test-albums-"))
+        (self.folder / "sez2.png").write_bytes(b"old")
+
+    def _import(self, **options):
+        from django.core.management import call_command
+
+        call_command("import_photos", str(self.folder), verbosity=0,
+                     stdout=open("/dev/null", "w"), **options)
+
+    def _photo(self):
+        from apps.content.models import Photo
+
+        return Photo.objects.get()
+
+    def test_second_run_does_not_duplicate(self):
+        self._import()
+        self._import()
+        self.assertEqual(self._photo().season.year, 2022)
+
+    def test_missing_file_is_restored(self):
+        # Базу перенесли на сервер, а загрузки — нет: запись есть, файла нет.
+        self._import()
+        photo = self._photo()
+        name = photo.image.name
+        photo.image.storage.delete(name)
+
+        self._import()
+        photo = self._photo()
+        self.assertEqual(photo.image.name, name)
+        self.assertEqual(photo.image.read(), b"old")
+
+    def test_replace_swaps_changed_file_and_keeps_its_name(self):
+        self._import()
+        name = self._photo().image.name
+        (self.folder / "sez2.png").write_bytes(b"new, high resolution")
+
+        self._import()
+        self.assertEqual(self._photo().image.read(), b"old")
+
+        self._import(replace=True)
+        photo = self._photo()
+        self.assertEqual(photo.image.name, name)
+        self.assertEqual(photo.image.read(), b"new, high resolution")

@@ -7,7 +7,14 @@
 переносятся в media/photos/, в базе остаётся путь к ним.
 
 Команда идемпотентна: повторный запуск не задваивает снимки — фото
-опознаётся по имени исходного файла.
+опознаётся по имени исходного файла. Если запись в базе есть, а самого
+файла в media нет (базу перенесли без загрузок, том пересоздали), файл
+кладётся заново.
+
+    python manage.py import_photos albums/ --replace
+
+С --replace уже загруженные снимки заменяются файлами из папки, если те
+отличаются: так обновляют фотографии на версии получше.
 """
 
 import re
@@ -34,13 +41,15 @@ class Command(BaseCommand):
         parser.add_argument("folder", help="Папка с файлами вида sez1.png")
         parser.add_argument("--caption", default="Финалисты олимпиады",
                             help="Подпись к снимкам")
+        parser.add_argument("--replace", action="store_true",
+                            help="Заменить уже загруженные снимки файлами из папки")
 
     def handle(self, *args, **options):
         folder = Path(options["folder"])
         if not folder.is_dir():
             raise CommandError(f"Нет такой папки: {folder}")
 
-        created = skipped = 0
+        created = restored = replaced = skipped = 0
         for path in sorted(folder.iterdir()):
             if path.suffix.lower() not in SUFFIXES:
                 continue
@@ -54,8 +63,22 @@ class Command(BaseCommand):
             season = self._season(number)
             # Опознаём по имени файла: Django при коллизии допишет к нему
             # суффикс, поэтому ищем по началу имени, а не по точному совпадению.
-            if Photo.objects.filter(image__contains=path.stem, season=season).exists():
-                skipped += 1
+            photo = Photo.objects.filter(image__contains=path.stem, season=season).first()
+            if photo:
+                content = path.read_bytes()
+                missing = not photo.image.storage.exists(photo.image.name)
+                if missing or (options["replace"] and self._differs(photo, content)):
+                    # Старый файл убираем первым: тогда новый ляжет под тем
+                    # же именем, без суффикса.
+                    photo.image.delete(save=False)
+                    photo.image.save(path.name, ContentFile(content))
+                    if missing:
+                        restored += 1
+                    else:
+                        replaced += 1
+                    self.stdout.write(f"  {path.name} → {season.title} (файл обновлён)")
+                else:
+                    skipped += 1
                 continue
 
             Photo.objects.create(
@@ -68,8 +91,14 @@ class Command(BaseCommand):
             self.stdout.write(f"  {path.name} → {season.title}")
 
         self.stdout.write(self.style.SUCCESS(
-            f"Добавлено: {created}, пропущено как уже загруженные: {skipped}"
+            f"Добавлено: {created}, восстановлено: {restored}, заменено: {replaced}, "
+            f"пропущено как уже загруженные: {skipped}"
         ))
+
+    @staticmethod
+    def _differs(photo, content):
+        with photo.image.open("rb") as stored:
+            return stored.read() != content
 
     def _season(self, number):
         """Сезон по номеру олимпиады. Недостающий заводим сами."""
