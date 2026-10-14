@@ -29,6 +29,7 @@ class Newsletter(TimeStampedModel):
         SEASON_SUBMITTED = "submitted", "Сдавшие хотя бы одну задачу в сезоне"
         SEASON_NOT_SUBMITTED = "not_submitted", "Зарегистрированные, но ничего не сдавшие"
         VENUE_BOOKED = "venue_booked", "Записавшиеся на очный тур"
+        VENUE_NOT_BOOKED = "venue_not_booked", "Завершившие регистрацию, но не выбравшие площадку"
         VENUE_PARTICIPANTS = "venue", "Записавшиеся на выбранную площадку"
         VENUE_ORGANIZERS = "venue_organizers", "Организаторы выбранной площадки"
         ORGANIZERS = "organizers", "Все организаторы"
@@ -148,6 +149,35 @@ class Newsletter(TimeStampedModel):
             return (base.filter(registrations__bookings__stage__season=self.season)
                         .exclude(registrations__bookings__status="cancelled")
                         .distinct())
+        if self.audience == a.VENUE_NOT_BOOKED:
+            from django.db.models import OuterRef, Subquery
+            from apps.accounts.models import ConsentDocument, ParticipantProfile
+            from apps.participation.models import VenueBooking
+
+            complete_user_ids = ParticipantProfile.objects.filter(
+                ParticipantProfile.complete_q()
+            ).values("user_id")
+
+            latest_status = Subquery(
+                ConsentDocument.objects.filter(user=OuterRef("pk"))
+                .order_by("-created_at")
+                .values("status")[:1]
+            )
+
+            booked_user_ids = (
+                VenueBooking.objects.filter(stage__season=self.season)
+                .exclude(status=VenueBooking.Status.CANCELLED)
+                .values("registration__user_id")
+            )
+
+            return (
+                base.filter(role=User.Role.PARTICIPANT, email_confirmed=True)
+                .filter(id__in=complete_user_ids)
+                .annotate(latest_consent_status=latest_status)
+                .filter(latest_consent_status__isnull=False)
+                .exclude(latest_consent_status=ConsentDocument.Status.OUTDATED)
+                .exclude(id__in=booked_user_ids)
+            )
         return base.none()
 
     @property
