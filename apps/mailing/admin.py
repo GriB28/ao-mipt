@@ -100,6 +100,7 @@ class NewsletterAdmin(admin.ModelAdmin):
             elif obj.audience in (
                 Newsletter.Audience.ALL_PARTICIPANTS,
                 Newsletter.Audience.INCOMPLETE_PROFILE,
+                Newsletter.Audience.NO_CONSENT,
                 Newsletter.Audience.ORGANIZERS,
                 Newsletter.Audience.ADMINS,
             ):

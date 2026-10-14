@@ -24,6 +24,7 @@ class Newsletter(TimeStampedModel):
     class Audience(models.TextChoices):
         ALL_PARTICIPANTS = "all_participants", "Все зарегистрированные участники"
         INCOMPLETE_PROFILE = "incomplete_profile", "Зарегистрированные, но не заполнившие анкету"
+        NO_CONSENT = "no_consent", "Зарегистрированные, но не отправившие скан согласия"
         SEASON_PARTICIPANTS = "season", "Участники выбранного сезона"
         SEASON_SUBMITTED = "submitted", "Сдавшие хотя бы одну задачу в сезоне"
         SEASON_NOT_SUBMITTED = "not_submitted", "Зарегистрированные, но ничего не сдавшие"
@@ -89,6 +90,28 @@ class Newsletter(TimeStampedModel):
                 ParticipantProfile.complete_q()
             ).values("user_id")
             return base.filter(role=User.Role.PARTICIPANT).exclude(id__in=complete_user_ids)
+        if self.audience == a.NO_CONSENT:
+            from django.db.models import OuterRef, Subquery
+            from apps.accounts.models import ConsentDocument, ParticipantProfile
+
+            complete_user_ids = ParticipantProfile.objects.filter(
+                ParticipantProfile.complete_q()
+            ).values("user_id")
+
+            latest_status = Subquery(
+                ConsentDocument.objects.filter(user=OuterRef("pk"))
+                .order_by("-created_at")
+                .values("status")[:1]
+            )
+            return (
+                base.filter(role=User.Role.PARTICIPANT)
+                .filter(id__in=complete_user_ids)
+                .annotate(latest_consent_status=latest_status)
+                .filter(
+                    models.Q(latest_consent_status__isnull=True)
+                    | models.Q(latest_consent_status=ConsentDocument.Status.OUTDATED)
+                )
+            )
         if self.audience == a.ORGANIZERS:
             return base.filter(
                 models.Q(role=User.Role.ORGANIZER) | models.Q(managed_venues__isnull=False)
