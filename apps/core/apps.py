@@ -6,5 +6,5 @@ class CoreConfig(AppConfig):
     verbose_name = "Общее"
 
     def ready(self):
-        from apps.core.plural import patch_admin_model_ngettext
-        patch_admin_model_ngettext()
+        from apps.core.plural import patch_admin_interface_declensions
+        patch_admin_interface_declensions()

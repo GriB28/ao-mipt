@@ -3,7 +3,12 @@
 """
 
 from django import template
-from apps.core.plural import get_model_plural, plural_ru
+from apps.core.plural import (
+    get_model_accusative,
+    get_model_plural,
+    noun_to_accusative,
+    plural_ru,
+)
 
 register = template.Library()
 
@@ -56,3 +61,20 @@ def ru_model_plural_format(opts, count):
     """
     word = get_model_plural(opts, count)
     return f"{count} {word}".strip()
+
+
+@register.simple_tag
+def ru_model_acc(opts):
+    """
+    Возвращает название модели в винительном падеже (кого? что?):
+    {% ru_model_acc cl.opts %} -> "рассылку", "площадку", "пользователя"
+    """
+    return get_model_accusative(opts)
+
+
+@register.filter(name="ru_acc")
+def ru_acc_filter(value):
+    """
+    Фильтр для преобразования слова в винительный падеж.
+    """
+    return noun_to_accusative(str(value))

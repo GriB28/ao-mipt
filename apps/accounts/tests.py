@@ -10,7 +10,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .emails import make_token
-from .models import ConsentDocument, ParticipantProfile, User
+from .models import ConsentDocument, DocumentType, ParticipantProfile, User
 
 
 class SignUpTest(TestCase):
@@ -181,6 +181,18 @@ class ParticipationStepsTest(TestCase):
         self._save_profile(doc_type="foreign", doc_series="", doc_number="N1234567")
         self.assertTrue(ParticipantProfile.objects.get(user=self.user).is_complete)
 
+    def test_complete_q_matches_is_complete(self):
+        # Empty profile created in setUp
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertFalse(profile.is_complete)
+        self.assertFalse(ParticipantProfile.objects.filter(ParticipantProfile.complete_q()).filter(pk=profile.pk).exists())
+
+        # Save complete profile
+        self._save_profile()
+        profile.refresh_from_db()
+        self.assertTrue(profile.is_complete)
+        self.assertTrue(ParticipantProfile.objects.filter(ParticipantProfile.complete_q()).filter(pk=profile.pk).exists())
+
     def test_dates_are_day_month_year(self):
         html = self.client.get(reverse("accounts:profile")).content.decode()
         day, month, year = (html.index(f'name="birth_date_{part}"') for part in ("day", "month", "year"))
@@ -294,6 +306,179 @@ class ConsentAccessTest(TestCase):
         self.assertEqual(self.consent.reviewed_by, self.admin)
         self.assertEqual(mail.outbox[-1].to, ["kid@e.ru"])
         self.assertIn("Нет подписи родителя", mail.outbox[-1].body)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="olymp-test-media-"))
+class ConsentAdminUploadTest(TestCase):
+    def setUp(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.seasons.models import Season, Stage
+
+        now = timezone.now()
+        self.season = Season.objects.create(year=2026, slug="ao26", title="Сезон 2026", is_active=True, is_published=True)
+        self.stage = Stage.objects.create(
+            season=self.season, title="Очный тур", slug="offline", kind=Stage.Kind.OFFLINE,
+            order=1, starts_at=now, ends_at=now + timedelta(days=1), is_published=True,
+        )
+        self.admin = User.objects.create_user("admin@test.ru", "olymp12345", role=User.Role.ADMIN, is_staff=True)
+        self.organizer = User.objects.create_user("org@test.ru", "olymp12345", role=User.Role.ORGANIZER, is_staff=True)
+
+        self.kid = User.objects.create_user("student@test.ru", "olymp12345")
+        self.kid.email_confirmed = True
+        self.kid.save(update_fields=["email_confirmed"])
+        defaults = {
+            "last_name": "Иванов", "first_name": "Иван", "birth_date": date(2010, 5, 10),
+            "birth_place": "г. Москва",
+            "grade": 10, "school": "Школа №1", "city": "Москва", "region": "Москва",
+            "phone": "+7 900 123-45-67", "telegram": "@ivanov", "doc_type": DocumentType.PASSPORT_RF,
+            "doc_series": "4510", "doc_number": "123456", "doc_issued_at": date(2024, 5, 20),
+            "doc_issued_by": "ОВД", "doc_division_code": "770-001", "reg_address": "Москва",
+            "acknowledged_at": timezone.now(),
+        }
+        self.profile, _ = ParticipantProfile.objects.update_or_create(user=self.kid, defaults=defaults)
+
+    def test_add_page_permissions(self):
+        self.client.force_login(self.organizer)
+        self.assertIn(self.client.get("/admin/accounts/consentdocument/add/").status_code, (302, 403))
+        self.client.force_login(self.kid)
+        self.assertIn(self.client.get("/admin/accounts/consentdocument/add/").status_code, (302, 403))
+        self.client.force_login(self.admin)
+        response = self.client.get("/admin/accounts/consentdocument/add/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_prefill_user_from_query_param(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(f"/admin/accounts/consentdocument/add/?user={self.kid.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{self.kid.pk}"')
+
+    def test_admin_uploads_pdf_and_unlocks_participation(self):
+        self.assertFalse(self.kid.can_participate)
+        self.client.force_login(self.admin)
+        pdf_file = SimpleUploadedFile("soglasie-ivanov.pdf", b"%PDF-1.4 test content", content_type="application/pdf")
+
+        response = self.client.post("/admin/accounts/consentdocument/add/", {
+            "user": self.kid.pk,
+            "file": pdf_file,
+            "status": ConsentDocument.Status.APPROVED,
+            "confirm_email": "on",
+            "review_comment": "Получено на почту",
+        })
+        self.assertEqual(response.status_code, 302)
+
+        consent = ConsentDocument.objects.get(user=self.kid)
+        self.assertEqual(consent.original_name, "soglasie-ivanov.pdf")
+        self.assertEqual(consent.status, ConsentDocument.Status.APPROVED)
+        self.assertEqual(consent.reviewed_by, self.admin)
+        self.assertIsNotNone(consent.reviewed_at)
+        self.assertEqual(consent.review_comment, "Получено на почту")
+        self.assertTrue(consent.for_minor)
+        self.assertEqual(consent.data["last_name"], "Иванов")
+        self.assertEqual(consent.data["doc_number"], "123456")
+
+        self.kid.refresh_from_db()
+        self.assertTrue(self.kid.can_participate)
+        self.assertEqual(self.kid.participation_blockers(), [])
+
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.consent_given)
+
+    def test_admin_uploads_photos_merged_to_pdf(self):
+        self.assertFalse(self.kid.can_participate)
+        self.client.force_login(self.admin)
+
+        import io
+        from PIL import Image
+        img1 = io.BytesIO()
+        Image.new("RGB", (100, 100), color="white").save(img1, format="JPEG")
+        img2 = io.BytesIO()
+        Image.new("RGB", (100, 100), color="white").save(img2, format="JPEG")
+        f1 = SimpleUploadedFile("page1.jpg", img1.getvalue(), content_type="image/jpeg")
+        f2 = SimpleUploadedFile("page2.jpg", img2.getvalue(), content_type="image/jpeg")
+
+        response = self.client.post("/admin/accounts/consentdocument/add/", {
+            "user": self.kid.pk,
+            "file": [f1, f2],
+            "status": ConsentDocument.Status.APPROVED,
+        })
+        self.assertEqual(response.status_code, 302)
+
+        consent = ConsentDocument.objects.get(user=self.kid)
+        self.assertEqual(consent.original_name, "soglasie-foto.pdf")
+        self.assertEqual(consent.status, ConsentDocument.Status.APPROVED)
+        self.kid.refresh_from_db()
+        self.assertTrue(self.kid.can_participate)
+
+    def test_admin_upload_confirms_email_if_unconfirmed(self):
+        self.kid.email_confirmed = False
+        self.kid.save(update_fields=["email_confirmed"])
+        self.assertFalse(self.kid.can_participate)
+
+        self.client.force_login(self.admin)
+        pdf_file = SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")
+        response = self.client.post("/admin/accounts/consentdocument/add/", {
+            "user": self.kid.pk,
+            "file": pdf_file,
+            "status": ConsentDocument.Status.APPROVED,
+            "confirm_email": "on",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.kid.refresh_from_db()
+        self.assertTrue(self.kid.email_confirmed)
+        self.assertTrue(self.kid.can_participate)
+
+    def test_admin_upload_pending_status(self):
+        self.client.force_login(self.admin)
+        pdf_file = SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")
+        response = self.client.post("/admin/accounts/consentdocument/add/", {
+            "user": self.kid.pk,
+            "file": pdf_file,
+            "status": ConsentDocument.Status.PENDING,
+        })
+        self.assertEqual(response.status_code, 302)
+        consent = ConsentDocument.objects.get(user=self.kid)
+        self.assertEqual(consent.status, ConsentDocument.Status.PENDING)
+        self.assertIsNone(consent.reviewed_by)
+        self.kid.refresh_from_db()
+        self.assertTrue(self.kid.can_participate)
+
+    def test_admin_upload_rejects_non_participant(self):
+        self.client.force_login(self.admin)
+        pdf_file = SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")
+        response = self.client.post("/admin/accounts/consentdocument/add/", {
+            "user": self.organizer.pk,
+            "file": pdf_file,
+            "status": ConsentDocument.Status.APPROVED,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ConsentDocument.objects.filter(user=self.organizer).exists())
+
+    def test_participant_profile_and_user_admin_render_consent_links(self):
+        self.client.force_login(self.admin)
+        profile_url = f"/admin/accounts/participantprofile/{self.profile.pk}/change/"
+        res = self.client.get(profile_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Загрузить скан согласия")
+        self.assertContains(res, f"user={self.kid.pk}")
+
+        pdf_file = SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")
+        self.client.post("/admin/accounts/consentdocument/add/", {
+            "user": self.kid.pk,
+            "file": pdf_file,
+            "status": ConsentDocument.Status.APPROVED,
+        })
+
+        res = self.client.get(profile_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Принято")
+        self.assertContains(res, "Загрузить новый скан")
+
+        user_url = f"/admin/accounts/user/{self.kid.pk}/change/"
+        res_user = self.client.get(user_url)
+        self.assertEqual(res_user.status_code, 200)
+        self.assertContains(res_user, "Принято")
+        self.assertContains(res_user, "scan.pdf")
 
 
 class ConsentPdfTest(TestCase):

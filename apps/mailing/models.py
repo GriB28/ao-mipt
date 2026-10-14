@@ -23,10 +23,13 @@ from apps.seasons.models import Season
 class Newsletter(TimeStampedModel):
     class Audience(models.TextChoices):
         ALL_PARTICIPANTS = "all_participants", "Все зарегистрированные участники"
+        INCOMPLETE_PROFILE = "incomplete_profile", "Зарегистрированные, но не заполнившие анкету"
+        NO_CONSENT = "no_consent", "Зарегистрированные, но не отправившие скан согласия"
         SEASON_PARTICIPANTS = "season", "Участники выбранного сезона"
         SEASON_SUBMITTED = "submitted", "Сдавшие хотя бы одну задачу в сезоне"
         SEASON_NOT_SUBMITTED = "not_submitted", "Зарегистрированные, но ничего не сдавшие"
         VENUE_BOOKED = "venue_booked", "Записавшиеся на очный тур"
+        VENUE_NOT_BOOKED = "venue_not_booked", "Завершившие регистрацию, но не выбравшие площадку"
         VENUE_PARTICIPANTS = "venue", "Записавшиеся на выбранную площадку"
         VENUE_ORGANIZERS = "venue_organizers", "Организаторы выбранной площадки"
         ORGANIZERS = "organizers", "Все организаторы"
@@ -81,6 +84,35 @@ class Newsletter(TimeStampedModel):
         a = self.Audience
         if self.audience == a.ALL_PARTICIPANTS:
             return base.filter(role=User.Role.PARTICIPANT)
+        if self.audience == a.INCOMPLETE_PROFILE:
+            from apps.accounts.models import ParticipantProfile
+
+            complete_user_ids = ParticipantProfile.objects.filter(
+                ParticipantProfile.complete_q()
+            ).values("user_id")
+            return base.filter(role=User.Role.PARTICIPANT).exclude(id__in=complete_user_ids)
+        if self.audience == a.NO_CONSENT:
+            from django.db.models import OuterRef, Subquery
+            from apps.accounts.models import ConsentDocument, ParticipantProfile
+
+            complete_user_ids = ParticipantProfile.objects.filter(
+                ParticipantProfile.complete_q()
+            ).values("user_id")
+
+            latest_status = Subquery(
+                ConsentDocument.objects.filter(user=OuterRef("pk"))
+                .order_by("-created_at")
+                .values("status")[:1]
+            )
+            return (
+                base.filter(role=User.Role.PARTICIPANT)
+                .filter(id__in=complete_user_ids)
+                .annotate(latest_consent_status=latest_status)
+                .filter(
+                    models.Q(latest_consent_status__isnull=True)
+                    | models.Q(latest_consent_status=ConsentDocument.Status.OUTDATED)
+                )
+            )
         if self.audience == a.ORGANIZERS:
             return base.filter(
                 models.Q(role=User.Role.ORGANIZER) | models.Q(managed_venues__isnull=False)
@@ -117,6 +149,35 @@ class Newsletter(TimeStampedModel):
             return (base.filter(registrations__bookings__stage__season=self.season)
                         .exclude(registrations__bookings__status="cancelled")
                         .distinct())
+        if self.audience == a.VENUE_NOT_BOOKED:
+            from django.db.models import OuterRef, Subquery
+            from apps.accounts.models import ConsentDocument, ParticipantProfile
+            from apps.participation.models import VenueBooking
+
+            complete_user_ids = ParticipantProfile.objects.filter(
+                ParticipantProfile.complete_q()
+            ).values("user_id")
+
+            latest_status = Subquery(
+                ConsentDocument.objects.filter(user=OuterRef("pk"))
+                .order_by("-created_at")
+                .values("status")[:1]
+            )
+
+            booked_user_ids = (
+                VenueBooking.objects.filter(stage__season=self.season)
+                .exclude(status=VenueBooking.Status.CANCELLED)
+                .values("registration__user_id")
+            )
+
+            return (
+                base.filter(role=User.Role.PARTICIPANT, email_confirmed=True)
+                .filter(id__in=complete_user_ids)
+                .annotate(latest_consent_status=latest_status)
+                .filter(latest_consent_status__isnull=False)
+                .exclude(latest_consent_status=ConsentDocument.Status.OUTDATED)
+                .exclude(id__in=booked_user_ids)
+            )
         return base.none()
 
     @property

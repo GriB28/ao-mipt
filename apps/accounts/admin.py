@@ -1,10 +1,17 @@
+from pathlib import Path
+
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
+from apps.participation.models import Registration
+from apps.seasons.models import Season
+
 from .emails import send_consent_rejected
+from .forms import ConsentDocumentAddForm
 from .models import ConsentDocument, OrganizerProfile, ParticipantProfile, User
 
 
@@ -35,6 +42,42 @@ class AdminsOnly:
         return self._allowed(request)
 
 
+class ParticipantConsentAdminMixin:
+    """Отображение статуса согласия и кнопка быстрой загрузки скана."""
+
+    @admin.display(description="Скан согласия")
+    def consent_summary(self, obj):
+        if not obj or not getattr(obj, "user_id", None):
+            return "Сначала сохраните анкету."
+        consent = obj.user.latest_consent
+        add_url = reverse("admin:accounts_consentdocument_add") + f"?user={obj.user_id}"
+        if not consent:
+            return format_html(
+                '<span>Скан ещё не загружен.</span> &nbsp; '
+                '<a class="button" href="{}">Загрузить скан согласия</a>',
+                add_url,
+            )
+        color = {
+            "approved": "#15803d",
+            "pending": "#b45309",
+            "rejected": "#b91c1c",
+            "outdated": "#6b7280",
+        }.get(consent.status, "#000")
+        view_url = reverse("admin:accounts_consentdocument_change", args=[consent.pk])
+        return format_html(
+            '<b style="color:{}">● {}</b> &nbsp; '
+            '<a href="{}" target="_blank" rel="noopener">{}</a> &nbsp; '
+            '(<a href="{}">открыть в админке</a>) &nbsp; '
+            '<a class="button" href="{}">Загрузить новый скан</a>',
+            color,
+            consent.get_status_display(),
+            consent.get_absolute_url(),
+            consent.filename,
+            view_url,
+            add_url,
+        )
+
+
 PROFILE_FIELDSETS = (
     ("Участник", {"fields": ("last_name", "first_name", "middle_name", "birth_date", "birth_place",
                              "grade", "school", "city", "region", "phone", "telegram")}),
@@ -42,14 +85,36 @@ PROFILE_FIELDSETS = (
                                      "doc_issued_by", "doc_division_code", "reg_address")}),
     ("Согласие при регистрации", {"fields": ("consent_given", "consent_given_at",
                                              "consent_version")}),
+    ("Скан согласия на обработку ПД", {"fields": ("consent_summary",)}),
 )
 
 
-class ProfileInline(AdminsOnly, admin.StackedInline):
+class ProfileInline(ParticipantConsentAdminMixin, AdminsOnly, admin.StackedInline):
     model = ParticipantProfile
     can_delete = False
     extra = 0
     fieldsets = PROFILE_FIELDSETS
+    readonly_fields = ("consent_summary",)
+
+
+class ConsentInline(AdminsOnly, admin.TabularInline):
+    model = ConsentDocument
+    fk_name = "user"
+    extra = 0
+    fields = ("scan_link", "status", "for_minor", "created_at", "reviewed_by", "reviewed_at")
+    readonly_fields = ("scan_link", "for_minor", "created_at", "reviewed_by", "reviewed_at")
+    can_delete = False
+    show_change_link = True
+
+    @admin.display(description="скан")
+    def scan_link(self, obj):
+        if not obj.pk:
+            return "—"
+        return format_html('<a href="{}" target="_blank" rel="noopener">{}</a>',
+                           obj.get_absolute_url(), obj.filename)
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(User)
@@ -65,7 +130,7 @@ class UserAdmin(AdminsOnly, BaseUserAdmin):
         "organizer_profile__last_name", "organizer_profile__first_name",
     )
     ordering = ("email",)
-    inlines = [ProfileInline]
+    inlines = [ProfileInline, ConsentInline]
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Роль и доступ", {"fields": ("role", "email_confirmed", "is_active", "is_staff", "is_superuser", "groups")}),
@@ -88,15 +153,34 @@ class OrganizerProfileAdmin(AdminsOnly, admin.ModelAdmin):
 
 
 @admin.register(ParticipantProfile)
-class ParticipantProfileAdmin(AdminsOnly, admin.ModelAdmin):
-    list_display = ("full_name", "user", "grade", "school", "city", "complete")
+class ParticipantProfileAdmin(ParticipantConsentAdminMixin, AdminsOnly, admin.ModelAdmin):
+    list_display = ("full_name", "user", "grade", "school", "city", "complete", "consent_status")
     list_filter = ("grade", "region")
     search_fields = ("last_name", "first_name", "school", "user__email")
     fieldsets = PROFILE_FIELDSETS
+    readonly_fields = ("consent_summary",)
 
     @admin.display(description="анкета заполнена", boolean=True)
     def complete(self, obj):
         return obj.is_complete
+
+    @admin.display(description="согласие")
+    def consent_status(self, obj):
+        if not obj or not getattr(obj, "user_id", None):
+            return "—"
+        consent = obj.user.latest_consent
+        if not consent:
+            add_url = reverse("admin:accounts_consentdocument_add") + f"?user={obj.user_id}"
+            return format_html('<span style="color:#b91c1c">нет</span> (<a href="{}">загрузить</a>)', add_url)
+        color = {
+            "approved": "#15803d",
+            "pending": "#b45309",
+            "rejected": "#b91c1c",
+            "outdated": "#6b7280",
+        }.get(consent.status, "#000")
+        view_url = reverse("admin:accounts_consentdocument_change", args=[consent.pk])
+        return format_html('<a href="{}" style="color:{}; font-weight:600;">● {}</a>',
+                           view_url, color, consent.get_status_display())
 
 
 class ConsentReviewForm(forms.ModelForm):
@@ -116,17 +200,22 @@ class ConsentReviewForm(forms.ModelForm):
 @admin.register(ConsentDocument)
 class ConsentDocumentAdmin(AdminsOnly, admin.ModelAdmin):
     """
-    Проверка сканов согласий.
+    Проверка и ручное добавление сканов согласий.
 
-    Открыть скан → сверить с данными анкеты справа → «Принять» или
-    статус «Нужно переслать» с комментарием: участнику уйдёт письмо,
-    а в кабинете появится просьба загрузить заново.
+    - Проверка: открыть скан → сверить с данными анкеты справа → «Принять» или
+      статус «Нужно переслать» с комментарием: участнику уйдёт письмо,
+      а в кабинете появится просьба загрузить заново.
+    - Ручное добавление: если у участника возникли проблемы с загрузкой в кабинете,
+      администратор может загрузить скан за него — участие и запись на площадку
+      открываются сразу же.
     """
 
     form = ConsentReviewForm
+    add_form = ConsentDocumentAddForm
     list_display = ("participant", "user", "status", "for_minor", "created_at", "scan")
     list_filter = ("status", "for_minor")
     search_fields = ("user__email", "user__profile__last_name", "user__profile__first_name")
+    autocomplete_fields = ("user",)
     date_hierarchy = "created_at"
     actions = ["approve"]
     readonly_fields = ("user", "scan", "for_minor", "data_table", "created_at",
@@ -134,9 +223,31 @@ class ConsentDocumentAdmin(AdminsOnly, admin.ModelAdmin):
     fields = ("user", "scan", "for_minor", "data_table", "created_at",
               "status", "review_comment", "reviewed_by", "reviewed_at")
 
-    def has_add_permission(self, request, *args):
-        # Сканы загружают сами участники в кабинете.
-        return False
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        if obj is None:
+            kwargs["form"] = self.add_form
+        return super().get_form(request, obj, change=change, **kwargs)
+
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            return ("user", "file", "status", "confirm_email", "review_comment")
+        return self.fields
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            return ()
+        return self.readonly_fields
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        if "user" in request.GET:
+            initial["user"] = request.GET["user"]
+        return initial
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "user":
+            kwargs["queryset"] = User.objects.filter(role=User.Role.PARTICIPANT)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     @admin.display(description="участник")
     def participant(self, obj):
@@ -164,11 +275,63 @@ class ConsentDocumentAdmin(AdminsOnly, admin.ModelAdmin):
         self.message_user(request, f"Принято согласий: {updated}.")
 
     def save_model(self, request, obj, form, change):
-        status_changed = "status" in form.changed_data
-        if status_changed:
-            obj.reviewed_by = request.user
-            obj.reviewed_at = timezone.now()
+        if not change:
+            if form.cleaned_data.get("confirm_email") and not obj.user.email_confirmed:
+                obj.user.email_confirmed = True
+                obj.user.save(update_fields=["email_confirmed"])
+
+            if not obj.original_name and obj.file:
+                obj.original_name = Path(getattr(obj.file, "name", "")).name.rsplit("/", 1)[-1][:255]
+
+            profile, _ = ParticipantProfile.objects.get_or_create(user=obj.user)
+            if not obj.data:
+                obj.data = profile.consent_data()
+            obj.for_minor = profile.is_minor
+
+            if obj.status == ConsentDocument.Status.APPROVED:
+                obj.reviewed_by = request.user
+                obj.reviewed_at = timezone.now()
+
+            season = Season.objects.active()
+            if season and obj.user.is_participant:
+                reg, _ = Registration.objects.get_or_create(user=obj.user, season=season)
+                if profile.grade and not reg.grade:
+                    reg.grade = profile.grade
+                    reg.save(update_fields=["grade"])
+        else:
+            status_changed = "status" in form.changed_data
+            if status_changed:
+                obj.reviewed_by = request.user
+                obj.reviewed_at = timezone.now()
+
         super().save_model(request, obj, form, change)
-        if status_changed and obj.status == ConsentDocument.Status.REJECTED:
-            send_consent_rejected(request, obj)
-            messages.info(request, f"Участнику отправлено письмо на {obj.user.email}.")
+
+        if obj.grants_access and hasattr(obj.user, "profile"):
+            profile = obj.user.profile
+            if not profile.consent_given:
+                profile.consent_given = True
+                profile.consent_given_at = timezone.now()
+                profile.save(update_fields=["consent_given", "consent_given_at"])
+
+        if obj.status == ConsentDocument.Status.REJECTED:
+            if not change or "status" in form.changed_data:
+                send_consent_rejected(request, obj)
+                messages.info(request, f"Участнику отправлено письмо на {obj.user.email}.")
+
+    def response_add(self, request, obj, post_url_continue=None):
+        response = super().response_add(request, obj, post_url_continue)
+        blockers = obj.user.participation_blockers()
+        if blockers:
+            self.message_user(
+                request,
+                f"Внимание: у участника {obj.user.email} ещё не выполнены шаги: {', '.join(blockers)}. "
+                "Запись на площадки откроется после их выполнения.",
+                level=messages.WARNING,
+            )
+        else:
+            self.message_user(
+                request,
+                f"Участник {obj.user.email} теперь полностью допущен к олимпиаде (запись на площадки открыта).",
+                level=messages.SUCCESS,
+            )
+        return response
