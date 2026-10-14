@@ -181,6 +181,18 @@ class ParticipationStepsTest(TestCase):
         self._save_profile(doc_type="foreign", doc_series="", doc_number="N1234567")
         self.assertTrue(ParticipantProfile.objects.get(user=self.user).is_complete)
 
+    def test_complete_q_matches_is_complete(self):
+        # Empty profile created in setUp
+        profile = ParticipantProfile.objects.get(user=self.user)
+        self.assertFalse(profile.is_complete)
+        self.assertFalse(ParticipantProfile.objects.filter(ParticipantProfile.complete_q()).filter(pk=profile.pk).exists())
+
+        # Save complete profile
+        self._save_profile()
+        profile.refresh_from_db()
+        self.assertTrue(profile.is_complete)
+        self.assertTrue(ParticipantProfile.objects.filter(ParticipantProfile.complete_q()).filter(pk=profile.pk).exists())
+
     def test_dates_are_day_month_year(self):
         html = self.client.get(reverse("accounts:profile")).content.decode()
         day, month, year = (html.index(f'name="birth_date_{part}"') for part in ("day", "month", "year"))

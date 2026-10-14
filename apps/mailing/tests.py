@@ -50,6 +50,31 @@ class NewsletterAudienceTest(TestCase):
         self.assertIn("idle@e.ru", got)
         self.assertNotIn("org@e.ru", got)
 
+    def test_incomplete_profile_audience(self):
+        from apps.accounts.testing import make_eligible
+
+        # self.idle and self.stranger have partial profiles (only first_name and last_name set)
+        user_empty = User.objects.create_user("empty@e.ru", "pass12345")
+        ParticipantProfile.objects.create(user=user_empty)
+
+        user_no_profile = User.objects.create_user("no_profile@e.ru", "pass12345")
+
+        user_complete = User.objects.create_user("complete@e.ru", "pass12345")
+        make_eligible(user_complete)
+
+        got = self._emails(Newsletter.Audience.INCOMPLETE_PROFILE)
+        self.assertIn("empty@e.ru", got)
+        self.assertIn("no_profile@e.ru", got)
+        self.assertIn("idle@e.ru", got)
+        self.assertIn("stranger@e.ru", got)
+        self.assertNotIn("complete@e.ru", got)
+        self.assertNotIn("org@e.ru", got)
+
+        user_empty.is_active = False
+        user_empty.save()
+        got_after = self._emails(Newsletter.Audience.INCOMPLETE_PROFILE)
+        self.assertNotIn("empty@e.ru", got_after)
+
     def test_season_participants_excludes_unregistered(self):
         got = self._emails(Newsletter.Audience.SEASON_PARTICIPANTS, self.season)
         self.assertNotIn("stranger@e.ru", got)
@@ -176,16 +201,18 @@ class NewsletterAdminFormTest(TestCase):
         self.assertIsNone(form_valid.cleaned_data["venue"])
 
     def test_global_audiences_clear_season_and_venue(self):
-        form = self.form_class(data={
-            "subject": "Тест",
-            "body": "Тест",
-            "audience": Newsletter.Audience.ALL_PARTICIPANTS,
-            "season": self.season.pk,
-            "venue": self.venue.pk,
-        })
-        self.assertTrue(form.is_valid())
-        self.assertIsNone(form.cleaned_data["season"])
-        self.assertIsNone(form.cleaned_data["venue"])
+        for aud in (Newsletter.Audience.ALL_PARTICIPANTS, Newsletter.Audience.INCOMPLETE_PROFILE):
+            with self.subTest(audience=aud):
+                form = self.form_class(data={
+                    "subject": "Тест",
+                    "body": "Тест",
+                    "audience": aud,
+                    "season": self.season.pk,
+                    "venue": self.venue.pk,
+                })
+                self.assertTrue(form.is_valid())
+                self.assertIsNone(form.cleaned_data["season"])
+                self.assertIsNone(form.cleaned_data["venue"])
 
 
 class NewsletterSendingTest(TestCase):
