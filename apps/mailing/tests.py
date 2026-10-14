@@ -75,6 +75,47 @@ class NewsletterAudienceTest(TestCase):
         got_after = self._emails(Newsletter.Audience.INCOMPLETE_PROFILE)
         self.assertNotIn("empty@e.ru", got_after)
 
+    def test_no_consent_audience(self):
+        from apps.accounts.models import ConsentDocument
+        from apps.accounts.testing import make_eligible
+
+        # 1. Complete profile, no consent
+        u_no_consent = User.objects.create_user("noconsent@e.ru", "pass12345")
+        make_eligible(u_no_consent)
+        ConsentDocument.objects.filter(user=u_no_consent).delete()
+
+        # 2. Complete profile, consent OUTDATED
+        u_outdated = User.objects.create_user("outdated@e.ru", "pass12345")
+        make_eligible(u_outdated)
+        ConsentDocument.objects.filter(user=u_outdated).update(status=ConsentDocument.Status.OUTDATED)
+
+        # 3. Complete profile, consent PENDING
+        u_pending = User.objects.create_user("pending@e.ru", "pass12345")
+        make_eligible(u_pending)
+        ConsentDocument.objects.filter(user=u_pending).update(status=ConsentDocument.Status.PENDING)
+
+        # 4. Complete profile, consent APPROVED
+        u_approved = User.objects.create_user("approved@e.ru", "pass12345")
+        make_eligible(u_approved)
+
+        # 5. Incomplete profile (idle has only first_name and last_name, empty has empty profile)
+        u_empty = User.objects.create_user("empty_profile@e.ru", "pass12345")
+        ParticipantProfile.objects.create(user=u_empty)
+
+        got = self._emails(Newsletter.Audience.NO_CONSENT)
+        self.assertIn("noconsent@e.ru", got)
+        self.assertIn("outdated@e.ru", got)
+        self.assertNotIn("pending@e.ru", got)
+        self.assertNotIn("approved@e.ru", got)
+        self.assertNotIn("empty_profile@e.ru", got)
+        self.assertNotIn("idle@e.ru", got)
+        self.assertNotIn("org@e.ru", got)
+
+        # Inactive user
+        u_no_consent.is_active = False
+        u_no_consent.save()
+        self.assertNotIn("noconsent@e.ru", self._emails(Newsletter.Audience.NO_CONSENT))
+
     def test_season_participants_excludes_unregistered(self):
         got = self._emails(Newsletter.Audience.SEASON_PARTICIPANTS, self.season)
         self.assertNotIn("stranger@e.ru", got)
@@ -201,7 +242,7 @@ class NewsletterAdminFormTest(TestCase):
         self.assertIsNone(form_valid.cleaned_data["venue"])
 
     def test_global_audiences_clear_season_and_venue(self):
-        for aud in (Newsletter.Audience.ALL_PARTICIPANTS, Newsletter.Audience.INCOMPLETE_PROFILE):
+        for aud in (Newsletter.Audience.ALL_PARTICIPANTS, Newsletter.Audience.INCOMPLETE_PROFILE, Newsletter.Audience.NO_CONSENT):
             with self.subTest(audience=aud):
                 form = self.form_class(data={
                     "subject": "Тест",
