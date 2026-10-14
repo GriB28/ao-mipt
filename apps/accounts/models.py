@@ -8,6 +8,7 @@
 """
 
 import secrets
+from pathlib import Path
 
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
@@ -372,6 +373,11 @@ class ConsentDocument(TimeStampedModel):
         Не открывает только устаревшее — там другие данные.
         """
         return self.status != self.Status.OUTDATED
+
+    def save(self, *args, **kwargs):
+        if self.file and not self.original_name:
+            self.original_name = Path(getattr(self.file, "name", "")).name.rsplit("/", 1)[-1][:255]
+        super().save(*args, **kwargs)
 
 
 class OrganizerProfile(TimeStampedModel):

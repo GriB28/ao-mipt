@@ -236,16 +236,7 @@ def consent_upload(request):
     return redirect(reverse("accounts:profile") + "#consent")
 
 
-def _photos_to_pdf(files):
-    """Фото страниц бланка → один PDF: администратор открывает один файл."""
-    pages = []
-    for f in files:
-        with Image.open(f) as image:
-            image = ImageOps.exif_transpose(image)  # фото с телефона бывают повёрнуты
-            pages.append(image.convert("RGB"))
-    buffer = io.BytesIO()
-    pages[0].save(buffer, format="PDF", save_all=True, append_images=pages[1:], resolution=150)
-    return ContentFile(buffer.getvalue(), name="soglasie-foto.pdf")
+_photos_to_pdf = consent_pdf.photos_to_pdf
 
 
 @login_required

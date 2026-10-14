@@ -26,7 +26,9 @@ from pathlib import Path
 
 import nh3
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.utils import timezone
+from PIL import Image, ImageOps
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
@@ -387,3 +389,17 @@ def _distribution(profile, styles):
                             (legal_templates.TRANSFER_CONDITIONS, 1)], styles)
     story.append(_signed(profile, values, styles))
     return story
+
+
+def photos_to_pdf(files):
+    """Фото страниц бланка → один PDF: администратор открывает один файл."""
+    pages = []
+    for f in files:
+        if hasattr(f, "seek"):
+            f.seek(0)
+        with Image.open(f) as image:
+            image = ImageOps.exif_transpose(image)  # фото с телефона бывают повёрнуты
+            pages.append(image.convert("RGB"))
+    buffer = io.BytesIO()
+    pages[0].save(buffer, format="PDF", save_all=True, append_images=pages[1:], resolution=150)
+    return ContentFile(buffer.getvalue(), name="soglasie-foto.pdf")

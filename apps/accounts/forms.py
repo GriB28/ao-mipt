@@ -7,11 +7,21 @@ from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.utils import timezone
 from django.utils.html import format_html
 
+from PIL import Image
+
 from apps.contest.forms import MultipleFileField
 from apps.core.legal_templates import ACKNOWLEDGEMENTS
-from apps.core.validators import validate_consent_file
+from apps.core.validators import ALLOWED_CONSENT_EXTENSIONS, validate_consent_file
 
-from .models import DOC_TYPES_WITH_SERIES, DocumentType, OrganizerProfile, ParticipantProfile, User
+from .consent_pdf import photos_to_pdf
+from .models import (
+    DOC_TYPES_WITH_SERIES,
+    ConsentDocument,
+    DocumentType,
+    OrganizerProfile,
+    ParticipantProfile,
+    User,
+)
 from .regions import REGION_CHOICES
 
 
@@ -338,6 +348,93 @@ class ConsentUploadForm(forms.Form):
             if len(files) > self.MAX_PHOTOS:
                 raise forms.ValidationError(f"Не больше {self.MAX_PHOTOS} фото.")
         return files
+
+
+class ConsentDocumentAddForm(forms.ModelForm):
+    """Ручная загрузка скана согласия администратором."""
+
+    file = MultipleFileField(
+        label="Скан или фото подписанного бланка",
+        help_text=f"PDF-файл или фото страниц (JPG, PNG). До {settings.MAX_UPLOAD_SIZE_MB} МБ.",
+    )
+    confirm_email = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Подтвердить e-mail участника",
+        help_text="Если почта участника ещё не подтверждена, отметить её как подтверждённую.",
+    )
+
+    class Meta:
+        model = ConsentDocument
+        fields = ("user", "file", "status", "confirm_email", "review_comment")
+        widgets = {
+            "review_comment": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["user"].queryset = User.objects.filter(role=User.Role.PARTICIPANT).order_by("email")
+        self.fields["user"].label = "Участник"
+        self.fields["user"].help_text = "Выберите участника, чьё согласие загружается."
+        self.fields["file"].widget.attrs.update({
+            "accept": ".pdf,.jpg,.jpeg,.png,image/*",
+        })
+        self.fields["status"].initial = ConsentDocument.Status.APPROVED
+        self.fields["status"].choices = [
+            (ConsentDocument.Status.APPROVED, "Принято"),
+            (ConsentDocument.Status.PENDING, "На проверке"),
+            (ConsentDocument.Status.REJECTED, "Нужно переслать"),
+            (ConsentDocument.Status.OUTDATED, "Устарело"),
+        ]
+        self.fields["status"].help_text = (
+            "По умолчанию «Принято», так как скан проверен при загрузке. "
+            "Можно выбрать «На проверке», если требуется дополнительная проверка."
+        )
+
+    def clean_user(self):
+        user = self.cleaned_data.get("user")
+        if user and not user.is_participant:
+            raise forms.ValidationError("Согласие можно загрузить только для участника.")
+        return user
+
+    def clean_file(self):
+        files = self.cleaned_data.get("file")
+        if not files:
+            raise forms.ValidationError("Выберите файл скана.")
+        max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        for f in files:
+            ext = Path(f.name).suffix.lower()
+            if ext not in ALLOWED_CONSENT_EXTENSIONS:
+                raise forms.ValidationError(
+                    f"Формат файла «{Path(f.name).name}» ({ext or '—'}) не принимается. "
+                    f"Разрешены: {', '.join(sorted(ALLOWED_CONSENT_EXTENSIONS))}"
+                )
+            if f.size > max_bytes:
+                raise forms.ValidationError(
+                    f"Файл «{Path(f.name).name}» больше {settings.MAX_UPLOAD_SIZE_MB} МБ."
+                )
+
+        if len(files) > 1:
+            if any(Path(f.name).suffix.lower() == ".pdf" for f in files):
+                raise forms.ValidationError("PDF загружайте одним файлом, без фото.")
+            if len(files) > 10:
+                raise forms.ValidationError("Не больше 10 фото.")
+            try:
+                return photos_to_pdf(files)
+            except (OSError, Image.DecompressionBombError):
+                raise forms.ValidationError(
+                    "Не удалось открыть фото. Сохраните их в JPG или PNG и загрузите ещё раз — "
+                    "или пришлите один PDF."
+                )
+        return files[0]
+
+    def clean(self):
+        cleaned = super().clean()
+        status = cleaned.get("status")
+        comment = (cleaned.get("review_comment") or "").strip()
+        if status == ConsentDocument.Status.REJECTED and not comment:
+            self.add_error("review_comment", "Напишите участнику, что не так со сканом.")
+        return cleaned
 
 
 class OrganizerProfileForm(forms.ModelForm):
