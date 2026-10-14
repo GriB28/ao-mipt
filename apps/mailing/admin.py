@@ -97,6 +97,13 @@ class NewsletterAdmin(admin.ModelAdmin):
                 Newsletter.Audience.VENUE_BOOKED,
             ) and not obj.season:
                 hint = "Проверьте аудиторию и выбранный сезон."
+            elif obj.audience in (
+                Newsletter.Audience.ALL_PARTICIPANTS,
+                Newsletter.Audience.INCOMPLETE_PROFILE,
+                Newsletter.Audience.ORGANIZERS,
+                Newsletter.Audience.ADMINS,
+            ):
+                hint = "Подходящих пользователей не найдено."
             else:
                 hint = "Проверьте аудиторию, сезон или площадку."
             return format_html(

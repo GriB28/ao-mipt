@@ -268,6 +268,36 @@ class ParticipantProfile(ConsentMixin, TimeStampedModel):
     def is_complete(self) -> bool:
         return not self.missing_fields()
 
+    @classmethod
+    def complete_q(cls, prefix=""):
+        """Q-объект для фильтрации полностью заполненных анкет в QuerySet.
+
+        Согласован со свойством is_complete: заполнены все обязательные поля,
+        серия документа (если применима к типу), код подразделения (для паспорта РФ)
+        и отметка об ознакомлении с правилами.
+        """
+        p = f"{prefix}__" if prefix else ""
+        return (
+            models.Q(**{f"{p}last_name__gt": ""}) &
+            models.Q(**{f"{p}first_name__gt": ""}) &
+            models.Q(**{f"{p}birth_date__isnull": False}) &
+            models.Q(**{f"{p}birth_place__gt": ""}) &
+            models.Q(**{f"{p}grade__isnull": False}) &
+            models.Q(**{f"{p}school__gt": ""}) &
+            models.Q(**{f"{p}city__gt": ""}) &
+            models.Q(**{f"{p}region__gt": ""}) &
+            models.Q(**{f"{p}phone__gt": ""}) &
+            models.Q(**{f"{p}telegram__gt": ""}) &
+            models.Q(**{f"{p}doc_type__gt": ""}) &
+            models.Q(**{f"{p}doc_number__gt": ""}) &
+            models.Q(**{f"{p}doc_issued_at__isnull": False}) &
+            models.Q(**{f"{p}doc_issued_by__gt": ""}) &
+            models.Q(**{f"{p}reg_address__gt": ""}) &
+            models.Q(**{f"{p}acknowledged_at__isnull": False}) &
+            (~models.Q(**{f"{p}doc_type__in": DOC_TYPES_WITH_SERIES}) | models.Q(**{f"{p}doc_series__gt": ""})) &
+            (~models.Q(**{f"{p}doc_type": DocumentType.PASSPORT_RF}) | models.Q(**{f"{p}doc_division_code__gt": ""}))
+        )
+
     def consent_data(self):
         """Снимок данных, попавших в бланк согласия."""
         return {name: str(getattr(self, name) or "") for name in self.CONSENT_FIELDS}

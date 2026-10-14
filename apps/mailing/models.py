@@ -23,6 +23,7 @@ from apps.seasons.models import Season
 class Newsletter(TimeStampedModel):
     class Audience(models.TextChoices):
         ALL_PARTICIPANTS = "all_participants", "Все зарегистрированные участники"
+        INCOMPLETE_PROFILE = "incomplete_profile", "Зарегистрированные, но не заполнившие анкету"
         SEASON_PARTICIPANTS = "season", "Участники выбранного сезона"
         SEASON_SUBMITTED = "submitted", "Сдавшие хотя бы одну задачу в сезоне"
         SEASON_NOT_SUBMITTED = "not_submitted", "Зарегистрированные, но ничего не сдавшие"
@@ -81,6 +82,13 @@ class Newsletter(TimeStampedModel):
         a = self.Audience
         if self.audience == a.ALL_PARTICIPANTS:
             return base.filter(role=User.Role.PARTICIPANT)
+        if self.audience == a.INCOMPLETE_PROFILE:
+            from apps.accounts.models import ParticipantProfile
+
+            complete_user_ids = ParticipantProfile.objects.filter(
+                ParticipantProfile.complete_q()
+            ).values("user_id")
+            return base.filter(role=User.Role.PARTICIPANT).exclude(id__in=complete_user_ids)
         if self.audience == a.ORGANIZERS:
             return base.filter(
                 models.Q(role=User.Role.ORGANIZER) | models.Q(managed_venues__isnull=False)
