@@ -224,20 +224,74 @@ def my_submissions(request):
             .prefetch_related("files"))
 
     scores = []
+    stage_results = []
+    qualifying_notes = []
     season = Season.objects.active()
     if season:
-        scores = (Score.objects
-                  .filter(registration__user=request.user,
-                          problem__stage__results_published=True)
-                  .select_related("problem", "problem__stage", "venue")
-                  .order_by("problem__stage__order", "problem__number"))
+        scores = list(Score.objects
+                      .filter(registration__user=request.user,
+                              problem__stage__results_published=True)
+                      .select_related("problem", "problem__stage", "venue")
+                      .order_by("problem__stage__order", "problem__stage_id", "problem__number"))
+
+        stages_map = {}
+        for s in scores:
+            st = s.problem.stage
+            if st.pk not in stages_map:
+                stages_map[st.pk] = {
+                    "stage": st,
+                    "scores": [],
+                    "venue": s.venue,
+                }
+            stages_map[st.pk]["scores"].append(s)
+            if s.venue and not stages_map[st.pk]["venue"]:
+                stages_map[st.pk]["venue"] = s.venue
+
+        from apps.participation.models import VenueBooking
+        missing_venues = [st_pk for st_pk, item in stages_map.items() if not item["venue"]]
+        if missing_venues:
+            bookings = {
+                b.stage_id: b.venue
+                for b in VenueBooking.objects.filter(
+                    registration__user=request.user,
+                    stage_id__in=missing_venues,
+                ).select_related("venue")
+            }
+            for st_pk in missing_venues:
+                if st_pk in bookings:
+                    stages_map[st_pk]["venue"] = bookings[st_pk]
+
+        for item in stages_map.values():
+            item["total"] = scoring_total((s.problem, s.points) for s in item["scores"])
+            item["has_mixed_venues"] = len({s.venue_id for s in item["scores"]}) > 1
+            stage_results.append(item)
+
+        # Выявляем этапы с одинаковым порядком (например, очный и онлайн отборы одного тура)
+        by_order = {}
+        for item in stage_results:
+            by_order.setdefault(item["stage"].order, []).append(item)
+
+        for order, items in by_order.items():
+            if len(items) > 1:
+                max_total = max(x["total"] for x in items)
+                best_items = [x for x in items if x["total"] == max_total]
+                for item in items:
+                    item["is_twin"] = True
+                    item["is_best_twin"] = (item in best_items)
+                stages_titles = " и ".join(f"«{x['stage'].title}»" for x in items)
+                best_val = max_total
+                best_val_str = f"{best_val:.2f}".rstrip("0").rstrip(".") if "." in f"{best_val}" else f"{best_val}"
+                qualifying_notes.append(
+                    f"{stages_titles} — равнозначные форматы одного этапа. "
+                    f"В зачёт отбора идёт лучший результат: {best_val_str} б. ({best_items[0]['stage'].title})."
+                )
 
     return render(request, "contest/my_submissions.html", {
         "submissions": subs,
         "scores": scores,
-        # Складываем через scoring.total: задачи не равнозначны, и когда
-        # появятся веса, это место посчитает их само.
-        "total": scoring_total((s.problem, s.points) for s in scores),
+        "stage_results": stage_results,
+        "qualifying_notes": qualifying_notes,
+        "total": scoring_total((s.problem, s.points) for s in scores) if scores else 0,
     })
 
 

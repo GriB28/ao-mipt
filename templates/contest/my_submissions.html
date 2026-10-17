@@ -8,23 +8,98 @@
   </div>
 </div>
 
-{% if scores %}
+{% if stage_results %}
   <h2>Результаты</h2>
   <p class="muted">Итоговые баллы по опубликованным этапам.</p>
-  <table class="table-stack">
-    <thead><tr><th>Этап</th><th>Задача</th><th>Где писал</th><th>Балл</th></tr></thead>
-    <tbody>
-    {% for s in scores %}
-      <tr>
-        <td data-label="Этап" class="muted">{{ s.problem.stage.title }}</td>
-        <td data-label="Задача">{{ s.problem.number }}. {{ s.problem.title }}</td>
-        <td data-label="Где писал" class="muted">{{ s.venue.title|default:"дистанционно" }}</td>
-        <td data-label="Балл">{% if s.points is None %}—{% else %}{{ s.points|floatformat:"-2" }}{% endif %}</td>
-      </tr>
+
+  {% if qualifying_notes %}
+    {% for note in qualifying_notes %}
+      <p class="note">{{ note }}</p>
     {% endfor %}
-      <tr class="table-total"><th colspan="3">Сумма</th><th>{{ total|floatformat:"-2" }}</th></tr>
-    </tbody>
-  </table>
+  {% endif %}
+
+  <div class="stage-results-list">
+    {% for res in stage_results %}
+      <section class="card stage-result-card">
+        <header class="stage-result-header">
+          <div class="stage-result-info">
+            <div class="stage-result-title-row">
+              <h3 class="stage-result-title">{{ res.stage.title }}</h3>
+              {% if res.is_twin %}
+                {% if res.is_best_twin %}
+                  <span class="badge ok">в зачёте тура</span>
+                {% else %}
+                  <span class="badge none">не пошёл в зачёт</span>
+                {% endif %}
+              {% endif %}
+            </div>
+            <div class="stage-result-meta">
+              {% if res.stage.kind == "offline" %}
+                <span class="badge">Очный тур</span>
+                {% if res.venue %}
+                  <span class="muted">Площадка: <strong>{{ res.venue.title }}</strong></span>
+                {% endif %}
+              {% elif res.stage.kind == "online" %}
+                <span class="badge">Дистанционный тур</span>
+              {% else %}
+                <span class="badge">
+                  {% if res.venue %}
+                    Очно ({{ res.venue.title }})
+                  {% else %}
+                    Дистанционно
+                  {% endif %}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="stage-result-score-block">
+            <span class="stage-result-score-caption">Итого за этап</span>
+            <span class="stage-result-score-value">{{ res.total|floatformat:"-2" }}</span>
+          </div>
+        </header>
+
+        <table class="table-stack stage-result-table">
+          <thead>
+            <tr>
+              <th>Задача</th>
+              {% if res.has_mixed_venues %}<th>Где писал</th>{% endif %}
+              <th class="cell-num">Балл</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in res.scores %}
+              <tr>
+                <td data-label="Задача">
+                  {% if s.problem.is_approved and s.problem.stage.is_published %}
+                    <a href="{% url 'contest:problem_detail' s.problem.pk %}">{{ s.problem.number }}. {{ s.problem.title }}</a>
+                  {% else %}
+                    {{ s.problem.number }}. {{ s.problem.title }}
+                  {% endif %}
+                </td>
+                {% if res.has_mixed_venues %}
+                  <td data-label="Где писал" class="muted">{{ s.venue.title|default:"дистанционно" }}</td>
+                {% endif %}
+                <td data-label="Балл" class="cell-num">
+                  {% if s.points is None %}
+                    <span class="muted">—</span>
+                  {% else %}
+                    <strong>{{ s.points|floatformat:"-2" }}</strong>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="table-total">
+              <th>Сумма по этапу</th>
+              {% if res.has_mixed_venues %}<th></th>{% endif %}
+              <th class="cell-num">{{ res.total|floatformat:"-2" }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </section>
+    {% endfor %}
+  </div>
 {% endif %}
 
 <h2>Отправленные решения</h2>
