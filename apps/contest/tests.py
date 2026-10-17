@@ -229,6 +229,68 @@ class ReviewGradingTest(TestCase):
         self.assertNotIn("скоро", html)
         self.assertIn("7", html)
 
+    def test_scores_are_grouped_by_stage_with_separate_totals(self):
+        from apps.contest.models import Problem, Score
+        from apps.participation.models import Registration
+        from apps.seasons.models import Season, Stage
+
+        season = Season.objects.active()
+        registration, _ = Registration.objects.get_or_create(user=self.kid, season=season)
+
+        stage1 = self.problem.stage
+        stage1.results_published = True
+        stage1.order = 1
+        stage1.save()
+
+        stage2 = Stage.objects.create(
+            season=season,
+            slug="offline-round",
+            title="Очный этап",
+            kind=Stage.Kind.OFFLINE,
+            order=1,
+            starts_at=stage1.starts_at,
+            ends_at=stage1.ends_at,
+            results_published=True,
+            is_published=True,
+        )
+        problem2 = Problem.objects.create(
+            stage=stage2,
+            number=1,
+            title="Очная задача",
+            status=Problem.Status.APPROVED,
+        )
+
+        Score.objects.create(
+            registration=registration,
+            problem=self.problem,
+            points=Decimal("15"),
+            entered_by=self.organizer,
+        )
+        Score.objects.create(
+            registration=registration,
+            problem=problem2,
+            points=Decimal("40"),
+            entered_by=self.organizer,
+        )
+
+        self.client.force_login(self.kid)
+        resp = self.client.get(reverse("contest:my_submissions"))
+        self.assertEqual(resp.status_code, 200)
+
+        stage_results = resp.context["stage_results"]
+        self.assertEqual(len(stage_results), 2)
+        totals = {sr["stage"].title: sr["total"] for sr in stage_results}
+        self.assertEqual(totals[stage1.title], Decimal("15"))
+        self.assertEqual(totals[stage2.title], Decimal("40"))
+
+        html = resp.content.decode()
+        self.assertIn(stage1.title, html)
+        self.assertIn(stage2.title, html)
+        self.assertIn("15", html)
+        self.assertIn("40", html)
+        self.assertIn("В зачёт отбора идёт лучший результат", html)
+
+
 
 class ProblemApprovalTest(TestCase):
     """Задачу заводит организатор, показывает участникам — администратор."""
