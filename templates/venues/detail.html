@@ -32,6 +32,7 @@
         <a class="btn btn-secondary" href="{% url 'venues:results' venue.pk %}">Итоговая таблица</a>
         <a class="btn btn-secondary" href="{% url 'venues:edit' venue.pk %}">Редактировать</a>
         <a class="btn btn-secondary" href="{% url 'venues:mail' venue.pk %}">Написать участникам</a>
+        <a class="btn btn-secondary" href="{% url 'venues:export' venue.pk %}">Выгрузить в Excel</a>
       </p>
     {% else %}
       <p class="muted">Эту площадку ведут другие организаторы.</p>
