@@ -114,6 +114,7 @@ class Problem(TimeStampedModel):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="authored_problems", verbose_name="автор задачи",
+        limit_choices_to={"role__in": ["organizer", "admin"]},
     )
     reviewers = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True, related_name="reviewed_problems",

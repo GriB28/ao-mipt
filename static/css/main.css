@@ -1288,3 +1288,103 @@ pre { overflow-x: auto; }
   .not-found { flex-direction: column; align-items: flex-start; gap: var(--space-4); }
   .not-found img { width: 160px; }
 }
+
+/* --- Результаты этапов участника ----------------------------------------- */
+
+.stage-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-3) 0 var(--space-6);
+}
+
+.stage-result-card {
+  margin: 0;
+}
+
+.stage-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.stage-result-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.stage-result-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--color-ink-900);
+}
+
+.stage-result-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.stage-result-score-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.stage-result-score-caption {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stage-result-score-value {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  color: var(--color-brand-500);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-result-table {
+  margin-top: var(--space-2);
+  margin-bottom: 0;
+}
+
+.cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-result-table .table-total th {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  border-top: 1px solid var(--border-default);
+}
+
+@media (max-width: 640px) {
+  .stage-result-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .stage-result-score-block {
+    align-items: baseline;
+    flex-direction: row;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  .stage-result-score-value {
+    font-size: var(--text-xl);
+  }
+}
+

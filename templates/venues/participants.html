@@ -7,7 +7,8 @@
 <p class="lead">{{ venue.title }}{% if stage %} · {{ stage.title }}{% endif %}</p>
 <p class="muted">
   <a href="{% url 'venues:edit' venue.pk %}">Редактировать площадку</a> ·
-  <a href="{% url 'venues:mail' venue.pk %}">Написать участникам</a>
+  <a href="{% url 'venues:mail' venue.pk %}">Написать участникам</a> ·
+  <a href="{% url 'venues:export' venue.pk %}">Выгрузить в Excel</a>
 </p>
 
 {% if results_published %}
@@ -68,6 +69,7 @@
       <button class="btn" type="submit">Сохранить баллы</button>
       <a class="btn btn-secondary" href="{% url 'venues:results' venue.pk %}">Итоговая таблица</a>
       <a class="btn btn-secondary" href="{% url 'venues:mail' venue.pk %}">Написать участникам</a>
+      <a class="btn btn-secondary" href="{% url 'venues:export' venue.pk %}">Выгрузить в Excel</a>
     </p>
   </form>
 {% else %}

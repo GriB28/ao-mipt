@@ -16,6 +16,8 @@ urlpatterns = [
     path("venue/<int:pk>/participants/", views.venue_participants, name="participants"),
     path("venue/<int:pk>/results/", views.venue_results, name="results"),
     path("venue/<int:pk>/publish-results/", views.publish_results, name="publish_results"),
+    path("venue/<int:pk>/export/", views.venue_export, name="export"),
+    path("venue/<int:pk>/export-participants/", views.venue_export, name="export_participants"),
     path("apply/", views.apply_venue, name="apply"),
     path("apply/done/", views.apply_done, name="apply_done"),
 ]

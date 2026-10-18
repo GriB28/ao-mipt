@@ -36,7 +36,7 @@ class ProblemAdmin(admin.ModelAdmin):
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "created_by":
             from apps.accounts.models import User
-            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
+            kwargs["queryset"] = User.objects.filter(role__in=[User.Role.ORGANIZER, User.Role.ADMIN])
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     @admin.display(description="проверяющих")

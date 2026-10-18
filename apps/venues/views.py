@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -12,6 +12,7 @@ from apps.contest.scoring import total as total_points
 from apps.participation.models import Registration, VenueBooking, VenueBookingError
 from apps.seasons.models import Season, Stage
 
+from .export import generate_venue_participants_excel
 from .forms import VenueForm, VenueMailForm
 from .models import Venue
 
@@ -29,31 +30,41 @@ def _twin_stage(stage, kind):
     """Тот же тур в другом формате — см. contest.views._twin_stage."""
     if not stage:
         return None
-    return (stage.season.stages.real()
-            .filter(order=stage.order, kind=kind, is_published=True)
-            .exclude(pk=stage.pk).first())
+    return (
+        stage.season.stages.real()
+        .filter(order=stage.order, kind=kind, is_published=True)
+        .exclude(pk=stage.pk)
+        .first()
+    )
 
 
 def _my_booking(user, stage):
     """Текущая запись пользователя на этот этап или None."""
     if not (user.is_authenticated and stage):
         return None
-    return (VenueBooking.objects
-            .filter(registration__user=user, stage=stage)
-            .exclude(status=VenueBooking.Status.CANCELLED)
-            .select_related("venue").first())
+    return (
+        VenueBooking.objects.filter(registration__user=user, stage=stage)
+        .exclude(status=VenueBooking.Status.CANCELLED)
+        .select_related("venue")
+        .first()
+    )
 
 
 def venue_map(request):
     """Страница с картой площадок."""
     season = Season.objects.active()
     stage = _offline_stage(season)
-    return render(request, "venues/map.html", {
-        "season": season, "stage": stage,
-        "my_booking": _my_booking(request.user, stage),
-        "my_venues": Venue.objects.managed_by(request.user),
-        "online_twin": _twin_stage(stage, Stage.Kind.ONLINE),
-    })
+    return render(
+        request,
+        "venues/map.html",
+        {
+            "season": season,
+            "stage": stage,
+            "my_booking": _my_booking(request.user, stage),
+            "my_venues": Venue.objects.managed_by(request.user),
+            "online_twin": _twin_stage(stage, Stage.Kind.ONLINE),
+        },
+    )
 
 
 def venues_geojson(request):
@@ -63,10 +74,12 @@ def venues_geojson(request):
     venues = Venue.objects.public()
     if season:
         venues = venues.filter(seasons=season)
-    return JsonResponse({
-        "type": "FeatureCollection",
-        "features": [v.as_geojson_feature(stage) for v in venues],
-    })
+    return JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": [v.as_geojson_feature(stage) for v in venues],
+        }
+    )
 
 
 def venue_detail(request, pk):
@@ -74,12 +87,18 @@ def venue_detail(request, pk):
     season = Season.objects.active()
     stage = _offline_stage(season)
     booking = _my_booking(request.user, stage)
-    return render(request, "venues/detail.html", {
-        "venue": venue, "season": season, "stage": stage,
-        "my_booking": booking,
-        "booked_here": bool(booking and booking.venue_id == venue.pk),
-        "can_manage": Venue.objects.managed_by(request.user).filter(pk=venue.pk).exists(),
-    })
+    return render(
+        request,
+        "venues/detail.html",
+        {
+            "venue": venue,
+            "season": season,
+            "stage": stage,
+            "my_booking": booking,
+            "booked_here": bool(booking and booking.venue_id == venue.pk),
+            "can_manage": Venue.objects.managed_by(request.user).filter(pk=venue.pk).exists(),
+        },
+    )
 
 
 @require_POST
@@ -94,8 +113,11 @@ def book_venue(request, pk):
         raise PermissionDenied("Организаторы на площадки не записываются.")
     venue = get_object_or_404(Venue.objects.public(), pk=pk)
     if not request.user.can_participate:
-        messages.error(request, "Чтобы записаться на площадку, заполните анкету и загрузите "
-                                "согласие на обработку персональных данных.")
+        messages.error(
+            request,
+            "Чтобы записаться на площадку, заполните анкету и загрузите "
+            "согласие на обработку персональных данных.",
+        )
         return redirect("accounts:profile")
     season = Season.objects.active()
     stage = _offline_stage(season)
@@ -176,9 +198,7 @@ def _venue_problems(stage):
     """
     if not stage:
         return Problem.objects.none()
-    return (Problem.objects
-            .filter(stage=stage, status=Problem.Status.APPROVED)
-            .order_by("number"))
+    return Problem.objects.filter(stage=stage, status=Problem.Status.APPROVED).order_by("number")
 
 
 @login_required
@@ -195,11 +215,12 @@ def venue_participants(request, pk):
     stage = _offline_stage(season)
     problems = list(_venue_problems(stage))
 
-    bookings = (VenueBooking.objects
-                .filter(venue=venue, stage=stage)
-                .exclude(status=VenueBooking.Status.CANCELLED)
-                .select_related("registration__user", "registration__user__profile")
-                .order_by("registration__user__profile__last_name"))
+    bookings = (
+        VenueBooking.objects.filter(venue=venue, stage=stage)
+        .exclude(status=VenueBooking.Status.CANCELLED)
+        .select_related("registration__user", "registration__user__profile")
+        .order_by("registration__user__profile__last_name")
+    )
 
     if request.method == "POST":
         saved = _save_scores(request, venue, bookings, problems)
@@ -210,8 +231,7 @@ def venue_participants(request, pk):
     # не делал запрос на каждую клетку таблицы.
     existing = {
         (score.registration_id, score.problem_id): score
-        for score in Score.objects.filter(registration__bookings__venue=venue,
-                                          problem__in=problems)
+        for score in Score.objects.filter(registration__bookings__venue=venue, problem__in=problems)
     }
     rows = []
     for booking in bookings:
@@ -223,16 +243,25 @@ def venue_participants(request, pk):
             }
             for problem in problems
         ]
-        rows.append({
-            "booking": booking,
-            "cells": cells,
-            "total": total_points((c["problem"], c["value"]) for c in cells),
-        })
+        rows.append(
+            {
+                "booking": booking,
+                "cells": cells,
+                "total": total_points((c["problem"], c["value"]) for c in cells),
+            }
+        )
 
-    return render(request, "venues/participants.html", {
-        "venue": venue, "stage": stage, "problems": problems, "rows": rows,
-        "results_published": bool(stage and stage.results_published),
-    })
+    return render(
+        request,
+        "venues/participants.html",
+        {
+            "venue": venue,
+            "stage": stage,
+            "problems": problems,
+            "rows": rows,
+            "results_published": bool(stage and stage.results_published),
+        },
+    )
 
 
 def _save_scores(request, venue, bookings, problems):
@@ -251,7 +280,8 @@ def _save_scores(request, venue, bookings, problems):
                 messages.error(request, f"«{raw}» — это не число, балл не сохранён.")
                 continue
             Score.objects.update_or_create(
-                registration_id=registration_id, problem=problem,
+                registration_id=registration_id,
+                problem=problem,
                 defaults={"points": points, "venue": venue, "entered_by": request.user},
             )
             saved += 1
@@ -266,30 +296,41 @@ def venue_results(request, pk):
     stage = _offline_stage(season)
     problems = list(_venue_problems(stage))
 
-    bookings = (VenueBooking.objects
-                .filter(venue=venue, stage=stage)
-                .exclude(status=VenueBooking.Status.CANCELLED)
-                .select_related("registration__user", "registration__user__profile"))
+    bookings = (
+        VenueBooking.objects.filter(venue=venue, stage=stage)
+        .exclude(status=VenueBooking.Status.CANCELLED)
+        .select_related("registration__user", "registration__user__profile")
+    )
 
     scores = {}
-    for score in Score.objects.filter(problem__in=problems,
-                                      registration__in=[b.registration_id for b in bookings]):
+    for score in Score.objects.filter(
+        problem__in=problems, registration__in=[b.registration_id for b in bookings]
+    ):
         scores.setdefault(score.registration_id, {})[score.problem_id] = score.points
 
     rows = []
     for booking in bookings:
         by_problem = scores.get(booking.registration_id, {})
         values = [by_problem.get(p.pk) for p in problems]
-        rows.append({
-            "booking": booking,
-            "values": values,
-            "total": total_points(zip(problems, values, strict=True)),
-        })
+        rows.append(
+            {
+                "booking": booking,
+                "values": values,
+                "total": total_points(zip(problems, values, strict=True)),
+            }
+        )
     rows.sort(key=lambda r: r["total"], reverse=True)
 
-    return render(request, "venues/results.html", {
-        "venue": venue, "stage": stage, "problems": problems, "rows": rows,
-    })
+    return render(
+        request,
+        "venues/results.html",
+        {
+            "venue": venue,
+            "stage": stage,
+            "problems": problems,
+            "rows": rows,
+        },
+    )
 
 
 @require_POST
@@ -304,9 +345,12 @@ def publish_results(request, pk):
     if stage:
         stage.results_published = not stage.results_published
         stage.save(update_fields=["results_published"])
-        messages.success(request, "Результаты этапа опубликованы — участники видят свои баллы."
-                         if stage.results_published else
-                         "Результаты скрыты от участников.")
+        messages.success(
+            request,
+            "Результаты этапа опубликованы — участники видят свои баллы."
+            if stage.results_published
+            else "Результаты скрыты от участников.",
+        )
     return redirect("venues:participants", pk=venue.pk)
 
 
@@ -343,8 +387,7 @@ def venue_mail(request, pk):
 
     venue = _managed_venue_or_403(request.user, pk)
     form = VenueMailForm(request.POST or None)
-    recipients = Newsletter(audience=Newsletter.Audience.VENUE_PARTICIPANTS,
-                            venue=venue).get_recipients()
+    recipients = Newsletter(audience=Newsletter.Audience.VENUE_PARTICIPANTS, venue=venue).get_recipients()
 
     if request.method == "POST" and form.is_valid():
         newsletter = Newsletter.objects.create(
@@ -362,10 +405,50 @@ def venue_mail(request, pk):
         messages.success(
             request,
             f"Получателей: {count}. Отправлено: {stats['sent']}."
-            + (f" Не доставлено: {stats['failed']}." if stats["failed"] else "")
+            + (f" Не доставлено: {stats['failed']}." if stats["failed"] else ""),
         )
         return redirect("venues:participants", pk=venue.pk)
 
-    return render(request, "venues/mail.html", {
-        "venue": venue, "form": form, "recipients": recipients,
-    })
+    return render(
+        request,
+        "venues/mail.html",
+        {
+            "venue": venue,
+            "form": form,
+            "recipients": recipients,
+        },
+    )
+
+
+@login_required
+def venue_export(request, pk):
+    """Выгрузка участников площадки в Excel: ФИО, паспортные данные, адрес площадки."""
+    venue = _managed_venue_or_403(request.user, pk)
+    season = Season.objects.active()
+    stage = _offline_stage(season)
+
+    bookings = (
+        (
+            VenueBooking.objects.filter(venue=venue, stage=stage)
+            .exclude(status=VenueBooking.Status.CANCELLED)
+            .select_related("registration__user", "registration__user__profile")
+            .order_by(
+                "registration__user__profile__last_name",
+                "registration__user__profile__first_name",
+                "registration__user__email",
+            )
+        )
+        if stage
+        else VenueBooking.objects.none()
+    )
+
+    content = generate_venue_participants_excel(venue, bookings)
+
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="venue-{venue.pk}-participants.xlsx"'
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
