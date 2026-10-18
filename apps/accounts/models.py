@@ -409,3 +409,16 @@ class OrganizerProfile(TimeStampedModel):
     @property
     def full_name(self):
         return " ".join(filter(None, [self.last_name, self.first_name, self.middle_name]))
+
+
+class StaffUser(User):
+    """Организаторы и администраторы: срез пользователей для админки.
+
+    Используется в админке для отдельного списка управляющих с информацией
+    о привязке к площадкам и назначенных задачах.
+    """
+
+    class Meta:
+        proxy = True
+        verbose_name = "администратор или организатор"
+        verbose_name_plural = "администраторы и организаторы"
