@@ -118,6 +118,7 @@ class VenueExportViewTests(TestCase):
             last_name="Иванов",
             first_name="Иван",
             middle_name="Иванович",
+            school="ГБОУ Лицей № 1502",
             doc_type=DocumentType.PASSPORT_RF,
             doc_series="4510",
             doc_number="123456",
@@ -182,7 +183,7 @@ class VenueExportViewTests(TestCase):
 
         # Заголовки
         headers = [cell.value for cell in ws[1]]
-        self.assertEqual(headers, ["ФИО", "Паспортные данные", "Адрес точки проведения"])
+        self.assertEqual(headers, ["ФИО", "Паспортные данные", "Школа", "Адрес точки проведения"])
 
         # Строки с данными
         rows = list(ws.iter_rows(min_row=2, values_only=True))
@@ -193,12 +194,14 @@ class VenueExportViewTests(TestCase):
         row_ivanov = next(r for r in rows if "Иванов Иван Иванович" in r[0])
         self.assertIn("Паспорт РФ: серия 4510 № 123456", row_ivanov[1])
         self.assertIn("код подразделения 770-001", row_ivanov[1])
-        self.assertEqual(row_ivanov[2], self.venue.address)
+        self.assertEqual(row_ivanov[2], "ГБОУ Лицей № 1502")
+        self.assertEqual(row_ivanov[3], self.venue.address)
 
-        # Проверяем участника 2 (без профиля ПД)
+        # Проверяем участника 2 (без профиля ПД и школы)
         row_petrov = next(r for r in rows if "Петров" in r[0] or "petrov@b.ru" in r[0])
         self.assertIn(row_petrov[1], ("", None))
-        self.assertEqual(row_petrov[2], self.venue.address)
+        self.assertIn(row_petrov[2], ("", None))
+        self.assertEqual(row_petrov[3], self.venue.address)
 
         # Участника с отменённой записью быть не должно
         self.assertFalse(any("canc@b.ru" in str(r[0]) for r in rows))

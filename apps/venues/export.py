@@ -64,30 +64,34 @@ def generate_venue_participants_excel(venue, bookings):
     ws = wb.active
     ws.title = "Участники"
 
-    headers = ["ФИО", "Паспортные данные", "Адрес точки проведения"]
+    headers = ["ФИО", "Паспортные данные", "Школа", "Адрес точки проведения"]
     ws.append(headers)
 
     header_font = Font(name="Calibri", size=11, bold=True)
     header_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    header_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
     for col_idx in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.font = header_font
         cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="left", vertical="center")
+        cell.alignment = header_alignment
 
     for booking in bookings:
         user = booking.registration.user
         profile = getattr(user, "profile", None)
-        fio = profile.full_name if (profile and profile.full_name) else (user.get_full_name() or user.email)
+        full_name = profile.full_name if (profile and profile.full_name) else (user.get_full_name() or user.email)
         passport = format_passport_data(profile)
+        school = (profile.school or "").strip() if profile else ""
         address = venue.address or ""
-        ws.append([fio, passport, address])
+        ws.append([full_name, passport, school, address])
 
-    for row in ws.iter_rows(min_row=2, max_row=max(ws.max_row, 2), min_col=1, max_col=3):
+    data_alignment = Alignment(vertical="center", wrap_text=True)
+    for row in ws.iter_rows(min_row=2, max_row=max(ws.max_row, 2), min_col=1, max_col=4):
         for cell in row:
-            cell.alignment = Alignment(vertical="center")
+            cell.alignment = data_alignment
 
-    min_widths = [30, 45, 35]
+    min_widths = [30, 45, 30, 35]
     for col_idx, min_w in enumerate(min_widths, 1):
         col_letter = get_column_letter(col_idx)
         max_len = max(len(str(ws.cell(row=r, column=col_idx).value or "")) for r in range(1, ws.max_row + 1))
