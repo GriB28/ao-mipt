@@ -8,6 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from .emails import make_token
 from .models import ConsentDocument, DocumentType, ParticipantProfile, User
@@ -753,3 +754,89 @@ class ConsentTest(TestCase):
     def test_old_policy_address_redirects(self):
         response = self.client.get(reverse("content:page", args=["privacy"]))
         self.assertRedirects(response, "https://mipt.ru/privacy", fetch_redirect_response=False)
+
+
+class StaffUserAdminTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser("super@test.ru", "olymp12345")
+        self.organizer = User.objects.create_user("org@test.ru", "olymp12345", role=User.Role.ORGANIZER)
+        self.participant = User.objects.create_user("student@test.ru", "olymp12345", role=User.Role.PARTICIPANT)
+
+    def test_staff_user_admin_access(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:accounts_staffuser_changelist")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "super@test.ru")
+        self.assertContains(response, "org@test.ru")
+        self.assertNotContains(response, "student@test.ru")
+
+    def test_organizer_cannot_access_staff_user_admin(self):
+        self.client.force_login(self.organizer)
+        url = reverse("admin:accounts_staffuser_changelist")
+        response = self.client.get(url)
+        self.assertIn(response.status_code, (302, 403))
+
+    def test_venue_presence_and_problem_counts(self):
+        from apps.contest.models import Problem
+        from apps.seasons.models import Season, Stage
+        from apps.venues.models import Venue
+
+        now = timezone.now()
+        season = Season.objects.create(title="Сезон 1", slug="ao26", year=2026, is_active=True, is_published=True)
+        stage = Stage.objects.create(
+            season=season, title="Дистант", slug="online", kind=Stage.Kind.ONLINE,
+            order=1, starts_at=now, ends_at=now,
+        )
+        venue = Venue.objects.create(
+            title="Тестовая площадка", region="Москва", city="Москва",
+            address="ул. Тестовая, 1", latitude=55.75, longitude=37.61,
+        )
+        venue.managers.add(self.organizer)
+
+        Problem.objects.create(stage=stage, number=1, title="Задача 1", created_by=self.organizer)
+        problem2 = Problem.objects.create(stage=stage, number=2, title="Задача 2", created_by=self.admin)
+        problem2.reviewers.add(self.organizer)
+
+        self.client.force_login(self.admin)
+        url = reverse("admin:accounts_staffuser_changelist")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+        cl = response.context["cl"]
+        qs = cl.queryset
+        org_row = qs.get(email="org@test.ru")
+        self.assertEqual(org_row.venue_count, 1)
+        self.assertEqual(org_row.authored_problems_count, 1)
+        self.assertEqual(org_row.reviewed_problems_count, 1)
+
+        admin_row = qs.get(email="super@test.ru")
+        self.assertEqual(admin_row.venue_count, 0)
+        self.assertEqual(admin_row.authored_problems_count, 1)
+        self.assertEqual(admin_row.reviewed_problems_count, 0)
+
+    def test_has_venue_filter(self):
+        from apps.venues.models import Venue
+
+        venue = Venue.objects.create(
+            title="Тестовая площадка", region="Москва", city="Москва",
+            address="ул. Тестовая, 1", latitude=55.75, longitude=37.61,
+        )
+        venue.managers.add(self.organizer)
+
+        self.client.force_login(self.admin)
+        url = reverse("admin:accounts_staffuser_changelist")
+
+        # Filter with venue
+        resp_yes = self.client.get(f"{url}?has_venue=yes")
+        self.assertEqual(resp_yes.status_code, 200)
+        cl_yes = resp_yes.context["cl"]
+        self.assertIn(self.organizer, cl_yes.queryset)
+        self.assertNotIn(self.admin, cl_yes.queryset)
+
+        # Filter without venue
+        resp_no = self.client.get(f"{url}?has_venue=no")
+        self.assertEqual(resp_no.status_code, 200)
+        cl_no = resp_no.context["cl"]
+        self.assertIn(self.admin, cl_no.queryset)
+        self.assertNotIn(self.organizer, cl_no.queryset)

@@ -3,6 +3,7 @@ from pathlib import Path
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
@@ -12,7 +13,7 @@ from apps.seasons.models import Season
 
 from .emails import send_consent_rejected
 from .forms import ConsentDocumentAddForm
-from .models import ConsentDocument, OrganizerProfile, ParticipantProfile, User
+from .models import ConsentDocument, OrganizerProfile, ParticipantProfile, StaffUser, User
 
 
 class AdminsOnly:
@@ -139,6 +140,94 @@ class UserAdmin(AdminsOnly, BaseUserAdmin):
     add_fieldsets = (
         (None, {"classes": ("wide",), "fields": ("email", "password1", "password2", "role")}),
     )
+
+
+class HasVenueFilter(admin.SimpleListFilter):
+    title = "наличие площадки"
+    parameter_name = "has_venue"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("yes", "Есть площадка"),
+            ("no", "Нет площадки"),
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(managed_venues__isnull=False).distinct()
+        if self.value() == "no":
+            return queryset.filter(managed_venues__isnull=True)
+        return queryset
+
+
+class OrganizerProfileInline(AdminsOnly, admin.StackedInline):
+    model = OrganizerProfile
+    can_delete = False
+    extra = 0
+
+
+@admin.register(StaffUser)
+class StaffUserAdmin(UserAdmin):
+    """Список администраторов и организаторов с информацией о площадках и задачах."""
+
+    list_display = (
+        "email",
+        "role",
+        "has_venue",
+        "authored_problems_count",
+        "reviewed_problems_count",
+    )
+    list_display_links = ("email",)
+    list_filter = ("role", HasVenueFilter, "is_active")
+    inlines = [OrganizerProfileInline, ProfileInline, ConsentInline]
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .filter(
+                models.Q(role__in=[User.Role.ADMIN, User.Role.ORGANIZER])
+                | models.Q(is_superuser=True)
+                | models.Q(managed_venues__isnull=False)
+            )
+            .distinct()
+            .annotate(
+                venue_count=models.Count("managed_venues", distinct=True),
+                authored_problems_count=models.Count("authored_problems", distinct=True),
+                reviewed_problems_count=models.Count("reviewed_problems", distinct=True),
+            )
+        )
+
+    @admin.display(description="наличие площадки", boolean=True, ordering="venue_count")
+    def has_venue(self, obj):
+        if hasattr(obj, "venue_count"):
+            return obj.venue_count > 0
+        return obj.managed_venues.exists()
+
+    @admin.display(description="сколько задач написал", ordering="authored_problems_count")
+    def authored_problems_count(self, obj):
+        if hasattr(obj, "authored_problems_count"):
+            return obj.authored_problems_count
+        return obj.authored_problems.count()
+
+    @admin.display(description="сколько задач для проверки на него записано", ordering="reviewed_problems_count")
+    def reviewed_problems_count(self, obj):
+        if hasattr(obj, "reviewed_problems_count"):
+            return obj.reviewed_problems_count
+        return obj.reviewed_problems.count()
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        initial.setdefault("role", User.Role.ORGANIZER)
+        return initial
+
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        if db_field.name == "role":
+            kwargs["choices"] = [
+                (User.Role.ORGANIZER, "Организатор"),
+                (User.Role.ADMIN, "Администратор"),
+            ]
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
 
 
 @admin.register(OrganizerProfile)
