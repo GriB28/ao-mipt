@@ -690,3 +690,42 @@ class SecurityTest(TestCase):
         self.assertTrue(path.endswith("/data.csv"))
         # Имя файла задачи не угадать: в пути случайная папка.
         self.assertNotEqual(problem_upload_path(problem, "a.png"), problem_upload_path(problem, "a.png"))
+
+
+class ProblemAdminAuthorFieldTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin_user = User.objects.create_superuser("admin_author_test@example.com", "pass12345")
+        cls.organizer_user = User.objects.create_user(
+            "org_author_test@example.com", "pass12345", role=User.Role.ORGANIZER
+        )
+        cls.participant_user = User.objects.create_user(
+            "student_author_test@example.com", "pass12345", role=User.Role.PARTICIPANT
+        )
+
+    def test_autocomplete_shows_only_organizers_and_admins(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            reverse("admin:autocomplete"),
+            {"app_label": "contest", "model_name": "problem", "field_name": "created_by", "term": ""},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        result_ids = [int(item["id"]) for item in data["results"]]
+        self.assertIn(self.admin_user.pk, result_ids)
+        self.assertIn(self.organizer_user.pk, result_ids)
+        self.assertNotIn(self.participant_user.pk, result_ids)
+
+    def test_problem_form_queryset_excludes_participants(self):
+        from django.contrib.admin.sites import site
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/admin/contest/problem/add/")
+        request.user = self.admin_user
+        problem_admin = site._registry[Problem]
+        form = problem_admin.get_form(request)()
+        queryset = form.fields["created_by"].queryset
+        self.assertIn(self.admin_user, queryset)
+        self.assertIn(self.organizer_user, queryset)
+        self.assertNotIn(self.participant_user, queryset)
+
