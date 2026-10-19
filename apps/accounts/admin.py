@@ -243,18 +243,11 @@ class OrganizerProfileAdmin(AdminsOnly, admin.ModelAdmin):
 
 @admin.register(ParticipantProfile)
 class ParticipantProfileAdmin(ParticipantConsentAdminMixin, AdminsOnly, admin.ModelAdmin):
-    list_display = ("full_name", "user", "grade", "school", "city", "complete", "consent_status", "book_link")
+    list_display = ("full_name", "user", "grade", "school", "city", "complete", "consent_status")
     list_filter = ("grade", "region")
     search_fields = ("last_name", "first_name", "school", "user__email")
     fieldsets = PROFILE_FIELDSETS
     readonly_fields = ("consent_summary",)
-
-    @admin.display(description="запись на точку")
-    def book_link(self, obj):
-        if not obj or not getattr(obj, "user_id", None):
-            return "—"
-        url = reverse("admin:participation_venuebooking_add") + f"?user={obj.user_id}"
-        return format_html('<a class="button" style="padding: 2px 8px; font-size: 11px;" href="{}">+ Записать</a>', url)
 
     @admin.display(description="анкета заполнена", boolean=True)
     def complete(self, obj):
