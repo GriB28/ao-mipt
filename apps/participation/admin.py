@@ -21,8 +21,12 @@ class VenueBookingAdmin(admin.ModelAdmin):
     «Пришёл» после тура — для списков и ведомостей.
     """
 
-    list_display = ("registration", "stage", "venue", "status")
-    list_filter = ("stage", "status", "venue__region", "venue")
-    search_fields = ("registration__user__email", "venue__title")
+    list_display = ("registration", "stage", "venue", "variant", "held_at", "has_scan", "status")
+    list_filter = ("stage", "variant", "status", "venue__region", "venue")
+    search_fields = ("registration__user__email", "registration__user__profile__last_name", "venue__title")
     autocomplete_fields = ("venue",)
     list_select_related = ("registration__user", "stage", "venue")
+
+    @admin.display(description="скан", boolean=True)
+    def has_scan(self, obj):
+        return bool(obj.work_scan)

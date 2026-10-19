@@ -80,6 +80,14 @@ class Venue(TimeStampedModel):
         related_name="created_venues", verbose_name="кто подал заявку",
     )
     seasons = models.ManyToManyField(Season, related_name="venues", blank=True, verbose_name="сезоны")
+    default_variant = models.PositiveSmallIntegerField(
+        "комплект по умолчанию", choices=[(1, "Комплект 1"), (2, "Комплект 2")],
+        default=1, help_text="Комплект заданий очного тура на этой площадке",
+    )
+    event_date = models.DateField(
+        "дата проведения", null=True, blank=True,
+        help_text="Дата проведения тура на этой площадке",
+    )
 
     objects = VenueQuerySet.as_manager()
 

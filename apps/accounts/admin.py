@@ -175,7 +175,6 @@ class StaffUserAdmin(UserAdmin):
         "role",
         "has_venue",
         "authored_problems_count",
-        "reviewed_problems_count",
     )
     list_display_links = ("email",)
     list_filter = ("role", HasVenueFilter, "is_active")
@@ -194,7 +193,6 @@ class StaffUserAdmin(UserAdmin):
             .annotate(
                 venue_count=models.Count("managed_venues", distinct=True),
                 authored_problems_count=models.Count("authored_problems", distinct=True),
-                reviewed_problems_count=models.Count("reviewed_problems", distinct=True),
             )
         )
 
@@ -209,12 +207,6 @@ class StaffUserAdmin(UserAdmin):
         if hasattr(obj, "authored_problems_count"):
             return obj.authored_problems_count
         return obj.authored_problems.count()
-
-    @admin.display(description="сколько задач для проверки на него записано", ordering="reviewed_problems_count")
-    def reviewed_problems_count(self, obj):
-        if hasattr(obj, "reviewed_problems_count"):
-            return obj.reviewed_problems_count
-        return obj.reviewed_problems.count()
 
     def get_changeform_initial_data(self, request):
         initial = super().get_changeform_initial_data(request)

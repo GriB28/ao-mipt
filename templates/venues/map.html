@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Очный тур — площадки{% endblock %}
+{% block title %}Очный тур{% if tab == 'grading' %} — Проверка задач{% elif tab == 'scans' %} — Загрузка скана работы{% else %} — Площадки{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -17,7 +17,7 @@
     <p class="muted"><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку или отменить запись →</a></p>
   {% endif %}
 {% endif %}
-{% if online_twin %}
+{% if online_twin and not user.is_manager %}
   <p class="note">
     Первый отборочный этап идёт в двух форматах: очно на площадке и дистанционно
     ({{ online_twin.starts_at|date:"d.m" }}–{{ online_twin.ends_at|date:"d.m.Y" }}).
@@ -26,10 +26,26 @@
   </p>
 {% endif %}
 
-<p class="muted prose">Выберите точку на карте, чтобы посмотреть адрес и записаться.
-  Не нашли свой город — участвуйте дистанционно, это равноценный вариант.</p>
+{% if user.is_manager %}
+  <nav class="sub-tabs-nav" aria-label="Разделы очного тура">
+    <a href="{% url 'venues:map' %}?tab=map" class="sub-tab-link {% if tab == 'map' or not tab %}active{% endif %}">Карта точек проведения</a>
+    <a href="{% url 'venues:map' %}?tab=grading" class="sub-tab-link {% if tab == 'grading' %}active{% endif %}">Проверка задач</a>
+    <a href="{% url 'venues:map' %}?tab=scans" class="sub-tab-link {% if tab == 'scans' %}active{% endif %}">Загрузка скана работы</a>
+  </nav>
 
-{% include "venues/_organizer_bar.html" %}
-
-{% include "venues/_map.html" %}
+  {% if tab == "grading" %}
+    {% include "venues/_offline_grading.html" %}
+  {% elif tab == "scans" %}
+    {% include "venues/_offline_scans.html" %}
+  {% else %}
+    <p class="muted prose">Выберите точку на карте, чтобы посмотреть адрес и записаться.
+      Не нашли свой город — участвуйте дистанционно, это равноценный вариант.</p>
+    {% include "venues/_organizer_bar.html" %}
+    {% include "venues/_map.html" %}
+  {% endif %}
+{% else %}
+  <p class="muted prose">Выберите точку на карте, чтобы посмотреть адрес и записаться.
+    Не нашли свой город — участвуйте дистанционно, это равноценный вариант.</p>
+  {% include "venues/_map.html" %}
+{% endif %}
 {% endblock %}

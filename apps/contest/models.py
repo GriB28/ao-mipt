@@ -52,10 +52,9 @@ class ProblemQuerySet(models.QuerySet):
         )
 
     def editable_by(self, user):
-        """Задачи, которые человек вправе открыть в рабочем месте организатора.
+        """Задачи, которые человек вправе открыть для редактирования в рабочем месте организатора.
 
-        Администратор видит все — ему их одобрять. Организатор видит свои
-        и те, куда его назначили дополнительным проверяющим.
+        Администратор видит все — ему их одобрять. Организатор видит свои, которые создал.
         """
         from apps.accounts.models import User
 
@@ -63,7 +62,7 @@ class ProblemQuerySet(models.QuerySet):
             return self.none()
         if user.is_superuser or user.role == User.Role.ADMIN:
             return self.all()
-        return self.filter(models.Q(created_by=user) | models.Q(reviewers=user)).distinct()
+        return self.filter(created_by=user)
 
 
 class Problem(TimeStampedModel):
@@ -72,8 +71,7 @@ class Problem(TimeStampedModel):
 
     Путь задачи: организатор заводит черновик → отправляет на одобрение →
     администратор одобряет, и только после этого её видят участники.
-    Проверять решения могут автор задачи и назначенные администратором
-    дополнительные проверяющие.
+    Проверять решения и ставить баллы может любой организатор или администратор.
     """
 
     class Status(models.TextChoices):
@@ -83,7 +81,10 @@ class Problem(TimeStampedModel):
         REJECTED = "rejected", "Отклонена"
 
     stage = models.ForeignKey(Stage, on_delete=models.CASCADE, related_name="problems", verbose_name="этап")
-    number = models.PositiveSmallIntegerField("номер", default=1)
+    number = models.CharField(
+        "номер", max_length=10, default="1",
+        help_text="Например: 1, 2 для онлайн; 1.1–1.5 (Комплект 1) и 2.1–2.5 (Комплект 2) для очного",
+    )
     title = models.CharField("название", max_length=250)
     statement_html = models.TextField(
         "условие", blank=True,
@@ -116,11 +117,6 @@ class Problem(TimeStampedModel):
         related_name="authored_problems", verbose_name="автор задачи",
         limit_choices_to={"role__in": ["organizer", "admin"]},
     )
-    reviewers = models.ManyToManyField(
-        settings.AUTH_USER_MODEL, blank=True, related_name="reviewed_problems",
-        verbose_name="дополнительные проверяющие",
-        help_text="Кроме автора задачи. Назначает администратор",
-    )
 
     solution_pdf = models.FileField("разбор (PDF)", upload_to=problem_upload_path, blank=True,
                                     validators=[validate_upload_size])
@@ -139,19 +135,39 @@ class Problem(TimeStampedModel):
     def __str__(self):
         return f"{self.number}. {self.title}"
 
+    def get_absolute_url(self):
+        return reverse("contest:problem_detail", args=[self.pk])
+
     @property
     def is_approved(self) -> bool:
         return self.status == self.Status.APPROVED
 
-    def can_be_reviewed_by(self, user) -> bool:
-        """Кто вправе проверять решения этой задачи."""
-        from apps.accounts.models import User
+    @property
+    def variant(self) -> int | None:
+        """Определяет комплект по номеру задачи: '1.x' -> 1, '2.x' -> 2."""
+        num = str(self.number).strip()
+        if num.startswith("1."):
+            return 1
+        elif num.startswith("2."):
+            return 2
+        return None
 
+    @property
+    def sort_key(self):
+        """Ключ натуральной сортировки: 1.1 < 1.2 < 1.10 < 2.1."""
+        parts = []
+        for part in str(self.number).strip().split("."):
+            if part.isdigit():
+                parts.append((0, int(part)))
+            else:
+                parts.append((1, part))
+        return parts
+
+    def can_be_reviewed_by(self, user) -> bool:
+        """Кто вправе проверять решения этой задачи: любой организатор или админ."""
         if not user.is_authenticated:
             return False
-        if user.is_superuser or user.role == User.Role.ADMIN:
-            return True
-        return self.created_by_id == user.pk or self.reviewers.filter(pk=user.pk).exists()
+        return user.is_manager
 
     @property
     def accepts_submissions(self):
@@ -317,6 +333,10 @@ class Score(TimeStampedModel):
     entered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="entered_scores", verbose_name="кто внёс",
+    )
+    is_skipped = models.BooleanField(
+        "пропущена", default=False,
+        help_text="Задача не входит в комплект участника или пропущена",
     )
 
     class Meta:

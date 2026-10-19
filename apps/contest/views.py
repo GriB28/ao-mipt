@@ -1,3 +1,5 @@
+import json
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from django.conf import settings
@@ -5,15 +7,17 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.core.files import protected_file_response
 from apps.core.validators import validate_solution_file
+from apps.participation.models import Registration, VenueBooking
 from apps.seasons.models import Season, Stage
 
 from .forms import GradeForm, ProblemForm, SubmissionForm
@@ -248,22 +252,22 @@ def my_submissions(request):
                 stages_map[st.pk]["venue"] = s.venue
 
         from apps.participation.models import VenueBooking
-        missing_venues = [st_pk for st_pk, item in stages_map.items() if not item["venue"]]
-        if missing_venues:
-            bookings = {
-                b.stage_id: b.venue
-                for b in VenueBooking.objects.filter(
-                    registration__user=request.user,
-                    stage_id__in=missing_venues,
-                ).select_related("venue")
-            }
-            for st_pk in missing_venues:
-                if st_pk in bookings:
-                    stages_map[st_pk]["venue"] = bookings[st_pk]
+        user_bookings = {
+            b.stage_id: b
+            for b in VenueBooking.objects.filter(
+                registration__user=request.user,
+            ).select_related("venue")
+        }
 
         for item in stages_map.values():
             item["total"] = scoring_total((s.problem, s.points) for s in item["scores"])
             item["has_mixed_venues"] = len({s.venue_id for s in item["scores"]}) > 1
+            b = user_bookings.get(item["stage"].pk)
+            if b:
+                if not item["venue"]:
+                    item["venue"] = b.venue
+                if b.work_scan and item["stage"].results_published:
+                    item["work_scan_url"] = b.get_scan_url()
             stage_results.append(item)
 
         # Выявляем этапы с одинаковым порядком (например, очный и онлайн отборы одного тура)
@@ -307,42 +311,236 @@ def _require_reviewer(user):
         raise PermissionDenied("Проверять решения могут только организаторы.")
 
 
+def _format_points(val):
+    if val is None:
+        return ""
+    return str(int(val)) if val == val.to_integral() else f"{val:.2f}".rstrip("0").rstrip(".")
+
+
 @login_required
 def review_list(request):
-    """Очередь проверки: что прислали и что ещё не посмотрели."""
+    """Сводная ведомость проверки дистанционного тура: матрица участников и задач."""
     _require_reviewer(request.user)
 
-    # Организатор видит решения только тех задач, где он автор или
-    # назначен проверяющим; администратор — все.
-    mine = Problem.objects.editable_by(request.user)
-    submissions = (Submission.objects
-                   .filter(is_latest=True, problem__in=mine)
-                   .select_related("problem", "problem__stage", "user", "user__profile", "grade")
-                   .order_by("problem__stage__order", "problem__number", "created_at"))
+    season = Season.objects.active()
+    stage = _online_stage(season)
 
-    problem_id = request.GET.get("problem")
-    if problem_id:
-        submissions = submissions.filter(problem_id=problem_id)
+    # Задачи текущего этапа (или все одобренные с решениями)
+    if stage:
+        problems = list(stage.problems.filter(status=Problem.Status.APPROVED))
+    else:
+        problems = list(Problem.objects.filter(status=Problem.Status.APPROVED))
+    problems.sort(key=lambda p: p.sort_key)
 
-    # По умолчанию показываем непроверенные: именно за ними сюда заходят.
-    status = request.GET.get("status", "todo")
-    if status == "todo":
-        submissions = submissions.exclude(grade__status=Grade.Status.GRADED)
-    elif status == "graded":
-        submissions = submissions.filter(grade__status=Grade.Status.GRADED)
+    problem_id = request.GET.get("problem", "").strip()
+    status_filter = request.GET.get("status", "todo")
+    search_query = request.GET.get("q", "").strip()
 
-    problems = (mine.filter(submissions__isnull=False)
-                .distinct()
-                .select_related("stage")
-                .order_by("stage__order", "number"))
+    # Все последние решения по этим задачам
+    submissions_qs = (
+        Submission.objects.filter(is_latest=True, problem__in=problems)
+        .select_related("problem", "user", "user__profile", "grade")
+        .prefetch_related("files")
+        .order_by("created_at")
+    )
+
+    if problem_id and problem_id.isdigit():
+        submissions_qs = submissions_qs.filter(problem_id=int(problem_id))
+
+    # Сгруппируем по пользователям
+    user_submissions = {}
+    users_order = []
+    for sub in submissions_qs:
+        if sub.user not in user_submissions:
+            user_submissions[sub.user] = {}
+            users_order.append(sub.user)
+        user_submissions[sub.user][sub.problem_id] = sub
+
+    # Обработка POST сохранения всей таблицы
+    if request.method == "POST":
+        saved = 0
+        for sub in submissions_qs:
+            raw = request.POST.get(f"score_{sub.pk}")
+            if raw is not None:
+                raw = raw.strip()
+                if raw == "":
+                    if hasattr(sub, "grade"):
+                        sub.grade.score = None
+                        sub.grade.status = Grade.Status.NEW
+                        sub.grade.save()
+                    Score.objects.filter(
+                        registration__user=sub.user, problem=sub.problem
+                    ).delete()
+                else:
+                    try:
+                        points = Decimal(raw.replace(",", "."))
+                    except InvalidOperation:
+                        continue
+                    grade, _ = Grade.objects.get_or_create(submission=sub)
+                    grade.score = points
+                    grade.reviewer = request.user
+                    grade.status = Grade.Status.GRADED
+                    grade.save()
+
+                    reg, _ = Registration.objects.get_or_create(
+                        user=sub.user, season=sub.problem.stage.season
+                    )
+                    Score.objects.update_or_create(
+                        registration=reg,
+                        problem=sub.problem,
+                        defaults={
+                            "points": points,
+                            "entered_by": request.user,
+                            "is_skipped": False,
+                        },
+                    )
+                    saved += 1
+        messages.success(request, f"Сохранено оценок: {saved}.")
+        return redirect(request.get_full_path())
+
+    # Формируем строки для отображения
+    rows = []
+    todo_count = 0
+    for user in users_order:
+        user_subs = user_submissions[user]
+        profile = getattr(user, "profile", None)
+        full_name = profile.full_name if profile and profile.full_name else user.email
+
+        if search_query:
+            q_lower = search_query.lower()
+            if q_lower not in full_name.lower() and q_lower not in user.email.lower():
+                continue
+
+        has_todo = any(
+            not hasattr(s, "grade") or s.grade.status != Grade.Status.GRADED
+            for s in user_subs.values()
+        )
+        if has_todo:
+            todo_count += 1
+
+        if status_filter == "todo" and not has_todo:
+            continue
+        elif status_filter == "graded" and has_todo:
+            continue
+
+        cells = []
+        row_total = Decimal("0")
+        for p in problems:
+            sub = user_subs.get(p.pk)
+            grade = getattr(sub, "grade", None) if sub else None
+            score = grade.score if grade and grade.score is not None else None
+            if score is not None:
+                row_total += score
+
+            score_str = _format_points(score)
+
+            cells.append({
+                "problem": p,
+                "submission": sub,
+                "files": list(sub.files.all()) if sub else [],
+                "grade": grade,
+                "score_str": score_str,
+                "status": grade.status if grade else None,
+            })
+
+        total_str = _format_points(row_total)
+
+        rows.append({
+            "user": user,
+            "full_name": full_name,
+            "cells": cells,
+            "total": total_str,
+        })
+
+    if status_filter == "todo":
+        filtered_subs = submissions_qs.filter(models.Q(grade__isnull=True) | ~models.Q(grade__status=Grade.Status.GRADED))
+    elif status_filter == "graded":
+        filtered_subs = submissions_qs.filter(grade__status=Grade.Status.GRADED)
+    else:
+        filtered_subs = submissions_qs
 
     return render(request, "contest/review_list.html", {
-        "submissions": submissions,
+        "season": season,
+        "stage": stage,
         "problems": problems,
         "selected_problem": problem_id,
-        "status": status,
-        "todo_count": Submission.objects.filter(is_latest=True, problem__in=mine)
-                                        .exclude(grade__status=Grade.Status.GRADED).count(),
+        "status": status_filter,
+        "search_query": search_query,
+        "rows": rows,
+        "todo_count": todo_count,
+        "submissions": filtered_subs,
+    })
+
+
+@require_POST
+@login_required
+def review_save_grade(request):
+    """AJAX-сохранение балла за дистанционную задачу."""
+    _require_reviewer(request.user)
+
+    if request.content_type == "application/json":
+        data = json.loads(request.body)
+    else:
+        data = request.POST
+
+    submission_id = data.get("submission_id")
+    if not submission_id:
+        return JsonResponse({"error": "No submission_id"}, status=400)
+
+    sub = get_object_or_404(
+        Submission.objects.select_related("problem__stage__season", "user"),
+        pk=submission_id,
+    )
+
+    raw_score = str(data.get("score") if data.get("score") is not None else "").strip()
+    grade = getattr(sub, "grade", None)
+
+    if raw_score == "":
+        if grade:
+            grade.score = None
+            grade.status = Grade.Status.NEW
+            grade.save()
+        Score.objects.filter(registration__user=sub.user, problem=sub.problem).delete()
+    else:
+        try:
+            points = Decimal(raw_score.replace(",", "."))
+        except InvalidOperation:
+            return JsonResponse({"error": "Invalid number"}, status=400)
+
+        if points < 0:
+            return JsonResponse({"error": "Negative score"}, status=400)
+
+        if not grade:
+            grade = Grade(submission=sub)
+        grade.score = points
+        grade.reviewer = request.user
+        grade.status = Grade.Status.GRADED
+        grade.save()
+
+        reg, _ = Registration.objects.get_or_create(
+            user=sub.user, season=sub.problem.stage.season
+        )
+        Score.objects.update_or_create(
+            registration=reg,
+            problem=sub.problem,
+            defaults={
+                "points": points,
+                "entered_by": request.user,
+                "is_skipped": False,
+            },
+        )
+
+    # Recalculate total for user in this stage
+    stage_scores = Score.objects.filter(
+        registration__user=sub.user, problem__stage=sub.problem.stage
+    )
+    total = sum((s.points for s in stage_scores if s.points is not None), Decimal("0"))
+    total_str = _format_points(total)
+
+    return JsonResponse({
+        "status": "ok",
+        "total": total_str,
+        "grade_status": grade.status if grade else "new",
     })
 
 

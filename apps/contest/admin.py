@@ -19,19 +19,12 @@ class ProblemAdmin(admin.ModelAdmin):
     дополнительных проверяющих — кроме автора задачи.
     """
 
-    list_display = ("number", "title", "stage", "status", "created_by", "reviewer_count")
+    list_display = ("number", "title", "stage", "status", "created_by")
     list_filter = ("stage__season", "stage", "status")
     search_fields = ("title",)
-    filter_horizontal = ("reviewers",)
     autocomplete_fields = ("created_by",)
     inlines = [AttachmentInline]
     actions = ["approve", "reject"]
-
-    def formfield_for_manytomany(self, db_field, request, **kwargs):
-        if db_field.name == "reviewers":
-            from apps.accounts.models import User
-            kwargs["queryset"] = User.objects.exclude(role=User.Role.PARTICIPANT)
-        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "created_by":
@@ -39,10 +32,6 @@ class ProblemAdmin(admin.ModelAdmin):
             kwargs["queryset"] = User.objects.filter(role__in=[User.Role.ORGANIZER, User.Role.ADMIN])
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
-    @admin.display(description="проверяющих")
-    def reviewer_count(self, obj):
-        # Автор задачи проверяет всегда, поэтому считаем «плюс автор».
-        return obj.reviewers.count() + (1 if obj.created_by_id else 0)
 
     @admin.action(description="Одобрить выбранные задачи")
     def approve(self, request, queryset):
@@ -111,8 +100,8 @@ class GradeAdmin(admin.ModelAdmin):
 class ScoreAdmin(admin.ModelAdmin):
     """Баллы, внесённые с очных площадок и по итогам проверки."""
 
-    list_display = ("registration", "problem", "points", "venue", "entered_by")
-    list_filter = ("problem__stage", "venue", "problem")
+    list_display = ("registration", "problem", "points", "is_skipped", "venue", "entered_by")
+    list_filter = ("problem__stage", "is_skipped", "venue", "problem")
     search_fields = ("registration__user__email", "registration__user__profile__last_name")
     list_select_related = ("registration__user", "problem", "venue")
 

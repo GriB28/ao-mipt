@@ -1,0 +1,165 @@
+{% comment %}
+Вкладка загрузки сканов работ участников очного тура.
+{% endcomment %}
+
+<form method="get" class="filter-bar scans-filter-bar" style="margin-bottom: var(--space-4);">
+  <input type="hidden" name="tab" value="scans">
+  <label>
+    Площадка
+    <select name="venue" onchange="this.form.submit()">
+      <option value="">Все площадки</option>
+      {% for v in all_venues %}
+        <option value="{{ v.pk }}" {% if selected_venue_id == v.pk|stringformat:"s" %}selected{% endif %}>
+          {{ v.city }} — {{ v.title }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Поиск
+    <input type="search" name="q" value="{{ search_query }}" placeholder="ФИО, email, город...">
+  </label>
+  <button class="btn btn-small" type="submit">Найти</button>
+  {% if search_query or selected_venue_id %}
+    <a href="{% url 'venues:map' %}?tab=scans" class="btn btn-small btn-secondary">Сбросить</a>
+  {% endif %}
+</form>
+
+<div class="scans-summary-bar" style="display: flex; gap: var(--space-4); margin-bottom: var(--space-5); flex-wrap: wrap; align-items: center;">
+  <span>Всего участников: <strong>{{ participants_list|length }}</strong></span>
+  <span class="badge ok">Со сканом: {{ has_scan_count }}</span>
+  <span class="badge warn">Без скана: {{ no_scan_count }}</span>
+</div>
+
+<section class="card scan-upload-card" id="scan-upload-section" style="margin-bottom: var(--space-6); background: var(--color-surface, #f6f1ef); padding: var(--space-4); border-radius: var(--radius-md);">
+  <h2 style="margin-top: 0; font-size: var(--text-lg);">Загрузка скана работы участника</h2>
+  <p class="muted" style="margin-bottom: var(--space-4);">
+    Работа участника сканируется целиком как один PDF-файл (до 25 МБ) и прикрепляется к его записи.
+  </p>
+
+  <form method="post" action="{% url 'venues:upload_work_scan' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="hidden" name="from_venue" value="{{ selected_venue_id }}">
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4);">
+      <label>
+        <strong>Участник *</strong>
+        <select name="booking_id" id="scan_booking_select" required style="width: 100%; margin-top: var(--space-1);">
+          <option value="">— Выберите участника —</option>
+          {% for p in participants_list %}
+            <option value="{{ p.id }}" data-held-at="{{ p.held_at }}" data-variant="{{ p.variant }}">
+              {{ p.name }} ({{ p.venue_city }}, {{ p.venue_title }}) {% if p.has_scan %}[✓ скан есть]{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        <strong>Файл скана работы (PDF) *</strong>
+        <input type="file" name="work_scan" id="scan_file_input" accept=".pdf,application/pdf" required style="margin-top: var(--space-1); width: 100%;">
+      </label>
+    </div>
+
+    <div style="display: flex; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4);">
+      <label style="flex: 1; min-width: 200px;">
+        Дата проведения
+        <input type="date" name="held_at" id="scan_held_at" style="width: 100%; margin-top: var(--space-1);">
+      </label>
+      <label style="flex: 1; min-width: 200px;">
+        Комплект заданий
+        <select name="variant" id="scan_variant" style="width: 100%; margin-top: var(--space-1);">
+          <option value="">По умолчанию площадки</option>
+          <option value="1">Комплект 1</option>
+          <option value="2">Комплект 2</option>
+        </select>
+      </label>
+    </div>
+
+    <button type="submit" class="btn">Загрузить скан (PDF)</button>
+  </form>
+</section>
+
+<h2>Список участников очного тура</h2>
+<table class="table-stack">
+  <thead>
+    <tr>
+      <th>Участник</th>
+      <th>Площадка</th>
+      <th>Город</th>
+      <th>Дата</th>
+      <th>Комплект</th>
+      <th>Скан работы</th>
+      <th>Действия</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in participants_list %}
+    <tr>
+      <td data-label="Участник">
+        <strong>{{ p.name }}</strong><br>
+        <span class="muted" style="font-size: var(--text-xs);">{{ p.email }}</span>
+      </td>
+      <td data-label="Площадка">{{ p.venue_title }}</td>
+      <td data-label="Город" class="muted">{{ p.venue_city }}</td>
+      <td data-label="Дата">{{ p.held_at|default:"—" }}</td>
+      <td data-label="Комплект">Комплект {{ p.variant }}</td>
+      <td data-label="Скан работы">
+        {% if p.has_scan %}
+          <div style="display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;">
+            <span class="badge ok">✓ Загружен</span>
+            <a href="{{ p.scan_url }}" target="_blank" class="btn btn-small">Открыть PDF</a>
+          </div>
+        {% else %}
+          <span class="badge warn">Нет скана</span>
+        {% endif %}
+      </td>
+      <td data-label="Действия">
+        <div style="display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap;">
+          <button type="button" class="btn btn-small {% if p.has_scan %}btn-secondary{% endif %}"
+                  onclick="selectParticipant('{{ p.id }}', '{{ p.held_at }}', '{{ p.variant }}')">
+            {% if p.has_scan %}Заменить скан{% else %}Загрузить скан{% endif %}
+          </button>
+          {% if p.has_scan %}
+            <form method="post" action="{% url 'venues:delete_work_scan' p.id %}" class="inline-form"
+                  onsubmit="return confirm('Удалить скан работы участника {{ p.name }}?');">
+              {% csrf_token %}
+              <button type="submit" class="link-button" style="color: var(--color-danger-500, #b3261e); font-size: var(--text-xs); margin-left: var(--space-2);">Удалить</button>
+            </form>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+  {% empty %}
+    <tr>
+      <td colspan="7" class="muted" style="text-align: center; padding: var(--space-6);">
+        Участники не найдены.
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<script>
+function selectParticipant(id, heldAt, variant) {
+  const sel = document.getElementById("scan_booking_select");
+  if (sel) {
+    sel.value = id;
+  }
+  const dateInp = document.getElementById("scan_held_at");
+  if (dateInp && heldAt) {
+    dateInp.value = heldAt;
+  }
+  const varInp = document.getElementById("scan_variant");
+  if (varInp && variant) {
+    varInp.value = variant;
+  }
+  const section = document.getElementById("scan-upload-section");
+  if (section) {
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  const fileInp = document.getElementById("scan_file_input");
+  if (fileInp) {
+    fileInp.focus();
+  }
+}
+</script>

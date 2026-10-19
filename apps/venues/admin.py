@@ -17,8 +17,8 @@ class VenueAdmin(admin.ModelAdmin):
     подсвечены.
     """
 
-    list_display = ("title", "city", "region", "booked_count", "status_badge", "is_visible")
-    list_filter = ("status", "is_visible", "region", "seasons")
+    list_display = ("title", "city", "region", "default_variant", "event_date", "booked_count", "status_badge", "is_visible")
+    list_filter = ("status", "default_variant", "is_visible", "region", "seasons")
     search_fields = ("title", "city", "address", "contact_name")
     filter_horizontal = ("managers", "seasons")
     actions = ["approve", "reject"]
