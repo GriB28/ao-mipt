@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.db.models import Case, IntegerField, Value, When
+from django.urls import reverse
 from django.utils.html import format_html
 
 from .models import Venue
@@ -17,7 +18,7 @@ class VenueAdmin(admin.ModelAdmin):
     подсвечены.
     """
 
-    list_display = ("title", "city", "region", "booked_count", "status_badge", "is_visible")
+    list_display = ("title", "city", "region", "booked_count", "status_badge", "is_visible", "book_link")
     list_filter = ("status", "is_visible", "region", "seasons")
     search_fields = ("title", "city", "address", "contact_name")
     filter_horizontal = ("managers", "seasons")
@@ -55,6 +56,11 @@ class VenueAdmin(admin.ModelAdmin):
             return format_html('<b style="color:#b45309">● {}</b>', obj.get_status_display())
         return obj.get_status_display()
 
+    @admin.display(description="ручная запись")
+    def book_link(self, obj):
+        url = reverse("admin:participation_venuebooking_add") + f"?venue={obj.pk}"
+        return format_html('<a class="button" style="padding: 2px 8px; font-size: 11px;" href="{}">+ Записать</a>', url)
+
     @admin.action(description="Одобрить выбранные площадки")
     def approve(self, request, queryset):
         updated = queryset.update(status=Venue.Status.APPROVED)
@@ -64,3 +70,4 @@ class VenueAdmin(admin.ModelAdmin):
     def reject(self, request, queryset):
         updated = queryset.update(status=Venue.Status.REJECTED)
         self.message_user(request, f"Отклонено площадок: {updated}")
+

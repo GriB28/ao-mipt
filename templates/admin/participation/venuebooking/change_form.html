@@ -1,0 +1,836 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .manual-booking-container {
+    max-width: 900px;
+    margin-bottom: 25px;
+  }
+  .mb-card {
+    background: var(--body-bg, #fff);
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .mb-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--hairline-color, #e0e0e0);
+  }
+  .mb-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--body-fg, #333);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mb-card-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: var(--primary, #2f6fed);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  .mb-card-desc {
+    font-size: 13px;
+    color: var(--secondary-fg, #666);
+    margin-bottom: 15px;
+  }
+
+  /* Participant filter tabs */
+  .filter-tabs-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .filter-tabs-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--body-fg, #333);
+  }
+  .filter-tabs {
+    display: inline-flex;
+    background: var(--darkened-bg, #f3f4f6);
+    padding: 3px;
+    border-radius: 6px;
+    gap: 2px;
+    border: 1px solid var(--border-color, #e5e7eb);
+  }
+  .filter-tab {
+    background: none;
+    border: none;
+    padding: 5px 12px;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--body-fg, #4b5563);
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+  .filter-tab:hover {
+    color: var(--body-fg, #111);
+  }
+  .filter-tab.active {
+    background: var(--body-bg, #fff);
+    color: var(--primary, #2f6fed);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+
+  /* Search input */
+  .participant-search-box {
+    position: relative;
+    margin-bottom: 10px;
+  }
+  .participant-search-box input {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 10px 38px 10px 14px !important;
+    font-size: 14px !important;
+    border: 1px solid var(--border-color, #cbd5e1) !important;
+    border-radius: 6px !important;
+    box-sizing: border-box !important;
+    background: var(--body-bg, #fff) !important;
+    color: var(--body-fg, #1e293b) !important;
+  }
+  .participant-search-box input:focus {
+    border-color: var(--primary, #2f6fed) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.15) !important;
+  }
+  .participant-search-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-size: 16px;
+    color: var(--secondary-fg, #94a3b8);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    border-radius: 4px;
+  }
+  .participant-search-clear:hover {
+    color: var(--body-fg, #333);
+  }
+
+  /* Results list */
+  .participant-results-list {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 6px;
+    background: var(--body-bg, #fff);
+    margin-bottom: 12px;
+  }
+  .participant-result-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--hairline-color, #f1f5f9);
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .participant-result-item:last-child {
+    border-bottom: none;
+  }
+  .participant-result-item:hover, .participant-result-item.highlighted {
+    background: var(--darkened-bg, #f8fafc);
+  }
+  .pri-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .pri-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #e0e7ff;
+    color: #3730a3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .pri-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pri-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--body-fg, #0f172a);
+  }
+  .pri-email {
+    font-size: 13px;
+    color: var(--secondary-fg, #64748b);
+  }
+  .pri-extra {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--secondary-fg, #64748b);
+  }
+  .pri-badge {
+    background: #e2e8f0;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .pri-select-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--primary, #2f6fed);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pri-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--secondary-fg, #64748b);
+    font-size: 13px;
+  }
+
+  /* Selected card */
+  .participant-selected-card {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .psc-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .psc-icon {
+    width: 40px;
+    height: 40px;
+    background: #16a34a;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .psc-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #14532d;
+    margin-bottom: 2px;
+  }
+  .psc-meta {
+    font-size: 13px;
+    color: #166534;
+  }
+  .psc-change-btn {
+    background: #fff !important;
+    color: #15803d !important;
+    border: 1px solid #86efac !important;
+    padding: 5px 12px !important;
+    font-size: 13px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+  }
+  .psc-change-btn:hover {
+    background: #f0fdf4 !important;
+    border-color: #4ade80 !important;
+  }
+
+  /* Form row styles */
+  .mb-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 768px) {
+    .mb-form-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .mb-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .mb-form-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--body-fg, #333);
+  }
+  .mb-form-group select, .mb-form-group textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 8px 12px !important;
+    font-size: 14px !important;
+    border: 1px solid var(--border-color, #cbd5e1) !important;
+    border-radius: 6px !important;
+    box-sizing: border-box !important;
+    background: var(--body-bg, #fff) !important;
+    color: var(--body-fg, #1e293b) !important;
+  }
+  .mb-form-group select:focus, .mb-form-group textarea:focus {
+    border-color: var(--primary, #2f6fed) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.15) !important;
+  }
+  .venue-info-card {
+    background: #f8fafc;
+    border: 1px dashed var(--border-color, #cbd5e1);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--secondary-fg, #475569);
+    margin-top: 8px;
+    display: none;
+  }
+  .venue-info-card.active {
+    display: block;
+  }
+  .venue-info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .venue-info-row:last-child {
+    margin-bottom: 0;
+  }
+  .venue-info-label {
+    font-weight: 500;
+    color: var(--body-fg, #1e293b);
+  }
+  .field-error-msg {
+    color: #dc2626;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+</style>
+{% endblock %}
+
+{% block field_sets %}
+<div class="manual-booking-container">
+  {% if adminform.form.non_field_errors %}
+    <div class="errornote">
+      {{ adminform.form.non_field_errors }}
+    </div>
+  {% endif %}
+
+  <!-- Шаг 1: Выбор участника -->
+  <div class="mb-card">
+    <div class="mb-card-header">
+      <h3 class="mb-card-title">
+        <span class="mb-card-step">1</span>
+        Выбор участника
+      </h3>
+    </div>
+    <div class="mb-card-desc">
+      Найдите участника олимпиады по адресу электронной почты или по ФИО.
+    </div>
+
+    <!-- Фильтр-вкладки -->
+    <div class="filter-tabs-wrapper" id="filter-tabs-wrapper">
+      <span class="filter-tabs-label">Искать по:</span>
+      <div class="filter-tabs" role="radiogroup">
+        <button type="button" class="filter-tab active" data-by="all">Все (почта или ФИО)</button>
+        <button type="button" class="filter-tab" data-by="email">Почте</button>
+        <button type="button" class="filter-tab" data-by="name">ФИО</button>
+      </div>
+    </div>
+
+    <!-- Строка поиска -->
+    <div class="participant-search-box" id="participant-search-box">
+      <input type="text" id="participant-search-input" placeholder="Начните вводить email или ФИО участника..." autocomplete="off">
+      <button type="button" id="participant-search-clear" class="participant-search-clear" title="Очистить" style="display:none;">✕</button>
+    </div>
+
+    <!-- Список результатов поиска -->
+    <div id="participant-results-list" class="participant-results-list" style="display:none;">
+      <div class="pri-empty">Загрузка...</div>
+    </div>
+
+    <!-- Карточка выбранного участника -->
+    <div id="participant-selected-card" class="participant-selected-card" style="display:none;">
+      <div class="psc-content">
+        <div class="psc-icon">✓</div>
+        <div>
+          <div class="psc-title" id="psc-name">Иванов Иван</div>
+          <div class="psc-meta" id="psc-meta">ivanov@example.com</div>
+        </div>
+      </div>
+      <button type="button" id="psc-change-btn" class="psc-change-btn">Изменить участника</button>
+    </div>
+
+    <!-- Скрытый нативный select с пользователем -->
+    <div style="display:none;">
+      {{ adminform.form.user }}
+    </div>
+    {% if adminform.form.user.errors %}
+      <div class="field-error-msg">{{ adminform.form.user.errors }}</div>
+    {% endif %}
+  </div>
+
+  <!-- Шаг 2: Сезон и этап -->
+  <div class="mb-card">
+    <div class="mb-card-header">
+      <h3 class="mb-card-title">
+        <span class="mb-card-step">2</span>
+        Сезон и очный этап
+      </h3>
+    </div>
+    <div class="mb-card-desc">
+      Выберите сезон олимпиады. Список точек проведения автоматически обновится для этого сезона.
+    </div>
+
+    <div class="mb-form-grid">
+      <div class="mb-form-group">
+        <label for="{{ adminform.form.season.id_for_label }}">Сезон олимпиады:</label>
+        {{ adminform.form.season }}
+        {% if adminform.form.season.errors %}
+          <div class="field-error-msg">{{ adminform.form.season.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="mb-form-group">
+        <label for="{{ adminform.form.stage.id_for_label }}">Очный этап:</label>
+        {{ adminform.form.stage }}
+        {% if adminform.form.stage.errors %}
+          <div class="field-error-msg">{{ adminform.form.stage.errors }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Шаг 3: Точка проведения -->
+  <div class="mb-card">
+    <div class="mb-card-header">
+      <h3 class="mb-card-title">
+        <span class="mb-card-step">3</span>
+        Точка проведения очного этапа
+      </h3>
+    </div>
+    <div class="mb-card-desc">
+      Выберите точку (площадку) проведения очного этапа из списка всех точек выбранного сезона.
+    </div>
+
+    <div class="mb-form-group">
+      <label for="{{ adminform.form.venue.id_for_label }}">Точка проведения:</label>
+      {{ adminform.form.venue }}
+      {% if adminform.form.venue.errors %}
+        <div class="field-error-msg">{{ adminform.form.venue.errors }}</div>
+      {% endif %}
+    </div>
+
+    <div id="venue-info-card" class="venue-info-card">
+      <div class="venue-info-row">
+        <span class="venue-info-label">Адрес:</span>
+        <span id="vic-address">—</span>
+      </div>
+      <div class="venue-info-row">
+        <span class="venue-info-label">Город / Регион:</span>
+        <span id="vic-location">—</span>
+      </div>
+      <div class="venue-info-row">
+        <span class="venue-info-label">Записано участников на этот сезон:</span>
+        <span id="vic-booked" style="font-weight: 600; color: #16a34a;">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Шаг 4: Статус и комментарий -->
+  <div class="mb-card">
+    <div class="mb-card-header">
+      <h3 class="mb-card-title">
+        <span class="mb-card-step">4</span>
+        Статус записи и комментарий
+      </h3>
+    </div>
+
+    <div class="mb-form-grid">
+      <div class="mb-form-group">
+        <label for="{{ adminform.form.status.id_for_label }}">Статус записи:</label>
+        {{ adminform.form.status }}
+        {% if adminform.form.status.errors %}
+          <div class="field-error-msg">{{ adminform.form.status.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="mb-form-group">
+        <label for="{{ adminform.form.comment.id_for_label }}">Комментарий (необязательно):</label>
+        {{ adminform.form.comment }}
+        {% if adminform.form.comment.errors %}
+          <div class="field-error-msg">{{ adminform.form.comment.errors }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ venues_by_season_json|json_script:"venues-by-season-data" }}
+{% if initial_user_data_json %}
+  {{ initial_user_data_json|json_script:"initial-user-data" }}
+{% endif %}
+{% endblock %}
+
+{% block admin_change_form_document_ready %}
+{{ block.super }}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const searchUrl = "{{ search_participants_url|default:'search-participants/' }}";
+  let seasonsData = {};
+  try {
+    const rawSeasons = document.getElementById("venues-by-season-data");
+    if (rawSeasons) {
+      seasonsData = JSON.parse(rawSeasons.textContent);
+    }
+  } catch (e) {
+    console.error("Error parsing seasons data", e);
+  }
+
+  // --- Элементы выбора участника ---
+  const userSelect = document.getElementById("id_user");
+  const filterTabs = document.querySelectorAll(".filter-tab");
+  const searchInput = document.getElementById("participant-search-input");
+  const clearBtn = document.getElementById("participant-search-clear");
+  const resultsContainer = document.getElementById("participant-results-list");
+  const selectedCard = document.getElementById("participant-selected-card");
+  const selectedName = document.getElementById("psc-name");
+  const selectedMeta = document.getElementById("psc-meta");
+  const changeParticipantBtn = document.getElementById("psc-change-btn");
+  const searchBox = document.getElementById("participant-search-box");
+  const filterTabsWrapper = document.getElementById("filter-tabs-wrapper");
+
+  let currentFilterBy = "all";
+  let searchTimeout = null;
+
+  // Проверка начального выбранного участника
+  let initialUser = null;
+  const rawInitialUser = document.getElementById("initial-user-data");
+  if (rawInitialUser) {
+    try {
+      initialUser = JSON.parse(rawInitialUser.textContent);
+    } catch (e) {}
+  }
+
+  function displaySelectedUser(userData) {
+    if (!userData) {
+      selectedCard.style.display = "none";
+      searchBox.style.display = "block";
+      filterTabsWrapper.style.display = "flex";
+      return;
+    }
+    selectedName.textContent = userData.full_name || userData.email;
+    let metaText = userData.email;
+    if (userData.grade) metaText += " • " + userData.grade;
+    if (userData.location) metaText += " • " + userData.location;
+    selectedMeta.textContent = metaText;
+
+    selectedCard.style.display = "flex";
+    searchBox.style.display = "none";
+    filterTabsWrapper.style.display = "none";
+    resultsContainer.style.display = "none";
+
+    // Убедиться, что значение в нативном select выбрано
+    let optionFound = false;
+    for (let i = 0; i < userSelect.options.length; i++) {
+      if (userSelect.options[i].value == userData.id) {
+        userSelect.options[i].selected = true;
+        optionFound = true;
+        break;
+      }
+    }
+    if (!optionFound) {
+      const opt = new Option(userData.display || userData.email, userData.id, true, true);
+      userSelect.add(opt);
+    }
+  }
+
+  if (initialUser && initialUser.id) {
+    displaySelectedUser(initialUser);
+  } else if (userSelect && userSelect.value) {
+    const selectedOption = userSelect.options[userSelect.selectedIndex];
+    if (selectedOption && selectedOption.value) {
+      displaySelectedUser({
+        id: selectedOption.value,
+        full_name: selectedOption.text,
+        email: "",
+      });
+    }
+  }
+
+  changeParticipantBtn.addEventListener("click", function () {
+    selectedCard.style.display = "none";
+    searchBox.style.display = "block";
+    filterTabsWrapper.style.display = "flex";
+    searchInput.value = "";
+    clearBtn.style.display = "none";
+    searchInput.focus();
+    fetchParticipants("");
+  });
+
+  // Вкладки фильтра (Все / По почте / По ФИО)
+  filterTabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      filterTabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      currentFilterBy = tab.getAttribute("data-by");
+
+      if (currentFilterBy === "email") {
+        searchInput.placeholder = "Введите email участника...";
+      } else if (currentFilterBy === "name") {
+        searchInput.placeholder = "Введите фамилию или имя участника...";
+      } else {
+        searchInput.placeholder = "Начните вводить email или ФИО участника...";
+      }
+
+      fetchParticipants(searchInput.value.trim());
+    });
+  });
+
+  // Поиск участников
+  function fetchParticipants(query) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(function () {
+      resultsContainer.style.display = "block";
+      resultsContainer.innerHTML = '<div class="pri-empty">Поиск участников...</div>';
+
+      const url = new URL(searchUrl, window.location.href);
+      url.searchParams.set("q", query);
+      url.searchParams.set("by", currentFilterBy);
+
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          if (!data.results || data.results.length === 0) {
+            resultsContainer.innerHTML = '<div class="pri-empty">Ничего не найдено. Проверьте запрос или смените фильтр.</div>';
+            return;
+          }
+
+          let html = "";
+          data.results.forEach(user => {
+            const initials = user.full_name ? user.full_name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() : "@";
+            html += `
+              <div class="participant-result-item" data-id="${user.id}" data-json='${JSON.stringify(user).replace(/'/g, "&apos;")}'>
+                <div class="pri-main">
+                  <div class="pri-avatar">${initials}</div>
+                  <div class="pri-info">
+                    <div class="pri-name">${user.full_name || '<span style="color:#94a3b8">ФИО не указано</span>'}</div>
+                    <div class="pri-email">${user.email}</div>
+                    ${(user.grade || user.location) ? `<div class="pri-extra">${user.grade ? `<span class="pri-badge">${user.grade}</span>` : ""} ${user.location ? `<span>${user.location}</span>` : ""}</div>` : ""}
+                  </div>
+                </div>
+                <button type="button" class="pri-select-btn">Выбрать</button>
+              </div>
+            `;
+          });
+          resultsContainer.innerHTML = html;
+
+          // Обработчики кликов по результату
+          resultsContainer.querySelectorAll(".participant-result-item").forEach(item => {
+            item.addEventListener("click", function () {
+              const userData = JSON.parse(this.getAttribute("data-json"));
+              displaySelectedUser(userData);
+            });
+          });
+        })
+        .catch(err => {
+          console.error("Search error", err);
+          resultsContainer.innerHTML = '<div class="pri-empty" style="color:#dc2626;">Ошибка поиска. Попробуйте снова.</div>';
+        });
+    }, 200);
+  }
+
+  searchInput.addEventListener("input", function () {
+    const val = searchInput.value.trim();
+    clearBtn.style.display = val ? "block" : "none";
+    fetchParticipants(val);
+  });
+
+  searchInput.addEventListener("focus", function () {
+    if (resultsContainer.style.display !== "block") {
+      fetchParticipants(searchInput.value.trim());
+    }
+  });
+
+  clearBtn.addEventListener("click", function () {
+    searchInput.value = "";
+    clearBtn.style.display = "none";
+    fetchParticipants("");
+    searchInput.focus();
+  });
+
+  // Закрытие списка результатов при клике вне
+  document.addEventListener("click", function (e) {
+    if (!searchBox.contains(e.target) && !resultsContainer.contains(e.target) && !filterTabsWrapper.contains(e.target)) {
+      resultsContainer.style.display = "none";
+    }
+  });
+
+  // --- Связка Сезон -> Этап -> Точки проведения ---
+  const seasonSelect = document.getElementById("id_season");
+  const stageSelect = document.getElementById("id_stage");
+  const venueSelect = document.getElementById("id_venue");
+  const venueInfoCard = document.getElementById("venue-info-card");
+  const vicAddress = document.getElementById("vic-address");
+  const vicLocation = document.getElementById("vic-location");
+  const vicBooked = document.getElementById("vic-booked");
+
+  function updateVenuesAndStages() {
+    if (!seasonSelect) return;
+    const seasonId = seasonSelect.value;
+    const seasonInfo = seasonsData[seasonId];
+
+    if (!seasonInfo) {
+      return;
+    }
+
+    // 1. Обновляем этапы
+    const currentStageVal = stageSelect.value;
+    stageSelect.innerHTML = "";
+    if (seasonInfo.stages && seasonInfo.stages.length > 0) {
+      let stageMatched = false;
+      seasonInfo.stages.forEach(st => {
+        const opt = document.createElement("option");
+        opt.value = st.id;
+        opt.textContent = st.title;
+        if (st.id == currentStageVal || (!currentStageVal && st.is_default)) {
+          opt.selected = true;
+          stageMatched = true;
+        }
+        stageSelect.appendChild(opt);
+      });
+      if (!stageMatched && stageSelect.options.length > 0) {
+        stageSelect.options[0].selected = true;
+      }
+    } else {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "— В этом сезоне нет очных этапов —";
+      stageSelect.appendChild(opt);
+    }
+
+    // 2. Обновляем точки проведения (venues)
+    const currentVenueVal = venueSelect.value;
+    venueSelect.innerHTML = "";
+
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "";
+    placeholderOpt.textContent = "--- Выберите точку проведения ---";
+    venueSelect.appendChild(placeholderOpt);
+
+    if (seasonInfo.venues && seasonInfo.venues.length > 0) {
+      // Группируем площадки по региону / городу
+      const groups = {};
+      seasonInfo.venues.forEach(v => {
+        const groupKey = v.region || v.city || "Другие";
+        if (!groups[groupKey]) groups[groupKey] = [];
+        groups[groupKey].push(v);
+      });
+
+      let venueMatched = false;
+      Object.keys(groups).sort().forEach(groupName => {
+        const optGroup = document.createElement("optgroup");
+        optGroup.label = groupName;
+
+        groups[groupName].forEach(v => {
+          const opt = document.createElement("option");
+          opt.value = v.id;
+          let label = v.title;
+          if (v.city && v.city !== groupName) label += ` (${v.city})`;
+          if (v.booked_count !== undefined) {
+            label += ` — записано: ${v.booked_count}`;
+          }
+          opt.textContent = label;
+          if (v.id == currentVenueVal) {
+            opt.selected = true;
+            venueMatched = true;
+          }
+          optGroup.appendChild(opt);
+        });
+        venueSelect.appendChild(optGroup);
+      });
+
+      if (!venueMatched && seasonInfo.venues.length === 1) {
+        venueSelect.value = seasonInfo.venues[0].id;
+      }
+    } else {
+      placeholderOpt.textContent = "— Нет доступных точек для этого сезона —";
+    }
+
+    updateVenueInfo();
+  }
+
+  function updateVenueInfo() {
+    const seasonId = seasonSelect.value;
+    const venueId = venueSelect.value;
+    const seasonInfo = seasonsData[seasonId];
+
+    if (!seasonInfo || !venueId) {
+      venueInfoCard.classList.remove("active");
+      return;
+    }
+
+    const venue = (seasonInfo.venues || []).find(v => v.id == venueId);
+    if (!venue) {
+      venueInfoCard.classList.remove("active");
+      return;
+    }
+
+    vicAddress.textContent = venue.address || "Не указан";
+    vicLocation.textContent = [venue.city, venue.region].filter(Boolean).join(", ") || "—";
+    vicBooked.textContent = (venue.booked_count !== undefined) ? `${venue.booked_count} чел.` : "0 чел.";
+    venueInfoCard.classList.add("active");
+  }
+
+  if (seasonSelect) {
+    seasonSelect.addEventListener("change", function () {
+      updateVenuesAndStages();
+    });
+  }
+
+  if (venueSelect) {
+    venueSelect.addEventListener("change", function () {
+      updateVenueInfo();
+    });
+  }
+
+  // Начальная инициализация выпадающих списков
+  updateVenuesAndStages();
+});
+</script>
+{% endblock %}
