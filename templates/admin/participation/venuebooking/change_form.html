@@ -111,8 +111,8 @@
   </fieldset>
 </div>
 
-{{ venues_by_season_json|json_script:"venues-by-season-data" }}
-{% if initial_user_data_json %}{{ initial_user_data_json|json_script:"initial-user-data" }}{% endif %}
+{{ venues_by_season|json_script:"venues-by-season-data" }}
+{% if initial_user %}{{ initial_user|json_script:"initial-user-data" }}{% endif %}
 {% endblock %}
 
 
@@ -124,8 +124,16 @@ document.addEventListener("DOMContentLoaded", function () {
   // ── данные по сезонам ────────────────────────────────────────────
   let seasonsData = {};
   try {
-    seasonsData = JSON.parse(document.getElementById("venues-by-season-data").textContent);
-  } catch (e) {}
+    const rawEl = document.getElementById("venues-by-season-data");
+    if (rawEl && rawEl.textContent) {
+      seasonsData = JSON.parse(rawEl.textContent);
+      if (typeof seasonsData === "string") {
+        seasonsData = JSON.parse(seasonsData);
+      }
+    }
+  } catch (e) {
+    console.error("Error parsing seasonsData:", e);
+  }
 
   const searchUrl = "{{ search_participants_url }}";
 
@@ -181,8 +189,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // предзаполнение при редактировании / переходе по ссылке с ?user=
   const rawInitUser = document.getElementById("initial-user-data");
-  if (rawInitUser) {
-    try { showChosen(JSON.parse(rawInitUser.textContent)); } catch (e) {}
+  if (rawInitUser && rawInitUser.textContent) {
+    try {
+      let u = JSON.parse(rawInitUser.textContent);
+      if (typeof u === "string") u = JSON.parse(u);
+      showChosen(u);
+    } catch (e) {}
   } else if (userSelect && userSelect.value) {
     const sel = userSelect.options[userSelect.selectedIndex];
     if (sel && sel.value) showChosen({ id: sel.value, full_name: sel.text, email: "", display: sel.text });
@@ -263,15 +275,21 @@ document.addEventListener("DOMContentLoaded", function () {
       stageSelect.appendChild(opt);
     } else {
       stageNote.style.display = "none";
+      const placeholder = document.createElement("option");
+      placeholder.value = ""; placeholder.text = "---------";
+      stageSelect.appendChild(placeholder);
+
       let matched = false;
       stages.forEach(st => {
         const opt = document.createElement("option");
         opt.value = st.id; opt.text = st.title;
         if (keepStage && String(st.id) === String(keepStage)) { opt.selected = true; matched = true; }
-        else if (!keepStage && st.is_default)                 { opt.selected = true; matched = true; }
+        else if (!keepStage && st.is_default && !matched)     { opt.selected = true; matched = true; }
         stageSelect.appendChild(opt);
       });
-      if (!matched) stageSelect.options[0].selected = true;
+      if (!matched && !keepStage && stages.length > 0) {
+        stageSelect.options[1].selected = true;
+      }
     }
 
     // --- точки ---
@@ -301,7 +319,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function initFromCurrentSeason() {
     const sid = seasonSelect.value;
     if (!sid) return;
-    const data = seasonsData[sid];
+    const data = seasonsData[sid] || seasonsData[String(sid)];
     if (!data) return;
     rebuildFromSeasonData(data, stageSelect.value || null, venueSelect.value || null);
   }
@@ -310,7 +328,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
   seasonSelect.addEventListener("change", function () {
     const sid = seasonSelect.value;
-    const data = seasonsData[sid];
+    if (!sid) {
+      stageSelect.innerHTML = '<option value="">---------</option>';
+      venueSelect.innerHTML = '<option value="">---------</option>';
+      stageNote.style.display = "none";
+      venueNote.style.display = "none";
+      return;
+    }
+    const data = seasonsData[sid] || seasonsData[String(sid)];
     if (data) {
       rebuildFromSeasonData(data, null, null);
     } else {
@@ -319,7 +344,10 @@ document.addEventListener("DOMContentLoaded", function () {
       url.searchParams.set("season_id", sid);
       fetch(url)
         .then(r => r.json())
-        .then(d => { seasonsData[sid] = d; rebuildFromSeasonData(d, null, null); })
+        .then(d => {
+          seasonsData[sid] = d;
+          rebuildFromSeasonData(d, null, null);
+        })
         .catch(() => {});
     }
   });

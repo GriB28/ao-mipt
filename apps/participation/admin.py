@@ -272,9 +272,12 @@ class VenueBookingAdmin(admin.ModelAdmin):
 
     def add_view(self, request, form_url="", extra_context=None):
         extra_context = extra_context or {}
-        extra_context["venues_by_season_json"] = json.dumps(get_seasons_venues_data(), ensure_ascii=False)
+        seasons_data = get_seasons_venues_data()
+        extra_context["venues_by_season"] = seasons_data
+        extra_context["venues_by_season_json"] = json.dumps(seasons_data, ensure_ascii=False)
         initial_user = self._get_initial_user_data(request)
         if initial_user:
+            extra_context["initial_user_data"] = initial_user
             extra_context["initial_user_data_json"] = json.dumps(initial_user, ensure_ascii=False)
         extra_context["search_participants_url"] = reverse("admin:participation_venuebooking_search_participants")
         extra_context["season_venues_url"] = reverse("admin:participation_venuebooking_season_venues")
@@ -282,11 +285,14 @@ class VenueBookingAdmin(admin.ModelAdmin):
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         extra_context = extra_context or {}
-        extra_context["venues_by_season_json"] = json.dumps(get_seasons_venues_data(), ensure_ascii=False)
+        seasons_data = get_seasons_venues_data()
+        extra_context["venues_by_season"] = seasons_data
+        extra_context["venues_by_season_json"] = json.dumps(seasons_data, ensure_ascii=False)
         try:
             obj = self.get_object(request, object_id)
             initial_user = self._get_initial_user_data(request, obj=obj)
             if initial_user:
+                extra_context["initial_user_data"] = initial_user
                 extra_context["initial_user_data_json"] = json.dumps(initial_user, ensure_ascii=False)
         except Exception:
             pass
