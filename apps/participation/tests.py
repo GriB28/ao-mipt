@@ -505,3 +505,167 @@ class BookingNeedsProfileTest(TestCase):
         make_eligible(self.kid)
         self.client.post(reverse("venues:book", args=[self.venue.pk]))
         self.assertTrue(VenueBooking.objects.filter(venue=self.venue).exists())
+
+
+class VenueBookingAdminTest(TestCase):
+    def setUp(self):
+        now = timezone.now()
+        self.admin = User.objects.create_superuser("admin@test.ru", "adminpass")
+        self.season = Season.objects.create(year=2030, slug="ao30", title="Сезон 2030", is_active=True, is_published=True)
+        self.stage = Stage.objects.create(
+            season=self.season, kind=Stage.Kind.OFFLINE, slug="ochny", title="Очный тур 2030",
+            starts_at=now + timedelta(days=10), ends_at=now + timedelta(days=12),
+            is_published=True,
+        )
+        self.venue = Venue.objects.create(
+            title="Точка 1", region="Москва", city="Москва", address="Ленина 1",
+            latitude=55.75, longitude=37.61, status=Venue.Status.APPROVED,
+        )
+        self.venue.seasons.add(self.season)
+
+        from apps.accounts.models import ParticipantProfile
+        self.student = User.objects.create_user("student_search@test.ru", "pass12345")
+        ParticipantProfile.objects.create(
+            user=self.student,
+            last_name="Смирнов",
+            first_name="Алексей",
+            middle_name="Иванович",
+            grade=9,
+            school="Школа 1",
+            city="Москва",
+        )
+        self.client.force_login(self.admin)
+
+    def test_form_valid_and_save(self):
+        from apps.participation.forms import VenueBookingAdminForm
+
+        form = VenueBookingAdminForm(data={
+            "user": self.student.pk,
+            "season": self.season.pk,
+            "stage": self.stage.pk,
+            "venue": self.venue.pk,
+            "status": VenueBooking.Status.BOOKED,
+            "comment": "Записан вручную",
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        booking = form.save()
+        self.assertEqual(booking.registration.user, self.student)
+        self.assertEqual(booking.registration.season, self.season)
+        self.assertEqual(booking.venue, self.venue)
+        self.assertEqual(booking.stage, self.stage)
+        self.assertEqual(booking.status, VenueBooking.Status.BOOKED)
+        self.assertEqual(booking.comment, "Записан вручную")
+
+    def test_form_rebooking_updates_existing(self):
+        from apps.participation.forms import VenueBookingAdminForm
+
+        form1 = VenueBookingAdminForm(data={
+            "user": self.student.pk,
+            "season": self.season.pk,
+            "stage": self.stage.pk,
+            "venue": self.venue.pk,
+            "status": VenueBooking.Status.BOOKED,
+        })
+        self.assertTrue(form1.is_valid())
+        b1 = form1.save()
+
+        venue2 = Venue.objects.create(
+            title="Точка 2", region="Москва", city="Москва", address="Мира 2",
+            latitude=55.76, longitude=37.62, status=Venue.Status.APPROVED,
+        )
+        venue2.seasons.add(self.season)
+
+        form2 = VenueBookingAdminForm(data={
+            "user": self.student.pk,
+            "season": self.season.pk,
+            "stage": self.stage.pk,
+            "venue": venue2.pk,
+            "status": VenueBooking.Status.ATTENDED,
+        })
+        self.assertTrue(form2.is_valid())
+        b2 = form2.save()
+
+        self.assertEqual(b1.pk, b2.pk)
+        self.assertEqual(VenueBooking.objects.filter(registration__user=self.student).count(), 1)
+        b2.refresh_from_db()
+        self.assertEqual(b2.venue, venue2)
+        self.assertEqual(b2.status, VenueBooking.Status.ATTENDED)
+
+    def test_form_validation_venue_not_in_season(self):
+        from apps.participation.forms import VenueBookingAdminForm
+
+        venue_other = Venue.objects.create(
+            title="Другая точка", region="R", city="C", address="A",
+            latitude=55.0, longitude=37.0, status=Venue.Status.APPROVED,
+        )
+        form = VenueBookingAdminForm(data={
+            "user": self.student.pk,
+            "season": self.season.pk,
+            "stage": self.stage.pk,
+            "venue": venue_other.pk,
+            "status": VenueBooking.Status.BOOKED,
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("venue", form.errors)
+
+    def test_admin_add_view_get(self):
+        url = reverse("admin:participation_venuebooking_add")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("venues_by_season_json", response.context)
+        self.assertIn("search_participants_url", response.context)
+
+    def test_admin_add_view_post_success(self):
+        url = reverse("admin:participation_venuebooking_add")
+        data = {
+            "user": self.student.pk,
+            "season": self.season.pk,
+            "stage": self.stage.pk,
+            "venue": self.venue.pk,
+            "status": VenueBooking.Status.BOOKED,
+            "comment": "Через админку",
+        }
+        response = self.client.post(url, data, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(VenueBooking.objects.filter(registration__user=self.student, venue=self.venue).exists())
+
+    def test_search_participants_by_name(self):
+        url = reverse("admin:participation_venuebooking_search_participants")
+        response = self.client.get(url, {"q": "смирнов", "by": "name"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["id"], self.student.pk)
+        self.assertIn("Смирнов Алексей", data["results"][0]["full_name"])
+
+    def test_search_participants_by_email(self):
+        url = reverse("admin:participation_venuebooking_search_participants")
+        response = self.client.get(url, {"q": "student_search", "by": "email"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["id"], self.student.pk)
+
+    def test_search_participants_by_all(self):
+        url = reverse("admin:participation_venuebooking_search_participants")
+        response = self.client.get(url, {"q": "Алексей", "by": "all"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["results"]), 1)
+
+    def test_search_participants_empty_query(self):
+        url = reverse("admin:participation_venuebooking_search_participants")
+        response = self.client.get(url, {"q": "", "by": "all"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertGreaterEqual(len(data["results"]), 1)
+
+    def test_season_venues_endpoint(self):
+        url = reverse("admin:participation_venuebooking_season_venues")
+        response = self.client.get(url, {"season_id": self.season.pk})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["id"], self.season.pk)
+        self.assertEqual(len(data["venues"]), 1)
+        self.assertEqual(data["venues"][0]["id"], self.venue.pk)
+
