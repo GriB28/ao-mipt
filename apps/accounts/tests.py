@@ -794,9 +794,8 @@ class StaffUserAdminTest(TestCase):
         )
         venue.managers.add(self.organizer)
 
-        Problem.objects.create(stage=stage, number=1, title="Задача 1", created_by=self.organizer)
-        problem2 = Problem.objects.create(stage=stage, number=2, title="Задача 2", created_by=self.admin)
-        problem2.reviewers.add(self.organizer)
+        Problem.objects.create(stage=stage, number="1", title="Задача 1", created_by=self.organizer)
+        Problem.objects.create(stage=stage, number="2", title="Задача 2", created_by=self.admin)
 
         self.client.force_login(self.admin)
         url = reverse("admin:accounts_staffuser_changelist")
@@ -808,12 +807,10 @@ class StaffUserAdminTest(TestCase):
         org_row = qs.get(email="org@test.ru")
         self.assertEqual(org_row.venue_count, 1)
         self.assertEqual(org_row.authored_problems_count, 1)
-        self.assertEqual(org_row.reviewed_problems_count, 1)
 
         admin_row = qs.get(email="super@test.ru")
         self.assertEqual(admin_row.venue_count, 0)
         self.assertEqual(admin_row.authored_problems_count, 1)
-        self.assertEqual(admin_row.reviewed_problems_count, 0)
 
     def test_has_venue_filter(self):
         from apps.venues.models import Venue

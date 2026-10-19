@@ -153,9 +153,6 @@ class ReviewGradingTest(TestCase):
         # Задача с заданным максимумом: именно на ней проверяется верхняя
         # граница балла. У задач без максимума её нет — это отдельный тест.
         self.problem = open_problem()
-        # Проверять можно только свои задачи: назначаем организатора
-        # дополнительным проверяющим, как это сделал бы администратор.
-        self.problem.reviewers.add(self.organizer)
         self.submission = Submission.objects.create(user=self.kid, problem=self.problem)
         self.client.force_login(self.organizer)
 
@@ -182,7 +179,6 @@ class ReviewGradingTest(TestCase):
     def test_problem_without_a_maximum_accepts_any_score(self):
         """Максимум необязателен: шкалу можно уточнить уже при проверке."""
         free = open_problem(max_score=None)
-        free.reviewers.add(self.organizer)
         submission = Submission.objects.create(user=self.kid, problem=free)
 
         self.client.post(reverse("contest:review_detail", args=[submission.pk]),
@@ -408,22 +404,21 @@ class ProblemApprovalTest(TestCase):
         html = self.client.get(reverse("contest:problem_manage")).content.decode()
         self.assertNotIn("Новая задача", html)
 
-    def test_assigned_reviewer_sees_the_problem(self):
-        """Администратор может назначить проверяющим кого-то кроме автора."""
-        self._create()
-        problem = Problem.objects.get(number=90)
-        problem.reviewers.add(self.other)
-
-        self.client.force_login(self.other)
-        html = self.client.get(reverse("contest:problem_manage")).content.decode()
-        self.assertIn("Новая задача", html)
-
-    def test_stranger_cannot_review_someone_elses_problem(self):
+    def test_any_organizer_can_review_the_problem(self):
         self._create()
         problem = Problem.objects.get(number=90)
         submission = Submission.objects.create(user=self.kid, problem=problem)
 
         self.client.force_login(self.other)
+        response = self.client.get(reverse("contest:review_detail", args=[submission.pk]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_participant_cannot_review_problem(self):
+        self._create()
+        problem = Problem.objects.get(number=90)
+        submission = Submission.objects.create(user=self.kid, problem=problem)
+
+        self.client.force_login(self.kid)
         response = self.client.get(reverse("contest:review_detail", args=[submission.pk]))
         self.assertEqual(response.status_code, 403)
 
@@ -596,10 +591,11 @@ class LastSubmissionTest(TestCase):
     def test_reviewer_of_the_problem_can_open_the_file(self):
         self._send()
         sf = SubmissionFile.objects.get()
+        other_kid = User.objects.create_user("kid_other@e.ru", "olymp12345", role=User.Role.PARTICIPANT)
+        self.client.force_login(other_kid)
+        self.assertEqual(self.client.get(sf.get_absolute_url()).status_code, 404)
         organizer = User.objects.create_user("org@e.ru", "olymp12345", role=User.Role.ORGANIZER)
         self.client.force_login(organizer)
-        self.assertEqual(self.client.get(sf.get_absolute_url()).status_code, 404)
-        self.problem.reviewers.add(organizer)
         self.assertEqual(self.client.get(sf.get_absolute_url()).status_code, 200)
 
     @override_settings(PROTECTED_MEDIA_ACCEL_PREFIX="/protected-media/")
@@ -728,4 +724,173 @@ class ProblemAdminAuthorFieldTest(TestCase):
         self.assertIn(self.admin_user, queryset)
         self.assertIn(self.organizer_user, queryset)
         self.assertNotIn(self.participant_user, queryset)
+
+
+class OnlineReviewMatrixTests(TestCase):
+    """Тесты сводной матрицы проверки дистанционного тура и отображения сканов в кабинете."""
+
+    def setUp(self):
+        from decimal import Decimal
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.participation.models import Registration, VenueBooking
+        from apps.venues.models import Venue
+
+        now = timezone.now()
+        self.season = Season.objects.create(year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True)
+        self.stage_online = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.ONLINE,
+            slug="online-round",
+            title="Дистанционный тур",
+            starts_at=now - timedelta(days=2),
+            ends_at=now + timedelta(days=5),
+            is_published=True,
+            order=1,
+        )
+        self.author1 = User.objects.create_user("author1@b.ru", "pass12345", role=User.Role.ORGANIZER)
+        self.author2 = User.objects.create_user("author2@b.ru", "pass12345", role=User.Role.ORGANIZER)
+        self.reviewer = User.objects.create_user("reviewer@b.ru", "pass12345", role=User.Role.ORGANIZER)
+
+        self.p1 = Problem.objects.create(
+            stage=self.stage_online, number="1.1", title="Задача 1.1",
+            max_score=Decimal("10"), created_by=self.author1, status=Problem.Status.APPROVED,
+        )
+        self.p2 = Problem.objects.create(
+            stage=self.stage_online, number="1.2", title="Задача 1.2",
+            max_score=Decimal("10"), created_by=self.author2, status=Problem.Status.APPROVED,
+        )
+
+        self.kid1 = User.objects.create_user("kid_matrix1@b.ru", "pass12345", role=User.Role.PARTICIPANT)
+        self.sub1_1 = Submission.objects.create(user=self.kid1, problem=self.p1)
+        test_file = SimpleUploadedFile("solution1.pdf", b"%PDF-1.4 sample", content_type="application/pdf")
+        self.sf1 = SubmissionFile.objects.create(submission=self.sub1_1, file=test_file)
+
+        self.sub1_2 = Submission.objects.create(user=self.kid1, problem=self.p2)
+
+    def test_matrix_view_rendered_for_reviewer(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_list")
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+
+        # Ссылки на условия задач
+        self.assertContains(resp, self.p1.get_absolute_url())
+        self.assertContains(resp, self.p2.get_absolute_url())
+
+        # Файлы решений
+        self.assertContains(resp, "solution1.pdf")
+        self.assertContains(resp, self.sf1.file.url)
+
+        # Поля ввода
+        self.assertContains(resp, f"score_{self.sub1_1.pk}")
+
+    def test_ajax_grade_and_real_number_scores(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_save_grade")
+
+        # Дробный балл (нецелое число) 8.5
+        resp = self.client.post(
+            url,
+            {"submission_id": self.sub1_1.pk, "score": "8.5"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["total"], "8.5")
+
+        grade = Grade.objects.get(submission=self.sub1_1)
+        self.assertEqual(grade.score, Decimal("8.5"))
+        self.assertEqual(grade.reviewer, self.reviewer)
+
+        # Добавляем балл 1.25 за вторую задачу
+        resp = self.client.post(
+            url,
+            {"submission_id": self.sub1_2.pk, "score": "1.25"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["total"], "9.75")
+
+        # Очищаем первую оценку
+        resp = self.client.post(
+            url,
+            {"submission_id": self.sub1_1.pk, "score": ""},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["total"], "1.25")
+
+        grade.refresh_from_db()
+        self.assertIsNone(grade.score)
+        self.assertEqual(grade.status, Grade.Status.NEW)
+
+    def test_negative_score_rejected(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_save_grade")
+        resp = self.client.post(
+            url,
+            {"submission_id": self.sub1_1.pk, "score": "-5"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_my_submissions_shows_offline_scan_when_published(self):
+        from datetime import date
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.contest.models import Score
+        from apps.participation.models import Registration, VenueBooking
+        from apps.venues.models import Venue
+
+        now = timezone.now()
+        stage_offline = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-tour",
+            title="Очный тур",
+            starts_at=now - timedelta(days=3),
+            ends_at=now - timedelta(days=1),
+            is_published=True,
+            order=1,
+            results_published=False,
+        )
+        venue = Venue.objects.create(
+            title="Физтех",
+            city="Долгопрудный",
+            address="Первомайская 5",
+            latitude=55.93,
+            longitude=37.52,
+            status=Venue.Status.APPROVED,
+        )
+        reg = Registration.objects.create(user=self.kid1, season=self.season)
+        booking = VenueBooking.objects.create(
+            registration=reg,
+            stage=stage_offline,
+            venue=venue,
+            status=VenueBooking.Status.CONFIRMED,
+            work_scan=SimpleUploadedFile("my_scan.pdf", b"%PDF-1.4 scan", content_type="application/pdf"),
+        )
+        p_off = Problem.objects.create(
+            stage=stage_offline, number="1.1", title="Задача Очная",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+        Score.objects.create(registration=reg, problem=p_off, points=Decimal("9"), venue=venue)
+
+        self.client.force_login(self.kid1)
+        url = reverse("contest:my_submissions")
+
+        # Пока результаты не опубликованы — скан не показывается
+        resp = self.client.get(url)
+        self.assertNotContains(resp, "Скан проверенной работы")
+
+        # Опубликовали результаты
+        stage_offline.results_published = True
+        stage_offline.save()
+
+        resp = self.client.get(url)
+        self.assertContains(resp, "Скан проверенной работы")
+        self.assertContains(resp, booking.get_scan_url())
+
 

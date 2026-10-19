@@ -245,6 +245,7 @@ class HomeStatusTest(TestCase):
         self.assertIn("очный этап", html)
 
     def test_upcoming_stage_is_announced_with_its_start(self):
+        self._shift("ochny", 2, 5)
         html = self.client.get("/").content.decode()
         self.assertIn("начнётся", html)
         self.assertIn("Очный этап", html)

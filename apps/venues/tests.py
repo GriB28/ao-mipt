@@ -226,3 +226,198 @@ class VenueExportViewTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, reverse("venues:export", args=[self.venue.pk]))
+
+
+class OfflineGradingAndScansTests(TestCase):
+    """Тесты ведомости очного тура, переключения комплектов и загрузки сканов."""
+
+    def setUp(self):
+        from decimal import Decimal
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.contest.models import Problem, Score
+
+        self.Decimal = Decimal
+        self.SimpleUploadedFile = SimpleUploadedFile
+        self.Problem = Problem
+        self.Score = Score
+
+        now = timezone.now()
+        self.season = Season.objects.create(
+            year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True
+        )
+        self.stage = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-final",
+            title="Очный тур",
+            starts_at=now - timedelta(days=1),
+            ends_at=now + timedelta(days=2),
+            is_published=True,
+            order=1,
+        )
+        self.venue = Venue.objects.create(
+            title="МФТИ КПМ",
+            city="Долгопрудный",
+            address="Первомайская 7",
+            latitude=55.93,
+            longitude=37.52,
+            status=Venue.Status.APPROVED,
+            default_variant=1,
+            event_date=date(2099, 10, 15),
+        )
+        self.venue.seasons.add(self.season)
+
+        self.organizer = User.objects.create_user("org_offline@b.ru", "pass12345", role=User.Role.ORGANIZER)
+        self.participant1 = User.objects.create_user("part1@b.ru", "pass12345", role=User.Role.PARTICIPANT)
+        self.participant2 = User.objects.create_user("part2@b.ru", "pass12345", role=User.Role.PARTICIPANT)
+
+        reg1 = Registration.objects.create(user=self.participant1, season=self.season)
+        self.booking1 = VenueBooking.objects.create(
+            registration=reg1,
+            stage=self.stage,
+            venue=self.venue,
+            status=VenueBooking.Status.CONFIRMED,
+        )
+
+        reg2 = Registration.objects.create(user=self.participant2, season=self.season)
+        self.booking2 = VenueBooking.objects.create(
+            registration=reg2,
+            stage=self.stage,
+            venue=self.venue,
+            status=VenueBooking.Status.CONFIRMED,
+        )
+
+        # Задачи: 1.1, 1.2 (Комплект 1), 2.1, 2.2 (Комплект 2)
+        self.p1_1 = Problem.objects.create(
+            stage=self.stage, number="1.1", title="Задача 1.1",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+        self.p1_2 = Problem.objects.create(
+            stage=self.stage, number="1.2", title="Задача 1.2",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+        self.p2_1 = Problem.objects.create(
+            stage=self.stage, number="2.1", title="Задача 2.1",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+        self.p2_2 = Problem.objects.create(
+            stage=self.stage, number="2.2", title="Задача 2.2",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+
+    def test_manager_sees_tabs_participant_does_not(self):
+        # Обычный участник: нет вкладок
+        self.client.force_login(self.participant1)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "sub-tabs-nav")
+        self.assertNotContains(resp, "Проверка задач")
+        self.assertNotContains(resp, "Загрузка скана работы")
+
+        # Организатор: видит вкладки
+        self.client.force_login(self.organizer)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "sub-tabs-nav")
+        self.assertContains(resp, "Проверка задач")
+        self.assertContains(resp, "Загрузка скана работы")
+
+    def test_offline_grading_ajax_scores_and_variant_deactivation(self):
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+
+        # Ставим балл 8.5 за 1.1 (Комплект 1)
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "8.5"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["total"], "8.5")
+
+        # Ставим балл 7.0 за 2.1 (Комплект 2) — при активном комплекте 1 он должен быть skipped
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p2_1.pk, "points": "7"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["total"], "8.5")  # 7 не входит в сумму!
+
+        s1_1 = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
+        self.assertFalse(s1_1.is_skipped)
+        s2_1 = self.Score.objects.get(registration=self.booking1.registration, problem=self.p2_1)
+        self.assertTrue(s2_1.is_skipped)
+
+        # Переключаем комплект участника на 2
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "variant": "2"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["variant"], 2)
+        self.assertEqual(data["total"], "7")  # теперь в сумме только 2.1!
+
+        s1_1.refresh_from_db()
+        s2_1.refresh_from_db()
+        self.assertTrue(s1_1.is_skipped)
+        self.assertFalse(s2_1.is_skipped)
+
+    def test_offline_scan_upload_download_and_permissions(self):
+        self.client.force_login(self.organizer)
+        upload_url = reverse("venues:upload_work_scan")
+
+        # Не-PDF отклоняется
+        txt_file = self.SimpleUploadedFile("work.txt", b"not a pdf", content_type="text/plain")
+        resp = self.client.post(upload_url, {"booking_id": self.booking1.pk, "work_scan": txt_file})
+        self.booking1.refresh_from_db()
+        self.assertFalse(bool(self.booking1.work_scan))
+
+        # Валидный PDF загружается
+        pdf_file = self.SimpleUploadedFile("work.pdf", b"%PDF-1.4 sample content", content_type="application/pdf")
+        resp = self.client.post(
+            upload_url,
+            {"booking_id": self.booking1.pk, "work_scan": pdf_file, "variant": "2", "held_at": "2099-10-16"},
+        )
+        self.booking1.refresh_from_db()
+        self.assertTrue(bool(self.booking1.work_scan))
+        self.assertEqual(self.booking1.variant, 2)
+        self.assertEqual(str(self.booking1.held_at), "2099-10-16")
+
+        scan_url = self.booking1.get_scan_url()
+
+        # Организатор может скачать/просмотреть скан
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+
+        # Участник до публикации результатов получает 404
+        self.client.force_login(self.participant1)
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 404)
+
+        # Публикуем результаты
+        self.stage.results_published = True
+        self.stage.save()
+
+        # Теперь участник видит свой скан
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 200)
+
+        # Чужой участник не видит
+        self.client.force_login(self.participant2)
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 404)
+
+        # Удаление скана организатором
+        self.client.force_login(self.organizer)
+        del_url = reverse("venues:delete_work_scan", args=[self.booking1.pk])
+        resp = self.client.post(del_url)
+        self.booking1.refresh_from_db()
+        self.assertFalse(bool(self.booking1.work_scan))
+
