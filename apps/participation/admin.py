@@ -277,6 +277,7 @@ class VenueBookingAdmin(admin.ModelAdmin):
         if initial_user:
             extra_context["initial_user_data_json"] = json.dumps(initial_user, ensure_ascii=False)
         extra_context["search_participants_url"] = reverse("admin:participation_venuebooking_search_participants")
+        extra_context["season_venues_url"] = reverse("admin:participation_venuebooking_season_venues")
         return super().add_view(request, form_url, extra_context=extra_context)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
@@ -290,6 +291,7 @@ class VenueBookingAdmin(admin.ModelAdmin):
         except Exception:
             pass
         extra_context["search_participants_url"] = reverse("admin:participation_venuebooking_search_participants")
+        extra_context["season_venues_url"] = reverse("admin:participation_venuebooking_season_venues")
         return super().change_view(request, object_id, form_url, extra_context=extra_context)
 
     def response_add(self, request, obj, post_url_continue=None):

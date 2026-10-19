@@ -23,74 +23,62 @@ class UserChoiceField(forms.ModelChoiceField):
 
 class SeasonChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        active_tag = " ★ (текущий сезон)" if obj.is_active else ""
+        active_tag = " ★" if obj.is_active else ""
         return f"{obj.title} ({obj.years_label}){active_tag}"
 
 
 class StageChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        return f"{obj.season.title} — {obj.title}"
+        return obj.title
 
 
 class VenueChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        return f"{obj.title} ({obj.city}, {obj.address})"
+        return f"{obj.title} ({obj.city})"
 
 
 class VenueBookingAdminForm(forms.ModelForm):
     """
-    Удобная форма ручной записи участника на точку проведения очного этапа.
+    Форма ручной записи участника на точку проведения очного этапа.
 
-    Позволяет администратору:
-    1. Найти участника по email или ФИО через фильтр.
-    2. Выбрать сезон проведения.
-    3. Выбрать очный этап сезона (если их несколько).
-    4. Выбрать точку проведения из выпадающего списка точек этого сезона.
+    1. Поиск участника по ФИО → выбор из выпадающего списка.
+    2. Выбор сезона → этапы и точки обновляются динамически через JS.
+    3. Выбор очного этапа и точки проведения.
     """
 
-    filter_type = forms.ChoiceField(
-        choices=[
-            ("all", "Все (почта или ФИО)"),
-            ("email", "Только по почте"),
-            ("name", "Только по ФИО"),
-        ],
-        required=False,
-        initial="all",
-        label="Фильтр поиска",
-    )
     user = UserChoiceField(
-        queryset=User.objects.select_related("profile").all(),
+        queryset=User.objects.select_related("profile").filter(
+            role=User.Role.PARTICIPANT
+        ).order_by("profile__last_name", "profile__first_name", "email"),
         required=True,
         label="Участник",
-        help_text="Выберите участника с помощью поиска выше (по email или ФИО).",
+        help_text="Начните вводить фамилию для поиска.",
+        widget=forms.Select(attrs={"style": "width: 100%; max-width: 600px;"}),
     )
     season = SeasonChoiceField(
         queryset=Season.objects.all().order_by("-year"),
         required=True,
         label="Сезон",
-        help_text="Сезон проведения олимпиады.",
     )
     stage = StageChoiceField(
-        queryset=Stage.objects.filter(kind__in=[Stage.Kind.OFFLINE, Stage.Kind.HYBRID], is_practice=False),
+        queryset=Stage.objects.none(),  # заполняется в __init__
         required=True,
         label="Очный этап",
-        help_text="Очный этап выбранного сезона.",
     )
     venue = VenueChoiceField(
-        queryset=Venue.objects.all().order_by("region", "city", "title"),
+        queryset=Venue.objects.none(),  # заполняется в __init__
         required=True,
         label="Точка проведения",
-        help_text="Точка проведения очного этапа для выбранного сезона.",
     )
     status = forms.ChoiceField(
         choices=VenueBooking.Status.choices,
         initial=VenueBooking.Status.BOOKED,
-        label="Статус записи",
+        label="Статус",
     )
     comment = forms.CharField(
         widget=forms.Textarea(attrs={"rows": 2}),
         required=False,
-        label="Комментарий к записи",
+        label="Комментарий",
     )
 
     class Meta:
@@ -99,49 +87,75 @@ class VenueBookingAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.order_fields(["filter_type", "user", "season", "stage", "venue", "status", "comment"])
+        self.order_fields(["user", "season", "stage", "venue", "status", "comment"])
 
-        if self.instance and self.instance.pk:
+        # Определяем выбранный сезон: из POST-данных → экземпляра → начальных данных → активного
+        chosen_season = None
+
+        # 1) POST-данные имеют наивысший приоритет (пользователь мог сменить сезон через JS)
+        post_season_id = self.data.get("season") if self.data else None
+        if post_season_id:
+            try:
+                chosen_season = Season.objects.get(pk=post_season_id)
+            except Season.DoesNotExist:
+                pass
+
+        if chosen_season is None:
+            if self.instance and self.instance.pk:
+                # Редактирование существующей записи
+                chosen_season = self.instance.registration.season
+                self.fields["user"].initial = self.instance.registration.user_id
+                self.fields["season"].initial = self.instance.registration.season_id
+                self.fields["stage"].initial = self.instance.stage_id
+                self.fields["venue"].initial = self.instance.venue_id
+                self.fields["status"].initial = self.instance.status
+                self.fields["comment"].initial = self.instance.comment
+            else:
+                # Создание новой записи: берём сезон из начальных данных
+                initial_season_id = self.initial.get("season")
+                if initial_season_id:
+                    try:
+                        chosen_season = Season.objects.get(pk=initial_season_id)
+                    except Season.DoesNotExist:
+                        pass
+                if chosen_season is None:
+                    chosen_season = Season.objects.active()
+                    if chosen_season:
+                        self.fields["season"].initial = chosen_season.pk
+        elif self.instance and self.instance.pk:
+            # POST-сезон определён, но экземпляр уже есть — выставляем initial'ы из объекта
             self.fields["user"].initial = self.instance.registration.user_id
             self.fields["season"].initial = self.instance.registration.season_id
             self.fields["stage"].initial = self.instance.stage_id
             self.fields["venue"].initial = self.instance.venue_id
             self.fields["status"].initial = self.instance.status
             self.fields["comment"].initial = self.instance.comment
+
+        # Заполняем queryset этапов и точек для выбранного сезона
+        if chosen_season:
+            offline_stages = Stage.objects.filter(
+                season=chosen_season,
+                kind__in=[Stage.Kind.OFFLINE, Stage.Kind.HYBRID],
+                is_practice=False,
+            ).order_by("order", "starts_at")
+            self.fields["stage"].queryset = offline_stages
+
+            # Дефолтный этап: текущий/ближайший или первый
+            if not self.fields["stage"].initial:
+                default_stage = (
+                    Stage.objects.current_or_next(chosen_season, Stage.Kind.OFFLINE)
+                    or offline_stages.first()
+                )
+                if default_stage:
+                    self.fields["stage"].initial = default_stage.pk
+
+            # Точки: все площадки сезона
+            self.fields["venue"].queryset = Venue.objects.filter(
+                seasons=chosen_season
+            ).order_by("region", "city", "title")
         else:
-            # Handle initial values passed from GET or kwargs
-            active_season = Season.objects.active()
-            if not self.initial.get("season") and active_season:
-                self.fields["season"].initial = active_season.pk
-
-            chosen_season_id = self.initial.get("season") or (active_season.pk if active_season else None)
-            if chosen_season_id:
-                try:
-                    chosen_season = Season.objects.get(pk=chosen_season_id)
-                except Season.DoesNotExist:
-                    chosen_season = active_season
-
-                if chosen_season and not self.initial.get("stage"):
-                    default_stage = (
-                        Stage.objects.current_or_next(chosen_season, Stage.Kind.OFFLINE)
-                        or Stage.objects.filter(
-                            season=chosen_season,
-                            kind__in=[Stage.Kind.OFFLINE, Stage.Kind.HYBRID],
-                            is_practice=False,
-                        ).first()
-                    )
-                    if default_stage:
-                        self.fields["stage"].initial = default_stage.pk
-
-            if self.initial.get("venue"):
-                venue_id = self.initial.get("venue")
-                try:
-                    v = Venue.objects.get(pk=venue_id)
-                    v_season = v.seasons.filter(is_active=True).first() or v.seasons.first()
-                    if v_season and not self.initial.get("season"):
-                        self.fields["season"].initial = v_season.pk
-                except Venue.DoesNotExist:
-                    pass
+            self.fields["stage"].queryset = Stage.objects.none()
+            self.fields["venue"].queryset = Venue.objects.none()
 
     def clean(self):
         cleaned_data = super().clean()
