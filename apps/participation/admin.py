@@ -125,6 +125,20 @@ class VenueBookingAdmin(admin.ModelAdmin):
     form = VenueBookingAdminForm
     change_form_template = "admin/participation/venuebooking/change_form.html"
 
+    class Media:
+        js = (
+            "admin/js/vendor/jquery/jquery.js",
+            "admin/js/vendor/select2/select2.full.js",
+            "admin/js/vendor/select2/i18n/ru.js",
+            "admin/js/jquery.init.js",
+        )
+        css = {
+            "screen": (
+                "admin/css/vendor/select2/select2.css",
+                "admin/css/autocomplete.css",
+            )
+        }
+
     list_display = ("participant_name", "user_email", "season_title", "stage", "venue", "status")
     list_filter = ("stage__season", "stage", "status", "venue__region", "venue")
     search_fields = (
