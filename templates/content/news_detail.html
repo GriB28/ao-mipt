@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% load html_clean %}
 {% block title %}{{ item.title }}{% endblock %}
 {% block content %}
 <h1>{{ item.title }}</h1>
 <p class="muted">{{ item.published_at|date:"d.m.Y" }}</p>
 {% if item.cover %}<p><img src="{{ item.cover.url }}" alt="" style="max-width:100%;border-radius:10px"></p>{% endif %}
-<div>{{ item.body|linebreaks }}</div>
+<div>{{ item.body|clean_html }}</div>
 <p><a href="{% url 'content:news_list' %}">← Все новости</a></p>
 {% endblock %}

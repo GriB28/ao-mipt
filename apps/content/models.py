@@ -29,7 +29,7 @@ class News(TimeStampedModel):
     title = models.CharField("заголовок", max_length=250)
     slug = models.SlugField("адрес", unique=True)
     summary = models.CharField("краткое описание", max_length=400, blank=True)
-    body = models.TextField("текст")
+    body = models.TextField("текст (HTML)")
     cover = models.ImageField("картинка", upload_to="news/", blank=True)
     published_at = models.DateTimeField("дата публикации", default=timezone.now)
     is_published = models.BooleanField("опубликовано", default=False)
