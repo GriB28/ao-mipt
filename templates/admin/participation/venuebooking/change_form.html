@@ -1,53 +1,43 @@
 {% extends "admin/change_form.html" %}
 {% load i18n admin_urls static %}
 
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .field-user .select2-container {
+    max-width: 500px;
+    width: 100% !important;
+  }
+</style>
+{% endblock %}
+
 {% block field_sets %}
 <div>
   {% if adminform.form.non_field_errors %}
     <p class="errornote">{{ adminform.form.non_field_errors }}</p>
   {% endif %}
 
-  {# Блок поиска участника — поверх стандартных полей формы #}
+  {# Участник #}
   <fieldset class="module aligned">
     <h2>Участник</h2>
     <div class="form-row field-user">
       <div>
-        <label for="participant-search-input">Поиск по ФИО:</label>
-        <input
-          type="text"
-          id="participant-search-input"
-          placeholder="Введите фамилию…"
-          autocomplete="off"
-          style="width: 300px;"
-        >
-        <span id="participant-search-status" style="margin-left: 8px; color: #666; font-size: 13px;"></span>
+        <label for="{{ adminform.form.user.id_for_label }}" class="required">{{ adminform.form.user.label }}:</label>
+        {{ adminform.form.user }}
       </div>
       {% if adminform.form.user.errors %}
         <ul class="errorlist">{% for e in adminform.form.user.errors %}<li>{{ e }}</li>{% endfor %}</ul>
       {% endif %}
-      <div id="participant-results" style="margin-top: 6px; display: none;
-           border: 1px solid #ccc; max-height: 220px; overflow-y: auto;
-           background: #fff; width: 500px; box-shadow: 0 2px 4px rgba(0,0,0,.15);">
-      </div>
-      {# Карточка выбранного участника #}
-      <div id="participant-chosen" style="display:none; margin-top: 6px;">
-        <strong id="participant-chosen-name"></strong>
-        <span id="participant-chosen-email" style="color:#666; margin-left:8px;"></span>
-        <button type="button" id="participant-chosen-clear"
-                style="margin-left: 12px; font-size: 12px; cursor: pointer;">✕ изменить</button>
-      </div>
-      {# Скрытый нативный select — именно он отправляется в форму #}
-      <div style="display:none;">{{ adminform.form.user }}</div>
       <p class="help">{{ adminform.form.user.help_text }}</p>
     </div>
   </fieldset>
 
-  {# Сезон #}
+  {# Сезон и этап #}
   <fieldset class="module aligned">
     <h2>Сезон и этап</h2>
     <div class="form-row field-season">
       <div>
-        <label for="{{ adminform.form.season.id_for_label }}">{{ adminform.form.season.label }}:</label>
+        <label for="{{ adminform.form.season.id_for_label }}" class="required">{{ adminform.form.season.label }}:</label>
         {{ adminform.form.season }}
       </div>
       {% if adminform.form.season.errors %}
@@ -55,10 +45,10 @@
       {% endif %}
     </div>
 
-    {# Этап — queryset уже отфильтрован по сезону на сервере; при смене сезона JS перегрузит #}
+    {# Этап #}
     <div class="form-row field-stage">
       <div>
-        <label for="{{ adminform.form.stage.id_for_label }}">{{ adminform.form.stage.label }}:</label>
+        <label for="{{ adminform.form.stage.id_for_label }}" class="required">{{ adminform.form.stage.label }}:</label>
         {{ adminform.form.stage }}
       </div>
       {% if adminform.form.stage.errors %}
@@ -75,7 +65,7 @@
     <h2>Точка проведения</h2>
     <div class="form-row field-venue">
       <div>
-        <label for="{{ adminform.form.venue.id_for_label }}">{{ adminform.form.venue.label }}:</label>
+        <label for="{{ adminform.form.venue.id_for_label }}" class="required">{{ adminform.form.venue.label }}:</label>
         {{ adminform.form.venue }}
       </div>
       {% if adminform.form.venue.errors %}
@@ -92,7 +82,7 @@
     <h2>Статус и комментарий</h2>
     <div class="form-row field-status">
       <div>
-        <label for="{{ adminform.form.status.id_for_label }}">{{ adminform.form.status.label }}:</label>
+        <label for="{{ adminform.form.status.id_for_label }}" class="required">{{ adminform.form.status.label }}:</label>
         {{ adminform.form.status }}
       </div>
       {% if adminform.form.status.errors %}
@@ -112,14 +102,23 @@
 </div>
 
 {{ venues_by_season|json_script:"venues-by-season-data" }}
-{% if initial_user %}{{ initial_user|json_script:"initial-user-data" }}{% endif %}
 {% endblock %}
 
 
 {% block admin_change_form_document_ready %}
 {{ block.super }}
 <script>
-document.addEventListener("DOMContentLoaded", function () {
+django.jQuery(function ($) {
+
+  // ── Select2 для поиска участника по ФИО ──────────────────────────
+  if ($.fn.select2) {
+    $("#id_user").select2({
+      placeholder: "---------",
+      allowClear: true,
+      width: "element",
+      language: "ru"
+    });
+  }
 
   // ── данные по сезонам ────────────────────────────────────────────
   let seasonsData = {};
@@ -135,131 +134,11 @@ document.addEventListener("DOMContentLoaded", function () {
     console.error("Error parsing seasonsData:", e);
   }
 
-  const searchUrl = "{{ search_participants_url }}";
-
-  // ── элементы ─────────────────────────────────────────────────────
-  const userSelect    = document.getElementById("id_user");
-  const searchInput   = document.getElementById("participant-search-input");
-  const searchStatus  = document.getElementById("participant-search-status");
-  const resultsList   = document.getElementById("participant-results");
-  const chosenBlock   = document.getElementById("participant-chosen");
-  const chosenName    = document.getElementById("participant-chosen-name");
-  const chosenEmail   = document.getElementById("participant-chosen-email");
-  const chosenClear   = document.getElementById("participant-chosen-clear");
-
   const seasonSelect  = document.getElementById("id_season");
   const stageSelect   = document.getElementById("id_stage");
   const venueSelect   = document.getElementById("id_venue");
   const stageNote     = document.getElementById("stage-empty-note");
   const venueNote     = document.getElementById("venue-empty-note");
-
-  // ── восстановление выбранного участника при загрузке ─────────────
-  function showChosen(userData) {
-    chosenName.textContent  = userData.full_name || userData.email;
-    chosenEmail.textContent = userData.full_name ? userData.email : "";
-    chosenBlock.style.display = "block";
-    searchInput.style.display = "none";
-    searchStatus.style.display = "none";
-    resultsList.style.display  = "none";
-
-    // выставляем значение нативного select
-    for (let i = 0; i < userSelect.options.length; i++) {
-      if (String(userSelect.options[i].value) === String(userData.id)) {
-        userSelect.options[i].selected = true;
-        return;
-      }
-    }
-    // если не нашли — добавляем опцию
-    const opt = document.createElement("option");
-    opt.value    = userData.id;
-    opt.text     = userData.display || userData.email;
-    opt.selected = true;
-    userSelect.add(opt);
-  }
-
-  function clearChosen() {
-    chosenBlock.style.display = "none";
-    searchInput.style.display = "";
-    searchStatus.style.display = "";
-    searchInput.value = "";
-    userSelect.value  = "";
-    resultsList.style.display = "none";
-    searchInput.focus();
-  }
-
-  // предзаполнение при редактировании / переходе по ссылке с ?user=
-  const rawInitUser = document.getElementById("initial-user-data");
-  if (rawInitUser && rawInitUser.textContent) {
-    try {
-      let u = JSON.parse(rawInitUser.textContent);
-      if (typeof u === "string") u = JSON.parse(u);
-      showChosen(u);
-    } catch (e) {}
-  } else if (userSelect && userSelect.value) {
-    const sel = userSelect.options[userSelect.selectedIndex];
-    if (sel && sel.value) showChosen({ id: sel.value, full_name: sel.text, email: "", display: sel.text });
-  }
-
-  chosenClear.addEventListener("click", clearChosen);
-
-  // ── AJAX-поиск участников (только по ФИО) ────────────────────────
-  let searchTimeout = null;
-
-  searchInput.addEventListener("input", function () {
-    clearTimeout(searchTimeout);
-    const q = searchInput.value.trim();
-    if (q.length < 2) {
-      resultsList.style.display = "none";
-      searchStatus.textContent = q.length ? "введите ещё символы…" : "";
-      return;
-    }
-    searchStatus.textContent = "Поиск…";
-    searchTimeout = setTimeout(() => doSearch(q), 250);
-  });
-
-  function doSearch(q) {
-    const url = new URL(searchUrl, location.href);
-    url.searchParams.set("q", q);
-    url.searchParams.set("by", "name");
-    fetch(url)
-      .then(r => r.json())
-      .then(data => renderResults(data.results || []))
-      .catch(() => { searchStatus.textContent = "Ошибка поиска"; });
-  }
-
-  function renderResults(results) {
-    searchStatus.textContent = results.length ? "" : "Ничего не найдено";
-    if (!results.length) { resultsList.style.display = "none"; return; }
-
-    resultsList.innerHTML = results.map(u => {
-      const extra = [u.grade, u.location].filter(Boolean).join(" · ");
-      return `<div class="participant-row" data-id="${u.id}"
-                   data-json="${encodeURIComponent(JSON.stringify(u))}"
-                   style="padding: 6px 10px; cursor:pointer; border-bottom:1px solid #eee;">
-        <strong>${u.full_name || '<em style="color:#999">без ФИО</em>'}</strong>
-        <span style="color:#666; font-size:12px; margin-left:6px;">${u.email}</span>
-        ${extra ? `<span style="color:#888; font-size:11px; margin-left:6px;">${extra}</span>` : ""}
-      </div>`;
-    }).join("");
-    resultsList.style.display = "block";
-
-    resultsList.querySelectorAll(".participant-row").forEach(row => {
-      row.addEventListener("mouseenter", () => row.style.background = "#f0f7ff");
-      row.addEventListener("mouseleave", () => row.style.background = "");
-      row.addEventListener("click", () => {
-        try {
-          const u = JSON.parse(decodeURIComponent(row.getAttribute("data-json")));
-          showChosen(u);
-        } catch (e) {}
-      });
-    });
-  }
-
-  // скрывать результаты при клике вне
-  document.addEventListener("click", function (e) {
-    if (!resultsList.contains(e.target) && e.target !== searchInput)
-      resultsList.style.display = "none";
-  });
 
   // ── Сезон → этапы + точки ────────────────────────────────────────
   function rebuildFromSeasonData(data, keepStage, keepVenue) {

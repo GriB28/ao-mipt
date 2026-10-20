@@ -1388,3 +1388,10 @@ pre { overflow-x: auto; }
   }
 }
 
+
+/* Метка площадки на карте, если этап уже прошёл */
+.leaflet-marker-icon.venue-marker-gray {
+  filter: grayscale(100%);
+  -webkit-filter: grayscale(100%);
+  opacity: 0.8;
+}

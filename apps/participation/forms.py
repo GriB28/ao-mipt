@@ -3,6 +3,7 @@
 """
 
 from django import forms
+from django.db import models
 
 from apps.accounts.models import User
 from apps.seasons.models import Season, Stage
@@ -16,8 +17,7 @@ class UserChoiceField(forms.ModelChoiceField):
         profile = getattr(obj, "profile", None)
         full_name = profile.full_name if profile else ""
         if full_name:
-            grade_str = f", {profile.grade} кл." if profile.grade else ""
-            return f"{full_name} ({obj.email}{grade_str})"
+            return f"{full_name} ({obj.email})"
         return obj.email
 
 
@@ -41,7 +41,7 @@ class VenueBookingAdminForm(forms.ModelForm):
     """
     Форма ручной записи участника на точку проведения очного этапа.
 
-    1. Поиск участника по ФИО → выбор из выпадающего списка.
+    1. Выбор участника из выпадающего списка с поиском по ФИО.
     2. Выбор сезона → этапы и точки обновляются динамически через JS.
     3. Выбор очного этапа и точки проведения.
     """
@@ -49,11 +49,20 @@ class VenueBookingAdminForm(forms.ModelForm):
     user = UserChoiceField(
         queryset=User.objects.select_related("profile").filter(
             role=User.Role.PARTICIPANT
-        ).order_by("profile__last_name", "profile__first_name", "email"),
+        ).order_by(
+            models.Case(
+                models.When(profile__last_name="", then=models.Value(1)),
+                models.When(profile__last_name__isnull=True, then=models.Value(1)),
+                default=models.Value(0),
+            ),
+            "profile__last_name",
+            "profile__first_name",
+            "email",
+        ),
         required=True,
         label="Участник",
-        help_text="Начните вводить фамилию для поиска.",
-        widget=forms.Select(attrs={"style": "width: 100%; max-width: 600px;"}),
+        help_text="Выберите участника из списка или начните вводить фамилию.",
+        widget=forms.Select(attrs={"style": "width: 100%; max-width: 500px;"}),
     )
     season = SeasonChoiceField(
         queryset=Season.objects.all().order_by("-year"),
@@ -111,7 +120,14 @@ class VenueBookingAdminForm(forms.ModelForm):
                 self.fields["status"].initial = self.instance.status
                 self.fields["comment"].initial = self.instance.comment
             else:
-                # Создание новой записи: берём сезон из начальных данных
+                # Создание новой записи: берём пользователя и сезон из начальных данных
+                initial_user_id = self.initial.get("user")
+                if initial_user_id:
+                    try:
+                        self.fields["user"].initial = int(initial_user_id)
+                    except (ValueError, TypeError):
+                        self.fields["user"].initial = initial_user_id
+
                 initial_season_id = self.initial.get("season")
                 if initial_season_id:
                     try:
