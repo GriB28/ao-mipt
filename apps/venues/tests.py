@@ -226,3 +226,93 @@ class VenueExportViewTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, reverse("venues:export", args=[self.venue.pk]))
+
+
+
+class VenueStagePassedTests(TestCase):
+    def setUp(self):
+        self.season = Season.objects.create(
+            year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True
+        )
+        self.admin = User.objects.create_user(
+            "admin_user@b.ru", "pass12345", role=User.Role.ADMIN, is_staff=True, is_superuser=True
+        )
+        self.venue = Venue.objects.create(
+            title="Тестовая площадка",
+            region="Москва",
+            city="Москва",
+            address="ул. Примерная, 10",
+            latitude=55.75,
+            longitude=37.62,
+            status=Venue.Status.APPROVED,
+            stage_passed=False,
+        )
+        self.venue.seasons.add(self.season)
+
+    def test_default_stage_passed_is_false(self):
+        self.assertFalse(self.venue.stage_passed)
+
+    def test_as_geojson_feature_contains_stage_passed(self):
+        feature = self.venue.as_geojson_feature()
+        self.assertIn("stage_passed", feature["properties"])
+        self.assertFalse(feature["properties"]["stage_passed"])
+
+        self.venue.stage_passed = True
+        self.venue.save()
+        feature_updated = self.venue.as_geojson_feature()
+        self.assertTrue(feature_updated["properties"]["stage_passed"])
+
+    def test_venues_geojson_endpoint_returns_stage_passed(self):
+        res = self.client.get(reverse("venues:geojson"))
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        props = next(f["properties"] for f in data["features"] if f["properties"]["id"] == self.venue.pk)
+        self.assertFalse(props["stage_passed"])
+
+        self.venue.stage_passed = True
+        self.venue.save()
+        res = self.client.get(reverse("venues:geojson"))
+        data = res.json()
+        props = next(f["properties"] for f in data["features"] if f["properties"]["id"] == self.venue.pk)
+        self.assertTrue(props["stage_passed"])
+
+    def test_detail_page_shows_passed_badge_when_stage_passed(self):
+        url = reverse("venues:detail", args=[self.venue.pk])
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotContains(res, "Этап прошёл")
+
+        self.venue.stage_passed = True
+        self.venue.save()
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Этап прошёл")
+
+    def test_admin_changelist_shows_stage_passed(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Этап прошёл")
+        self.assertContains(res, f'name="form-0-stage_passed"')
+
+    def test_admin_actions_mark_stage_passed(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+
+        # Mark stage passed
+        post_data = {
+            "action": "mark_stage_passed",
+            "_selected_action": [str(self.venue.pk)],
+        }
+        res = self.client.post(url, post_data)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertTrue(self.venue.stage_passed)
+
+        # Mark stage not passed
+        post_data["action"] = "mark_stage_not_passed"
+        res = self.client.post(url, post_data)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertFalse(self.venue.stage_passed)
