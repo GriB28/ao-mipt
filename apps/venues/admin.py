@@ -18,11 +18,12 @@ class VenueAdmin(admin.ModelAdmin):
     подсвечены.
     """
 
-    list_display = ("title", "city", "region", "booked_count", "status_badge", "is_visible", "book_link")
-    list_filter = ("status", "is_visible", "region", "seasons")
+    list_display = ("title", "city", "region", "booked_count", "status_badge", "is_visible", "stage_passed", "book_link")
+    list_editable = ("stage_passed",)
+    list_filter = ("status", "is_visible", "stage_passed", "region", "seasons")
     search_fields = ("title", "city", "address", "contact_name")
     filter_horizontal = ("managers", "seasons")
-    actions = ["approve", "reject"]
+    actions = ["approve", "reject", "mark_stage_passed", "mark_stage_not_passed"]
     readonly_fields = ("created_by", "created_at", "updated_at")
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
@@ -70,4 +71,14 @@ class VenueAdmin(admin.ModelAdmin):
     def reject(self, request, queryset):
         updated = queryset.update(status=Venue.Status.REJECTED)
         self.message_user(request, f"Отклонено площадок: {updated}")
+
+    @admin.action(description="Отметить выбранные площадки: этап прошёл")
+    def mark_stage_passed(self, request, queryset):
+        updated = queryset.update(stage_passed=True)
+        self.message_user(request, f"Отмечено площадок: {updated}. На карте они стали серыми.")
+
+    @admin.action(description="Снять отметку «этап прошёл» с выбранных площадок")
+    def mark_stage_not_passed(self, request, queryset):
+        updated = queryset.update(stage_passed=False)
+        self.message_user(request, f"Снята отметка с площадок: {updated}.")
 
