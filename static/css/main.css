@@ -873,6 +873,33 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   gap: var(--space-1);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+.filter-search-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.filter-search-group label {
+  margin-bottom: 0;
+}
+
+.filter-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-search-row input[type="search"] {
+  min-width: 220px;
+  flex: 1 1 auto;
+}
+
+.filter-search-row .btn {
+  flex: none;
+  white-space: nowrap;
 }
 
 .file-list { list-style: none; padding: 0; margin: var(--space-3) 0; }
@@ -1399,13 +1426,15 @@ pre { overflow-x: auto; }
 
 .sub-tabs-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin: var(--space-5) 0 var(--space-6);
   border-bottom: 2px solid var(--border-default);
-  overflow-x: auto;
 }
 
 .sub-tab-link {
+  display: inline-flex;
+  align-items: center;
   padding: var(--space-2) var(--space-4);
   font-weight: var(--weight-medium);
   color: var(--text-secondary);

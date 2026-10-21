@@ -15,14 +15,16 @@
       {% endfor %}
     </select>
   </label>
-  <label>
-    Поиск
-    <input type="search" name="q" value="{{ search_query }}" placeholder="ФИО, email, город...">
-  </label>
-  <button class="btn btn-small" type="submit">Найти</button>
-  {% if search_query or selected_venue_id %}
-    <a href="{% url 'venues:map' %}?tab=scans" class="btn btn-small btn-secondary">Сбросить</a>
-  {% endif %}
+  <div class="filter-search-group">
+    <label for="scans-search-q">Поиск</label>
+    <div class="filter-search-row">
+      <input id="scans-search-q" type="search" name="q" value="{{ search_query }}" placeholder="ФИО, email, город...">
+      <button class="btn btn-small" type="submit">Найти</button>
+      {% if search_query or selected_venue_id %}
+        <a href="{% url 'venues:map' %}?tab=scans" class="btn btn-small btn-secondary">Сбросить</a>
+      {% endif %}
+    </div>
+  </div>
 </form>
 
 <div class="scans-summary-bar" style="display: flex; gap: var(--space-4); margin-bottom: var(--space-5); flex-wrap: wrap; align-items: center;">

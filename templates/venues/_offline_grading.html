@@ -15,14 +15,16 @@
       {% endfor %}
     </select>
   </label>
-  <label>
-    Поиск
-    <input type="search" name="q" value="{{ search_query }}" placeholder="ФИО, email, город...">
-  </label>
-  <button class="btn btn-small" type="submit">Найти</button>
-  {% if search_query or selected_venue_id %}
-    <a href="{% url 'venues:map' %}?tab=grading" class="btn btn-small btn-secondary">Сбросить</a>
-  {% endif %}
+  <div class="filter-search-group">
+    <label for="grading-search-q">Поиск</label>
+    <div class="filter-search-row">
+      <input id="grading-search-q" type="search" name="q" value="{{ search_query }}" placeholder="ФИО, email, город...">
+      <button class="btn btn-small" type="submit">Найти</button>
+      {% if search_query or selected_venue_id %}
+        <a href="{% url 'venues:map' %}?tab=grading" class="btn btn-small btn-secondary">Сбросить</a>
+      {% endif %}
+    </div>
+  </div>
 </form>
 
 <div class="grading-actions-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); flex-wrap: wrap; gap: var(--space-3);">
