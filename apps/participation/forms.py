@@ -159,7 +159,7 @@ class VenueBookingAdminForm(forms.ModelForm):
             # Дефолтный этап: текущий/ближайший или первый
             if not self.fields["stage"].initial:
                 default_stage = (
-                    Stage.objects.current_or_next(chosen_season, Stage.Kind.OFFLINE)
+                    Stage.objects.current_or_latest_started(chosen_season, Stage.Kind.OFFLINE)
                     or offline_stages.first()
                 )
                 if default_stage:

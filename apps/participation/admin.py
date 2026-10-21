@@ -39,7 +39,7 @@ def get_seasons_venues_data() -> dict:
         ]
         offline_stages.sort(key=lambda x: (x.order, x.starts_at))
         default_stage = (
-            Stage.objects.current_or_next(season, Stage.Kind.OFFLINE)
+            Stage.objects.current_or_latest_started(season, Stage.Kind.OFFLINE)
             or (offline_stages[0] if offline_stages else None)
         )
 

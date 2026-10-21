@@ -67,6 +67,23 @@ class StageQuerySet(models.QuerySet):
         """Настоящие туры — без тренировочной песочницы."""
         return self.filter(is_practice=False)
 
+    def current_or_latest_started(self, season, kind):
+        """Текущий или последний начавшийся тур указанного формата.
+
+        Используется для очного тура: после завершения очного этапа его
+        ведомость, проверка задач и сканы продолжают показываться на вкладке
+        до тех пор, пока не начнётся следующий очный тур (финал).
+        Если ни один тур сезона ещё не начался — возвращает ближайший предстоящий.
+        """
+        if season is None:
+            return None
+        now = timezone.now()
+        base = self.real().filter(season=season, kind=kind, is_published=True)
+        return (
+            base.filter(starts_at__lte=now).order_by("-starts_at").first()
+            or base.order_by("starts_at").first()
+        )
+
     def current_or_next(self, season, kind):
         """Какой тур этого формата показывать на вкладке.
 
