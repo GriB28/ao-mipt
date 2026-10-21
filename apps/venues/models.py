@@ -70,6 +70,11 @@ class Venue(TimeStampedModel):
     status = models.CharField("статус", max_length=10, choices=Status.choices, default=Status.DRAFT)
     moderation_comment = models.TextField("комментарий модератора", blank=True)
     is_visible = models.BooleanField("показывать на карте", default=True)
+    stage_passed = models.BooleanField(
+        "этап прошёл",
+        default=False,
+        help_text="Отметьте, если тур на этой площадке уже завершился. На карте метка станет серой.",
+    )
 
     managers = models.ManyToManyField(
         settings.AUTH_USER_MODEL, related_name="managed_venues", blank=True,
@@ -129,5 +134,6 @@ class Venue(TimeStampedModel):
                 "address": self.address,
                 "booked": self.booked_count(stage),
                 "url": self.get_absolute_url(),
+                "stage_passed": self.stage_passed,
             },
         }

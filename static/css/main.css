@@ -1388,6 +1388,13 @@ pre { overflow-x: auto; }
   }
 }
 
+/* Метка площадки на карте, если этап уже прошёл */
+.leaflet-marker-icon.venue-marker-gray {
+  filter: grayscale(100%);
+  -webkit-filter: grayscale(100%);
+  opacity: 0.8;
+}
+
 /* --- Вкладки организатора и ведомости оценивания ------------------------- */
 
 .sub-tabs-nav {
@@ -1464,4 +1471,3 @@ pre { overflow-x: auto; }
   padding: var(--space-5);
   margin-bottom: var(--space-6);
 }
-

@@ -1,0 +1,236 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .field-user .select2-container {
+    max-width: 500px;
+    width: 100% !important;
+  }
+</style>
+{% endblock %}
+
+{% block field_sets %}
+<div>
+  {% if adminform.form.non_field_errors %}
+    <p class="errornote">{{ adminform.form.non_field_errors }}</p>
+  {% endif %}
+
+  {# Участник #}
+  <fieldset class="module aligned">
+    <h2>Участник</h2>
+    <div class="form-row field-user">
+      <div>
+        <label for="{{ adminform.form.user.id_for_label }}" class="required">{{ adminform.form.user.label }}:</label>
+        {{ adminform.form.user }}
+      </div>
+      {% if adminform.form.user.errors %}
+        <ul class="errorlist">{% for e in adminform.form.user.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+      <p class="help">{{ adminform.form.user.help_text }}</p>
+    </div>
+  </fieldset>
+
+  {# Сезон и этап #}
+  <fieldset class="module aligned">
+    <h2>Сезон и этап</h2>
+    <div class="form-row field-season">
+      <div>
+        <label for="{{ adminform.form.season.id_for_label }}" class="required">{{ adminform.form.season.label }}:</label>
+        {{ adminform.form.season }}
+      </div>
+      {% if adminform.form.season.errors %}
+        <ul class="errorlist">{% for e in adminform.form.season.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+
+    {# Этап #}
+    <div class="form-row field-stage">
+      <div>
+        <label for="{{ adminform.form.stage.id_for_label }}" class="required">{{ adminform.form.stage.label }}:</label>
+        {{ adminform.form.stage }}
+      </div>
+      {% if adminform.form.stage.errors %}
+        <ul class="errorlist">{% for e in adminform.form.stage.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+      <div id="stage-empty-note" style="display:none; color:#b45309; font-size:13px; margin-top:4px;">
+        В этом сезоне нет очных этапов.
+      </div>
+    </div>
+  </fieldset>
+
+  {# Точка проведения #}
+  <fieldset class="module aligned">
+    <h2>Точка проведения</h2>
+    <div class="form-row field-venue">
+      <div>
+        <label for="{{ adminform.form.venue.id_for_label }}" class="required">{{ adminform.form.venue.label }}:</label>
+        {{ adminform.form.venue }}
+      </div>
+      {% if adminform.form.venue.errors %}
+        <ul class="errorlist">{% for e in adminform.form.venue.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+      <div id="venue-empty-note" style="display:none; color:#b45309; font-size:13px; margin-top:4px;">
+        В этом сезоне нет точек проведения.
+      </div>
+    </div>
+  </fieldset>
+
+  {# Статус и комментарий #}
+  <fieldset class="module aligned">
+    <h2>Статус и комментарий</h2>
+    <div class="form-row field-status">
+      <div>
+        <label for="{{ adminform.form.status.id_for_label }}" class="required">{{ adminform.form.status.label }}:</label>
+        {{ adminform.form.status }}
+      </div>
+      {% if adminform.form.status.errors %}
+        <ul class="errorlist">{% for e in adminform.form.status.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+    <div class="form-row field-comment">
+      <div>
+        <label for="{{ adminform.form.comment.id_for_label }}">{{ adminform.form.comment.label }}:</label>
+        {{ adminform.form.comment }}
+      </div>
+      {% if adminform.form.comment.errors %}
+        <ul class="errorlist">{% for e in adminform.form.comment.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+  </fieldset>
+</div>
+
+{{ venues_by_season|json_script:"venues-by-season-data" }}
+{% endblock %}
+
+
+{% block admin_change_form_document_ready %}
+{{ block.super }}
+<script>
+django.jQuery(function ($) {
+
+  // ── Select2 для поиска участника по ФИО ──────────────────────────
+  if ($.fn.select2) {
+    $("#id_user").select2({
+      placeholder: "---------",
+      allowClear: true,
+      width: "element",
+      language: "ru"
+    });
+  }
+
+  // ── данные по сезонам ────────────────────────────────────────────
+  let seasonsData = {};
+  try {
+    const rawEl = document.getElementById("venues-by-season-data");
+    if (rawEl && rawEl.textContent) {
+      seasonsData = JSON.parse(rawEl.textContent);
+      if (typeof seasonsData === "string") {
+        seasonsData = JSON.parse(seasonsData);
+      }
+    }
+  } catch (e) {
+    console.error("Error parsing seasonsData:", e);
+  }
+
+  const seasonSelect  = document.getElementById("id_season");
+  const stageSelect   = document.getElementById("id_stage");
+  const venueSelect   = document.getElementById("id_venue");
+  const stageNote     = document.getElementById("stage-empty-note");
+  const venueNote     = document.getElementById("venue-empty-note");
+
+  // ── Сезон → этапы + точки ────────────────────────────────────────
+  function rebuildFromSeasonData(data, keepStage, keepVenue) {
+    const stages = data.stages || [];
+    const venues = data.venues || [];
+
+    // --- этапы ---
+    stageSelect.innerHTML = "";
+    if (stages.length === 0) {
+      stageNote.style.display = "block";
+      const opt = document.createElement("option");
+      opt.value = ""; opt.text = "— нет очных этапов —";
+      stageSelect.appendChild(opt);
+    } else {
+      stageNote.style.display = "none";
+      const placeholder = document.createElement("option");
+      placeholder.value = ""; placeholder.text = "---------";
+      stageSelect.appendChild(placeholder);
+
+      let matched = false;
+      stages.forEach(st => {
+        const opt = document.createElement("option");
+        opt.value = st.id; opt.text = st.title;
+        if (keepStage && String(st.id) === String(keepStage)) { opt.selected = true; matched = true; }
+        else if (!keepStage && st.is_default && !matched)     { opt.selected = true; matched = true; }
+        stageSelect.appendChild(opt);
+      });
+      if (!matched && !keepStage && stages.length > 0) {
+        stageSelect.options[1].selected = true;
+      }
+    }
+
+    // --- точки ---
+    venueSelect.innerHTML = "";
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = ""; placeholderOpt.text = "---------";
+    venueSelect.appendChild(placeholderOpt);
+
+    if (venues.length === 0) {
+      venueNote.style.display = "block";
+    } else {
+      venueNote.style.display = "none";
+      let matched = false;
+      venues.forEach(v => {
+        const opt = document.createElement("option");
+        opt.value = v.id;
+        opt.text  = v.city ? `${v.title} (${v.city})` : v.title;
+        if (keepVenue && String(v.id) === String(keepVenue)) { opt.selected = true; matched = true; }
+        venueSelect.appendChild(opt);
+      });
+      if (!matched) placeholderOpt.selected = true;
+    }
+  }
+
+  // При загрузке страницы — применяем данные текущего выбранного сезона,
+  // сохраняя значения которые уже проставлены в select'ах (initial из сервера).
+  function initFromCurrentSeason() {
+    const sid = seasonSelect.value;
+    if (!sid) return;
+    const data = seasonsData[sid] || seasonsData[String(sid)];
+    if (!data) return;
+    rebuildFromSeasonData(data, stageSelect.value || null, venueSelect.value || null);
+  }
+
+  initFromCurrentSeason();
+
+  seasonSelect.addEventListener("change", function () {
+    const sid = seasonSelect.value;
+    if (!sid) {
+      stageSelect.innerHTML = '<option value="">---------</option>';
+      venueSelect.innerHTML = '<option value="">---------</option>';
+      stageNote.style.display = "none";
+      venueNote.style.display = "none";
+      return;
+    }
+    const data = seasonsData[sid] || seasonsData[String(sid)];
+    if (data) {
+      rebuildFromSeasonData(data, null, null);
+    } else {
+      // сезон есть в базе, но не в кэше — fetch
+      const url = new URL("{{ season_venues_url }}", location.href);
+      url.searchParams.set("season_id", sid);
+      fetch(url)
+        .then(r => r.json())
+        .then(d => {
+          seasonsData[sid] = d;
+          rebuildFromSeasonData(d, null, null);
+        })
+        .catch(() => {});
+    }
+  });
+
+});
+</script>
+{% endblock %}

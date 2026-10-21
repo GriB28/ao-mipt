@@ -3,6 +3,9 @@
 {% block content %}
 <h1>{{ venue.title }}</h1>
 <p class="lead prose">{{ venue.region }}, {{ venue.city }}, {{ venue.address }}</p>
+{% if venue.stage_passed %}
+  <p><span class="badge none">Этап прошёл</span></p>
+{% endif %}
 {% if venue.description %}<div class="prose">{{ venue.description|linebreaks }}</div>{% endif %}
 
 {% if venue.contact_name %}

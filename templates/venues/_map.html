@@ -55,13 +55,20 @@
               var p = f.properties;
               // GeoJSON хранит [долгота, широта], Яндекс ждёт [широта, долгота].
               var coords = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
+              var placemarkOptions = {};
+              if (p.stage_passed) {
+                placemarkOptions.preset = 'islands#grayEducationIcon';
+                placemarkOptions.zIndex = 0;
+              }
+              var passedBadge = p.stage_passed ? '<br><span style="color:#6b7280; font-weight:600;">Этап прошёл</span>' : '';
               collection.add(new ymaps.Placemark(coords, {
                 balloonContentHeader: p.short_title || p.title,
                 balloonContentBody:
                   p.address + '<br>Записалось: ' + p.booked +
-                  '<br><a href="' + p.url + '">Подробнее и записаться</a>',
+                  passedBadge +
+                  '<br><a href="' + p.url + '">Подробнее' + (p.stage_passed ? '' : ' и записаться') + '</a>',
                 hintContent: p.city
-              }));
+              }, placemarkOptions));
             });
 
             map.geoObjects.add(collection);
@@ -173,16 +180,26 @@
         return;
       }
 
+      var grayIcon = new L.Icon.Default({ className: 'venue-marker-gray' });
+
       fetch(el.dataset.source)
         .then(function (r) { return r.json(); })
         .then(function (data) {
           var layer = L.geoJSON(data, {
+            pointToLayer: function (feature, latlng) {
+              if (feature.properties && feature.properties.stage_passed) {
+                return L.marker(latlng, { icon: grayIcon, zIndexOffset: -500 });
+              }
+              return L.marker(latlng);
+            },
             onEachFeature: function (feature, lyr) {
               var p = feature.properties;
+              var passedBadge = p.stage_passed ? '<br><span style="color:#6b7280; font-weight:600;">Этап прошёл</span>' : '';
               lyr.bindPopup(
                 '<strong>' + (p.short_title || p.title) + '</strong><br>' + p.address +
                 '<br>Записалось: ' + p.booked +
-                '<br><a href="' + p.url + '">Подробнее и записаться</a>'
+                passedBadge +
+                '<br><a href="' + p.url + '">Подробнее' + (p.stage_passed ? '' : ' и записаться') + '</a>'
               );
             }
           }).addTo(map);

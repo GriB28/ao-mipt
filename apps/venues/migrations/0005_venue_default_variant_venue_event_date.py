@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('venues', '0003_venue_contact_telegram'),
+        ('venues', '0004_venue_stage_passed'),
     ]
 
     operations = [
