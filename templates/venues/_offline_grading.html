@@ -34,7 +34,6 @@
   </div>
   <div style="display: flex; align-items: center; gap: var(--space-3);">
     <span id="offline-save-indicator" class="save-indicator"></span>
-    <button type="submit" form="grading-form" class="btn btn-small">Сохранить все изменения</button>
   </div>
 </div>
 
@@ -118,9 +117,11 @@
       </tbody>
     </table>
   </div>
-  <p class="actions" style="margin-top: var(--space-4);">
-    <button class="btn" type="submit">Сохранить все изменения</button>
-  </p>
+  <noscript>
+    <p class="actions" style="margin-top: var(--space-4);">
+      <button class="btn" type="submit">Сохранить изменения</button>
+    </p>
+  </noscript>
 </form>
 
 <script>
