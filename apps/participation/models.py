@@ -127,6 +127,8 @@ class VenueBooking(TimeStampedModel):
             raise VenueBookingError("Запись на этот этап сейчас закрыта.")
         if not venue.is_public:
             raise VenueBookingError("Площадка недоступна для записи.")
+        if venue.registration_closed:
+            raise VenueBookingError("Запись на эту площадку заблокирована организаторами.")
         booking, _ = cls.objects.update_or_create(
             registration=registration, stage=stage,
             defaults={"venue": venue, "status": cls.Status.BOOKED},

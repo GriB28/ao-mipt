@@ -6,6 +6,9 @@
 {% if venue.stage_passed %}
   <p><span class="badge none">Этап прошёл</span></p>
 {% endif %}
+{% if venue.registration_closed %}
+  <p><span class="badge warn">Запись заблокирована</span></p>
+{% endif %}
 {% if venue.description %}<div class="prose">{{ venue.description|linebreaks }}</div>{% endif %}
 
 {% if venue.contact_name %}
@@ -54,6 +57,9 @@
       Запись открыта с {{ stage.registration_opens_at|default:stage.starts_at|date:"d.m.Y" }}
       по {{ stage.registration_closes_at|default:stage.ends_at|date:"d.m.Y" }}.
     </p>
+  {% elif venue.registration_closed %}
+    <p class="badge warn">Запись заблокирована</p>
+    <p class="muted">Регистрация на данную площадку заблокирована организаторами.</p>
   {% elif not user.can_participate %}
     {% include "accounts/_participation_gate.html" with what="записаться на площадку" %}
   {% else %}

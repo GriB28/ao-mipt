@@ -198,6 +198,9 @@ def book_venue(request, pk):
     if request.user.is_manager:
         raise PermissionDenied("Организаторы на площадки не записываются.")
     venue = get_object_or_404(Venue.objects.public(), pk=pk)
+    if venue.registration_closed:
+        messages.error(request, "Запись на эту площадку заблокирована организаторами.")
+        return redirect("venues:detail", pk=venue.pk)
     if not request.user.can_participate:
         messages.error(
             request,

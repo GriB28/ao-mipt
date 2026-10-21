@@ -34,7 +34,8 @@ class StageChoiceField(forms.ModelChoiceField):
 
 class VenueChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        return f"{obj.title} ({obj.city})"
+        lock_tag = " [запись заблокирована]" if obj.registration_closed else ""
+        return f"{obj.title} ({obj.city}){lock_tag}"
 
 
 class VenueBookingAdminForm(forms.ModelForm):

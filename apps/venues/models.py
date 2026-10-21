@@ -75,6 +75,11 @@ class Venue(TimeStampedModel):
         default=False,
         help_text="Отметьте, если тур на этой площадке уже завершился. На карте метка станет серой.",
     )
+    registration_closed = models.BooleanField(
+        "блокировка регистрации",
+        default=False,
+        help_text="Запретить участникам запись на эту площадку (блокировка регистрации).",
+    )
 
     managers = models.ManyToManyField(
         settings.AUTH_USER_MODEL, related_name="managed_venues", blank=True,
@@ -140,5 +145,6 @@ class Venue(TimeStampedModel):
                 "booked": self.booked_count(stage),
                 "url": self.get_absolute_url(),
                 "stage_passed": self.stage_passed,
+                "registration_closed": self.registration_closed,
             },
         }

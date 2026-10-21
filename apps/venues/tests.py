@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.accounts.models import DocumentType, ParticipantProfile, User
+from apps.accounts.models import ConsentDocument, DocumentType, ParticipantProfile, User
 from apps.participation.models import Registration, VenueBooking
 from apps.seasons.models import Season, Stage
 from apps.venues.export import format_passport_data
@@ -577,3 +577,155 @@ class VenueStagePassedTests(TestCase):
         self.assertEqual(res.status_code, 302)
         self.venue.refresh_from_db()
         self.assertFalse(self.venue.stage_passed)
+
+
+class VenueRegistrationLockTests(TestCase):
+    """Тесты блокировки регистрации на площадку через админку и запрета записи."""
+
+    def setUp(self):
+        now = timezone.now()
+        self.season = Season.objects.create(
+            year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True
+        )
+        self.stage = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-final",
+            title="Очный тур",
+            starts_at=now - timedelta(days=1),
+            ends_at=now + timedelta(days=2),
+            is_published=True,
+            order=1,
+        )
+        self.admin = User.objects.create_user(
+            "admin_lock@b.ru", "pass12345", role=User.Role.ADMIN, is_staff=True, is_superuser=True
+        )
+        self.student = User.objects.create_user(
+            "student_lock@b.ru", "pass12345", role=User.Role.PARTICIPANT, email_confirmed=True
+        )
+        ParticipantProfile.objects.create(
+            user=self.student,
+            last_name="Иванов",
+            first_name="Иван",
+            birth_date=date(2010, 1, 1),
+            birth_place="г. Москва",
+            doc_type=DocumentType.PASSPORT_RF,
+            doc_series="4510",
+            doc_number="123456",
+            doc_issued_at=date(2024, 1, 1),
+            doc_issued_by="ГУ МВД",
+            doc_division_code="770001",
+            reg_address="г. Москва",
+            grade=10,
+            school="Школа №1",
+            city="Москва",
+            region="Москва",
+            phone="+79991234567",
+            telegram="@ivanov",
+            acknowledged_at=now,
+        )
+        ConsentDocument.objects.create(
+            user=self.student,
+            file="consents/test.pdf",
+            status=ConsentDocument.Status.APPROVED,
+        )
+        self.venue = Venue.objects.create(
+            title="Тестовая площадка",
+            region="Москва",
+            city="Москва",
+            address="ул. Примерная, 10",
+            latitude=55.75,
+            longitude=37.62,
+            status=Venue.Status.APPROVED,
+            registration_closed=False,
+        )
+        self.venue.seasons.add(self.season)
+
+    def test_default_registration_closed_is_false(self):
+        self.assertFalse(self.venue.registration_closed)
+
+    def test_as_geojson_feature_contains_registration_closed(self):
+        feature = self.venue.as_geojson_feature()
+        self.assertIn("registration_closed", feature["properties"])
+        self.assertFalse(feature["properties"]["registration_closed"])
+
+        self.venue.registration_closed = True
+        self.venue.save()
+        feature_updated = self.venue.as_geojson_feature()
+        self.assertTrue(feature_updated["properties"]["registration_closed"])
+
+    def test_admin_changelist_shows_registration_closed_and_button(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'name="form-0-registration_closed"')
+        toggle_url = reverse("admin:venues_venue_toggle_registration", args=[self.venue.pk])
+        self.assertContains(res, toggle_url)
+        self.assertContains(res, "Заблокировать")
+
+    def test_admin_toggle_registration_view(self):
+        self.client.force_login(self.admin)
+        toggle_url = reverse("admin:venues_venue_toggle_registration", args=[self.venue.pk])
+
+        # Click to lock
+        res = self.client.get(toggle_url)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertTrue(self.venue.registration_closed)
+
+        # Changelist now shows "Разблокировать"
+        res_list = self.client.get(reverse("admin:venues_venue_changelist"))
+        self.assertContains(res_list, "Разблокировать")
+
+        # Click to unlock
+        res = self.client.get(toggle_url)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertFalse(self.venue.registration_closed)
+
+    def test_admin_actions_lock_and_unlock_registration(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+
+        # Lock
+        post_data = {
+            "action": "lock_registration",
+            "_selected_action": [str(self.venue.pk)],
+        }
+        res = self.client.post(url, post_data)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertTrue(self.venue.registration_closed)
+
+        # Unlock
+        post_data["action"] = "unlock_registration"
+        res = self.client.post(url, post_data)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertFalse(self.venue.registration_closed)
+
+    def test_detail_page_and_booking_prevented_when_registration_closed(self):
+        self.client.force_login(self.student)
+        url = reverse("venues:detail", args=[self.venue.pk])
+
+        # Registration open: booking button is shown
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Записаться")
+
+        # Lock registration
+        self.venue.registration_closed = True
+        self.venue.save()
+
+        # Detail page shows locked badge and no booking button
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Запись заблокирована")
+        self.assertNotContains(res, ">Записаться<")
+
+        # Attempt to book via POST is rejected
+        book_url = reverse("venues:book", args=[self.venue.pk])
+        res = self.client.post(book_url)
+        self.assertEqual(res.status_code, 302)
+        self.assertFalse(VenueBooking.objects.filter(venue=self.venue, registration__user=self.student).exists())

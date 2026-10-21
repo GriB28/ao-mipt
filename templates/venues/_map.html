@@ -61,12 +61,14 @@
                 placemarkOptions.zIndex = 0;
               }
               var passedBadge = p.stage_passed ? '<br><span style="color:#6b7280; font-weight:600;">Этап прошёл</span>' : '';
+              var closedBadge = p.registration_closed ? '<br><span style="color:#b45309; font-weight:600;">Запись заблокирована</span>' : '';
+              var canBook = !p.stage_passed && !p.registration_closed;
               collection.add(new ymaps.Placemark(coords, {
                 balloonContentHeader: p.short_title || p.title,
                 balloonContentBody:
                   p.address + '<br>Записалось: ' + p.booked +
-                  passedBadge +
-                  '<br><a href="' + p.url + '">Подробнее' + (p.stage_passed ? '' : ' и записаться') + '</a>',
+                  passedBadge + closedBadge +
+                  '<br><a href="' + p.url + '">Подробнее' + (canBook ? ' и записаться' : '') + '</a>',
                 hintContent: p.city
               }, placemarkOptions));
             });
@@ -195,11 +197,13 @@
             onEachFeature: function (feature, lyr) {
               var p = feature.properties;
               var passedBadge = p.stage_passed ? '<br><span style="color:#6b7280; font-weight:600;">Этап прошёл</span>' : '';
+              var closedBadge = p.registration_closed ? '<br><span style="color:#b45309; font-weight:600;">Запись заблокирована</span>' : '';
+              var canBook = !p.stage_passed && !p.registration_closed;
               lyr.bindPopup(
                 '<strong>' + (p.short_title || p.title) + '</strong><br>' + p.address +
                 '<br>Записалось: ' + p.booked +
-                passedBadge +
-                '<br><a href="' + p.url + '">Подробнее' + (p.stage_passed ? '' : ' и записаться') + '</a>'
+                passedBadge + closedBadge +
+                '<br><a href="' + p.url + '">Подробнее' + (canBook ? ' и записаться' : '') + '</a>'
               );
             }
           }).addTo(map);
