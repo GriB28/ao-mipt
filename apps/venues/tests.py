@@ -448,6 +448,45 @@ class OfflineGradingAndScansTests(TestCase):
         self.assertIn("part1@b.ru", names_city)
         self.assertIn("part2@b.ru", names_city)
 
+    def test_participant_views_results_and_scan_on_offline_page(self):
+        # 1. До публикации результатов участник видит только статус записи, но не баллы и не результаты
+        self.stage.results_published = False
+        self.stage.save()
+
+        self.Score.objects.create(
+            registration=self.booking1.registration,
+            problem=self.p1_1,
+            points=self.Decimal("8"),
+            venue=self.venue,
+        )
+        self.Score.objects.create(
+            registration=self.booking1.registration,
+            problem=self.p1_2,
+            points=self.Decimal("10"),
+            venue=self.venue,
+        )
+
+        self.client.force_login(self.participant1)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "Ваши результаты очного тура")
+        self.assertNotContains(resp, "Итоговый балл:")
+
+        # 2. Публикуем результаты этапа
+        self.stage.results_published = True
+        self.stage.save()
+
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Ваши результаты очного тура")
+        self.assertContains(resp, "Итоговый балл:")
+        self.assertContains(resp, "18")  # 8 + 10 = 18
+        self.assertContains(resp, "Задача 1.1")
+        self.assertContains(resp, "Задача 1.2")
+        # Задачи комплекта 2 не показываются участнику комплекта 1
+        self.assertNotContains(resp, "Задача 2.1")
+        self.assertNotContains(resp, "Задача 2.2")
+
 
 
 

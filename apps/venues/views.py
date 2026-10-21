@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse, JsonResponse
+from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -58,6 +59,64 @@ def _my_booking(user, stage):
     )
 
 
+
+
+def _get_participant_offline_results(user, stage, my_booking):
+    """Результаты очного тура для участника: баллы по задачам своего комплекта и скан."""
+    if not (user.is_authenticated and stage and my_booking and stage.results_published):
+        return None
+
+    active_variant = my_booking.effective_variant
+    all_problems = _venue_problems(stage)
+
+    # Задачи комплекта участника (или общие без комплекта)
+    variant_problems = [
+        p for p in all_problems
+        if p.variant is None or p.variant == active_variant
+    ]
+    if not variant_problems and all_problems:
+        variant_problems = all_problems
+
+    scores_map = {
+        s.problem_id: s
+        for s in Score.objects.filter(
+            registration=my_booking.registration,
+            problem__in=variant_problems,
+        )
+    }
+
+    items = []
+    total = Decimal("0")
+    for p in variant_problems:
+        score_obj = scores_map.get(p.pk)
+        pts = score_obj.points if (score_obj and not score_obj.is_skipped) else None
+        if pts is not None:
+            total += pts
+
+        items.append({
+            "problem": p,
+            "score": score_obj,
+            "points": pts,
+            "points_display": _format_points(pts) if pts is not None else "0",
+            "is_skipped": score_obj.is_skipped if score_obj else False,
+        })
+
+    scan_url = ""
+    if my_booking.work_scan and my_booking.can_view_scan(user):
+        scan_url = my_booking.get_scan_url()
+
+    return {
+        "booking": my_booking,
+        "venue": my_booking.venue,
+        "held_at": my_booking.effective_held_at,
+        "variant": active_variant,
+        "has_scan": bool(my_booking.work_scan),
+        "scan_url": scan_url,
+        "problems": items,
+        "total": _format_points(total),
+    }
+
+
 def venue_map(request):
     """Страница очного тура: карта площадок, проверка задач и загрузка сканов."""
     season = Season.objects.active()
@@ -67,13 +126,17 @@ def venue_map(request):
     if not (request.user.is_authenticated and request.user.is_manager):
         tab = "map"
 
+    my_booking = _my_booking(request.user, stage)
+
     context = {
         "season": season,
         "stage": stage,
-        "my_booking": _my_booking(request.user, stage),
+        "my_booking": my_booking,
         "my_venues": Venue.objects.managed_by(request.user),
         "online_twin": _twin_stage(stage, Stage.Kind.ONLINE),
         "tab": tab,
+        "now": timezone.now(),
+        "my_results": _get_participant_offline_results(request.user, stage, my_booking),
     }
 
     if tab == "grading":
