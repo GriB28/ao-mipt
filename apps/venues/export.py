@@ -1,6 +1,7 @@
 """Выгрузка участников площадки в Excel."""
 
 import io
+import re
 from datetime import date
 
 import openpyxl
@@ -101,13 +102,9 @@ def generate_venue_participants_excel(venue, bookings):
     wb.save(buffer)
     return buffer.getvalue()
 
-def generate_offline_grading_excel(stage, rows, problems, request=None):
-    """Сформировать Excel-книгу (.xlsx) с ведомостью очного тура:
-    ФИО, точка проведения, город, дата, комплект, задачи, сумма, скан работы.
-    """
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Ведомость очного тура"
+def _populate_grading_worksheet(ws, sheet_title, rows, problems, request=None):
+    """Заполнить лист книги Excel ведомостью для переданного списка строк."""
+    ws.title = sheet_title
 
     headers = ["ФИО участника", "Точка проведения", "Город", "Дата проведения", "Комплект"]
     for p in problems:
@@ -226,8 +223,39 @@ def generate_offline_grading_excel(stage, rows, problems, request=None):
 
     ws.freeze_panes = "B2"
 
+
+def generate_offline_grading_excel(stage, rows, problems, request=None):
+    """Сформировать Excel-книгу (.xlsx) с ведомостью очного тура:
+    - Общий лист со всеми участниками («Общая ведомость»)
+    - Отдельные листы для каждого города проведения
+    """
+    wb = openpyxl.Workbook()
+    ws_all = wb.active
+    _populate_grading_worksheet(ws_all, "Общая ведомость", rows, problems, request)
+
+    # Группировка строк по городам площадок
+    cities_map = {}
+    for r in rows:
+        city = (r["booking"].venue.city or "Без города").strip()
+        cities_map.setdefault(city, []).append(r)
+
+    # Создаём вкладку для каждого города в алфавитном порядке
+    for city in sorted(cities_map.keys()):
+        # Защита от спецсимволов и ограничения длины имени листа в Excel (макс. 31 символ)
+        sanitized = re.sub(r'[\\/*?:\[\]]', '_', city)[:31].strip() or "Город"
+        sheet_title = sanitized
+        suffix = 2
+        while sheet_title in wb.sheetnames:
+            sheet_title = f"{sanitized[:28]}_{suffix}"
+            suffix += 1
+
+        ws_city = wb.create_sheet(title=sheet_title)
+        _populate_grading_worksheet(ws_city, sheet_title, cities_map[city], problems, request)
+
+    # Делаем активным первый общий лист
+    wb.active = ws_all
+
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
-

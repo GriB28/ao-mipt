@@ -421,6 +421,33 @@ class OfflineGradingAndScansTests(TestCase):
         self.booking1.refresh_from_db()
         self.assertFalse(bool(self.booking1.work_scan))
 
+    def test_export_grading_excel(self):
+        self.client.force_login(self.organizer)
+        url = reverse("venues:export_grading")
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("vedomost_ochny_tur_", resp["Content-Disposition"])
+
+        wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+        self.assertIn("Общая ведомость", wb.sheetnames)
+        self.assertIn("Долгопрудный", wb.sheetnames)
+
+        ws_all = wb["Общая ведомость"]
+        self.assertEqual(ws_all.cell(row=1, column=1).value, "ФИО участника")
+        names_all = [ws_all.cell(row=r, column=1).value for r in range(2, ws_all.max_row + 1)]
+        self.assertIn("part1@b.ru", names_all)
+        self.assertIn("part2@b.ru", names_all)
+
+        ws_city = wb["Долгопрудный"]
+        self.assertEqual(ws_city.cell(row=1, column=1).value, "ФИО участника")
+        names_city = [ws_city.cell(row=r, column=1).value for r in range(2, ws_city.max_row + 1)]
+        self.assertIn("part1@b.ru", names_city)
+        self.assertIn("part2@b.ru", names_city)
+
 
 
 
