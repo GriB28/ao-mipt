@@ -112,6 +112,11 @@ class Venue(TimeStampedModel):
     def is_public(self):
         return self.status == self.Status.APPROVED and self.is_visible
 
+    @property
+    def display_title(self):
+        """Короткое название площадки для списков и меню (МФТИ, Лицей №14); если не задано — полное."""
+        return self.short_title.strip() if self.short_title else self.title
+
     def booked_count(self, stage=None):
         """Сколько человек записалось. Ограничения сверху нет:
         если народу приходит больше, чем помещается, договариваемся вручную."""

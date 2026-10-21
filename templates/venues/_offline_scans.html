@@ -10,7 +10,7 @@
       <option value="">Все площадки</option>
       {% for v in all_venues %}
         <option value="{{ v.pk }}" {% if selected_venue_id == v.pk|stringformat:"s" %}selected{% endif %}>
-          {{ v.city }} — {{ v.title }}
+          {{ v.city }} — {{ v.short_title|default:v.title }}
         </option>
       {% endfor %}
     </select>
@@ -46,7 +46,9 @@
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4);">
       <label>
         <strong>Участник *</strong>
-        <select name="booking_id" id="scan_booking_select" required style="width: 100%; margin-top: var(--space-1);">
+        <input type="text" id="scan_booking_search" placeholder="Быстрый поиск в списке (ФИО)..." autocomplete="off"
+               style="width: 100%; margin-top: var(--space-1); margin-bottom: var(--space-2); font-size: var(--text-sm); padding: var(--space-2);">
+        <select name="booking_id" id="scan_booking_select" required style="width: 100%;">
           <option value="">— Выберите участника —</option>
           {% for p in participants_list %}
             <option value="{{ p.id }}" data-held-at="{{ p.held_at }}" data-variant="{{ p.variant }}">
@@ -101,7 +103,7 @@
         <strong>{{ p.name }}</strong><br>
         <span class="muted" style="font-size: var(--text-xs);">{{ p.email }}</span>
       </td>
-      <td data-label="Площадка">{{ p.venue_title }}</td>
+      <td data-label="Площадка" title="{{ p.venue_full_title }}">{{ p.venue_title }}</td>
       <td data-label="Город" class="muted">{{ p.venue_city }}</td>
       <td data-label="Дата">{{ p.held_at|default:"—" }}</td>
       <td data-label="Комплект">Комплект {{ p.variant }}</td>
@@ -164,4 +166,22 @@ function selectParticipant(id, heldAt, variant) {
     fileInp.focus();
   }
 }
+
+// Быстрый фильтр участников в выпадающем списке
+(function() {
+  const searchInput = document.getElementById("scan_booking_search");
+  if (searchInput) {
+    searchInput.addEventListener("input", function() {
+      const q = this.value.toLowerCase().trim();
+      const sel = document.getElementById("scan_booking_select");
+      if (!sel) return;
+      Array.from(sel.options).forEach(function(opt) {
+        if (!opt.value) return;
+        const match = !q || opt.textContent.toLowerCase().includes(q);
+        opt.hidden = !match;
+        opt.style.display = match ? "" : "none";
+      });
+    });
+  }
+})();
 </script>

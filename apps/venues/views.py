@@ -231,7 +231,7 @@ def _format_points(val):
 def _get_grading_context(request, season, stage):
     all_venues = Venue.objects.public()
     if season:
-        all_venues = all_venues.filter(seasons=season).order_by("city", "title")
+        all_venues = all_venues.filter(seasons=season).order_by("city", "short_title", "title")
 
     problems = _venue_problems(stage)
 
@@ -252,12 +252,21 @@ def _get_grading_context(request, season, stage):
             user = b.registration.user
             profile = getattr(user, "profile", None)
             full_name = profile.full_name.lower() if profile and profile.full_name else ""
-            if query_lower in full_name or query_lower in user.email.lower() or query_lower in b.venue.city.lower():
+            v_short = (b.venue.short_title or "").lower()
+            v_full = (b.venue.title or "").lower()
+            if (
+                query_lower in full_name
+                or query_lower in user.email.lower()
+                or query_lower in b.venue.city.lower()
+                or query_lower in v_short
+                or query_lower in v_full
+            ):
                 filtered.append(b)
         bookings = filtered
     else:
         bookings = bookings.order_by(
             "venue__city",
+            "venue__short_title",
             "venue__title",
             "registration__user__profile__last_name",
             "registration__user__email",
@@ -365,12 +374,17 @@ def _save_all_offline_scores(request, bookings, problems):
 def _get_scans_context(request, season, stage):
     all_venues = Venue.objects.public()
     if season:
-        all_venues = all_venues.filter(seasons=season).order_by("city", "title")
+        all_venues = all_venues.filter(seasons=season).order_by("city", "short_title", "title")
 
     bookings = (
         VenueBooking.objects.filter(stage=stage)
         .exclude(status=VenueBooking.Status.CANCELLED)
         .select_related("registration__user", "registration__user__profile", "venue")
+        .order_by(
+            "registration__user__profile__last_name",
+            "registration__user__profile__first_name",
+            "registration__user__email",
+        )
     )
     selected_venue_id = request.GET.get("venue", "").strip()
     if selected_venue_id and selected_venue_id.isdigit():
@@ -385,7 +399,15 @@ def _get_scans_context(request, season, stage):
         full_name = profile.full_name if profile and profile.full_name else user.email
         if search_query:
             q_lower = search_query.lower()
-            if q_lower not in full_name.lower() and q_lower not in user.email.lower() and q_lower not in b.venue.city.lower():
+            v_short = (b.venue.short_title or "").lower()
+            v_full = (b.venue.title or "").lower()
+            if (
+                q_lower not in full_name.lower()
+                and q_lower not in user.email.lower()
+                and q_lower not in b.venue.city.lower()
+                and q_lower not in v_short
+                and q_lower not in v_full
+            ):
                 continue
         held_at_val = (
             b.held_at.strftime("%Y-%m-%d")
@@ -397,7 +419,8 @@ def _get_scans_context(request, season, stage):
             "id": b.pk,
             "name": full_name,
             "email": user.email,
-            "venue_title": b.venue.title,
+            "venue_title": b.venue.short_title or b.venue.title,
+            "venue_full_title": b.venue.title,
             "venue_city": b.venue.city,
             "has_scan": bool(b.work_scan),
             "scan_url": b.get_scan_url(),

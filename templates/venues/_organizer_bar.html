@@ -21,7 +21,7 @@
       <tbody>
       {% for venue in my_venues %}
         <tr>
-          <td><a href="{% url 'venues:detail' venue.pk %}">{{ venue.title }}</a></td>
+          <td><a href="{% url 'venues:detail' venue.pk %}" title="{{ venue.title }}">{{ venue.short_title|default:venue.title }}</a></td>
           <td data-label="Город" class="muted">{{ venue.city }}</td>
           <td data-label="Статус"><div>
             <span class="badge {% if venue.is_public %}ok{% else %}warn{% endif %}">{{ venue.get_status_display }}</span>

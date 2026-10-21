@@ -10,7 +10,7 @@
       <option value="">Все площадки</option>
       {% for v in all_venues %}
         <option value="{{ v.pk }}" {% if selected_venue_id == v.pk|stringformat:"s" %}selected{% endif %}>
-          {{ v.city }} — {{ v.title }}
+          {{ v.city }} — {{ v.short_title|default:v.title }}
         </option>
       {% endfor %}
     </select>
@@ -70,7 +70,7 @@
               {% endif %}
             </strong>
           </td>
-          <td>{{ row.booking.venue.title }}</td>
+          <td title="{{ row.booking.venue.title }}">{{ row.booking.venue.short_title|default:row.booking.venue.title }}</td>
           <td>{{ row.booking.venue.city }}</td>
           <td>
             <input type="date" name="held_at_{{ row.booking.pk }}" value="{{ row.held_at_val }}"
