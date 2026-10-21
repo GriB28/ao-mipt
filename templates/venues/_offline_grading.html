@@ -34,6 +34,9 @@
   </div>
   <div style="display: flex; align-items: center; gap: var(--space-3);">
     <span id="offline-save-indicator" class="save-indicator"></span>
+    <a href="{% url 'venues:export_grading' %}?venue={{ selected_venue_id }}&q={{ search_query }}" class="btn btn-small btn-secondary">
+      Выгрузить в Excel
+    </a>
   </div>
 </div>
 

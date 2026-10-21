@@ -1,3 +1,4 @@
+from datetime import date
 import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -17,7 +18,7 @@ from apps.core.files import protected_file_response
 from apps.participation.models import Registration, VenueBooking, VenueBookingError
 from apps.seasons.models import Season, Stage
 
-from .export import generate_venue_participants_excel
+from .export import generate_offline_grading_excel, generate_venue_participants_excel
 from .forms import VenueForm, VenueMailForm
 from .models import Venue
 
@@ -845,3 +846,33 @@ def venue_export(request, pk):
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+@login_required
+def offline_grading_export(request):
+    """Выгрузка общей ведомости очного тура в Excel."""
+    if not request.user.is_manager:
+        raise PermissionDenied("Доступно только организаторам.")
+
+    season = Season.objects.active()
+    stage = _offline_stage(season)
+    if not stage:
+        raise Http404("Очный тур не найден.")
+
+    context = _get_grading_context(request, season, stage)
+    rows = context["rows"]
+    problems = context["problems"]
+
+    content = generate_offline_grading_excel(stage, rows, problems, request=request)
+
+    today_str = date.today().strftime("%Y-%m-%d")
+    filename = f"vedomost_ochny_tur_{today_str}.xlsx"
+
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
