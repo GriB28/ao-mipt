@@ -126,14 +126,18 @@ def problem_detail(request, pk):
     if _email_unconfirmed(request.user):
         messages.info(request, "Подтвердите почту, чтобы открыть задачи.")
         return redirect("accounts:resend_confirmation")
-    # Организатор должен открыть и неодобренную задачу — свою собственную,
+    # Организатор может открыть любую задачу (включая неодобренные и задачи очного этапа до публикации),
     # чтобы посмотреть, как она будет выглядеть у участников.
-    visible = Problem.objects.visible()
     if request.user.is_authenticated and request.user.is_manager:
-        visible = Problem.objects.filter(
-            models.Q(pk__in=visible) | models.Q(pk__in=Problem.objects.editable_by(request.user))
+        problem = get_object_or_404(
+            Problem.objects.select_related("stage__season", "created_by"),
+            pk=pk,
         )
-    problem = get_object_or_404(visible, pk=pk)
+    else:
+        problem = get_object_or_404(
+            Problem.objects.visible().select_related("stage__season", "created_by"),
+            pk=pk,
+        )
     return _problem_page(request, problem)
 
 

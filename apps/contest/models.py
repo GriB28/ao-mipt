@@ -44,11 +44,18 @@ class ProblemQuerySet(models.QuerySet):
         Время публикации общее для всех задач этапа — это начало этапа,
         оно задаётся в админке (Сезоны → Этапы). Задачи заводят и
         одобряют заранее, и открываются они все разом.
+
+        Задачи очного этапа (kind=offline) не доступны участникам
+        до тех пор, пока результаты очного этапа не будут опубликованы
+        в админке (stage.results_published == True).
         """
         return self.filter(
             stage__is_published=True,
             stage__starts_at__lte=timezone.now(),
             status=Problem.Status.APPROVED,
+        ).exclude(
+            stage__kind=Stage.Kind.OFFLINE,
+            stage__results_published=False,
         )
 
     def editable_by(self, user):
@@ -169,9 +176,29 @@ class Problem(TimeStampedModel):
             return False
         return user.is_manager
 
+    def can_be_viewed_by(self, user) -> bool:
+        """Кто вправе смотреть условие задачи.
+
+        Организаторы и администраторы видят всегда.
+        Участники — если задача одобрена, этап опубликован и уже начался.
+        Для задач очного этапа (kind=offline) доступ участникам открывается
+        только после публикации результатов этапа (stage.results_published == True).
+        """
+        if not (user and user.is_authenticated):
+            return False
+        if user.is_manager:
+            return True
+        if self.stage.kind == Stage.Kind.OFFLINE and not self.stage.results_published:
+            return False
+        return (
+            self.is_approved
+            and self.stage.is_published
+            and self.stage.starts_at <= timezone.now()
+        )
+
     @property
     def accepts_submissions(self):
-        return self.stage.is_open
+        return self.stage.is_open and self.stage.kind != Stage.Kind.OFFLINE
 
     @property
     def solution_is_public(self):

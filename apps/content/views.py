@@ -6,7 +6,7 @@ from django.db import models
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.contest.models import Problem
-from apps.seasons.models import Season
+from apps.seasons.models import Season, Stage
 
 from .forms import LectureForm
 from .models import ArchiveMaterial, Lecture, News, Page, Playlist, Topic
@@ -146,6 +146,7 @@ def problem_archive(request):
     if selected:
         problems = (Problem.objects
                     .filter(status=Problem.Status.APPROVED, stage__season=selected)
+                    .exclude(stage__kind=Stage.Kind.OFFLINE, stage__results_published=False)
                     .select_related("stage")
                     .order_by("stage__order", "number"))
 

@@ -90,6 +90,59 @@ class DeadlineTest(TestCase):
         p = self._problem(self.now + timedelta(hours=1), self.now + timedelta(days=1))
         self.assertNotIn(p, Problem.objects.visible())
 
+    def test_offline_problem_hidden_from_participants_until_results_published(self):
+        """Задачи очного этапа скрыты от участников до публикации результатов."""
+        organizer = User.objects.create_user("org_off@b.ru", "pass12345", role=User.Role.ORGANIZER)
+        participant = User.objects.create_user("part_off@b.ru", "pass12345", role=User.Role.PARTICIPANT, email_confirmed=True)
+
+        stage_offline = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-test-stage",
+            title="Очный этап",
+            starts_at=self.now - timedelta(days=1),
+            ends_at=self.now + timedelta(days=1),
+            is_published=True,
+            results_published=False,
+        )
+        p = Problem.objects.create(
+            stage=stage_offline,
+            number="1.1",
+            title="Задача очного тура 1.1",
+            statement_html="<p>Секретное условие очного тура</p>",
+            status=Problem.Status.APPROVED,
+        )
+
+        # 1. До публикации результатов задача исключена из visible()
+        self.assertNotIn(p, Problem.objects.visible())
+        self.assertFalse(p.can_be_viewed_by(participant))
+        self.assertTrue(p.can_be_viewed_by(organizer))
+        self.assertFalse(p.accepts_submissions)
+
+        # 2. По прямой ссылке участник получает 404
+        self.client.force_login(participant)
+        resp = self.client.get(reverse("contest:problem_detail", args=[p.pk]))
+        self.assertEqual(resp.status_code, 404)
+
+        # 3. Организатор видит задачу по прямой ссылке
+        self.client.force_login(organizer)
+        resp = self.client.get(reverse("contest:problem_detail", args=[p.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Секретное условие очного тура")
+
+        # 4. Администратор публикует результаты очного этапа
+        stage_offline.results_published = True
+        stage_offline.save()
+
+        # 5. Теперь задача видна в visible() и участник может её открыть по ссылке
+        self.assertIn(p, Problem.objects.visible())
+        self.assertTrue(p.can_be_viewed_by(participant))
+
+        self.client.force_login(participant)
+        resp = self.client.get(reverse("contest:problem_detail", args=[p.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Секретное условие очного тура")
+
 
 class ReviewAccessTest(TestCase):
     """Проверять решения может организатор — прямо на сайте, без админки."""
