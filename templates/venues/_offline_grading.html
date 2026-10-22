@@ -183,7 +183,14 @@
     }
   }
 
-  function sendAjax(payload, onSuccess, onError) {
+  const ajaxQueue = [];
+  let isSending = false;
+
+  function processQueue() {
+    if (isSending || ajaxQueue.length === 0) return;
+    const task = ajaxQueue.shift();
+    isSending = true;
+
     fetch(saveUrl, {
       method: "POST",
       headers: {
@@ -191,7 +198,7 @@
         "X-CSRFToken": getCsrfToken(),
         "X-Requested-With": "XMLHttpRequest"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(task.payload)
     })
     .then(function(res) {
       return res.json().catch(function() {
@@ -207,15 +214,24 @@
       });
     })
     .then(function(data) {
-      if (onSuccess) onSuccess(data);
+      if (task.onSuccess) task.onSuccess(data);
       showIndicator("✓ Сохранено", false);
     })
     .catch(function(err) {
       console.error(err);
       const msg = err.serverMessage || err.message || "Ошибка сохранения";
       showIndicator(msg, true);
-      if (onError) onError(msg);
+      if (task.onError) task.onError(msg);
+    })
+    .finally(function() {
+      isSending = false;
+      processQueue();
     });
+  }
+
+  function sendAjax(payload, onSuccess, onError) {
+    ajaxQueue.push({ payload: payload, onSuccess: onSuccess, onError: onError });
+    processQueue();
   }
 
   // Смена комплекта: переключение неактивных ячеек и пересчёт
@@ -305,7 +321,10 @@
       }
 
       inp.classList.remove("score-input-error");
+      const oldValue = prevValue;
       const valueToSave = inp.value;
+      prevValue = valueToSave;
+
       const bookingId = inp.dataset.bookingId;
       const problemId = inp.dataset.problemId;
 
@@ -314,12 +333,12 @@
         problem_id: problemId,
         points: valueToSave
       }, function(data) {
-        prevValue = valueToSave;
         const totalElem = document.getElementById("total-" + bookingId);
         if (totalElem && data.total !== undefined) {
           totalElem.textContent = data.total;
         }
       }, function(errorMsg) {
+        prevValue = oldValue;
         inp.classList.add("score-input-error");
         inp.value = prevValue;
         recalculateRowTotal(bookingId);

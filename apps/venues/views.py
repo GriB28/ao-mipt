@@ -2,6 +2,8 @@ from datetime import date
 import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+import time
+from django.db import OperationalError
 
 from django.conf import settings
 from django.contrib import messages
@@ -512,6 +514,18 @@ def _get_scans_context(request, season, stage):
     }
 
 
+def _retry_on_db_lock(func, max_attempts=4):
+    """Повторяет операцию при временной блокировке SQLite базы данных."""
+    for attempt in range(max_attempts):
+        try:
+            return func()
+        except OperationalError as exc:
+            if "locked" in str(exc).lower() and attempt < max_attempts - 1:
+                time.sleep(0.15 * (attempt + 1))
+            else:
+                raise
+
+
 @require_POST
 @login_required
 def offline_save_scores(request):
@@ -536,26 +550,26 @@ def offline_save_scores(request):
     if "held_at" in data:
         raw_date = str(data.get("held_at") or "").strip()
         booking.held_at = raw_date if raw_date else None
-        booking.save(update_fields=["held_at"])
+        _retry_on_db_lock(lambda: booking.save(update_fields=["held_at"]))
 
     if "variant" in data:
         raw_v = str(data.get("variant") or "").strip()
         if raw_v in ("1", "2"):
             booking.variant = int(raw_v)
-            booking.save(update_fields=["variant"])
+            _retry_on_db_lock(lambda: booking.save(update_fields=["variant"]))
             scores = Score.objects.filter(registration=booking.registration, problem__stage=booking.stage).select_related("problem")
             for s in scores:
                 should_skip = s.problem.variant is not None and s.problem.variant != booking.effective_variant
                 if s.is_skipped != should_skip:
                     s.is_skipped = should_skip
-                    s.save(update_fields=["is_skipped"])
+                    _retry_on_db_lock(lambda s=s: s.save(update_fields=["is_skipped"]))
 
     problem_id = data.get("problem_id")
     if problem_id:
         problem = get_object_or_404(Problem, pk=problem_id)
         raw_points = str(data.get("points") if data.get("points") is not None else "").strip()
         if raw_points == "":
-            Score.objects.filter(registration=booking.registration, problem=problem).delete()
+            _retry_on_db_lock(lambda: Score.objects.filter(registration=booking.registration, problem=problem).delete())
         else:
             try:
                 points = Decimal(raw_points.replace(",", "."))
@@ -570,15 +584,17 @@ def offline_save_scores(request):
                     status=400,
                 )
             is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
-            Score.objects.update_or_create(
-                registration=booking.registration,
-                problem=problem,
-                defaults={
-                    "points": points,
-                    "venue": booking.venue,
-                    "entered_by": request.user,
-                    "is_skipped": is_skipped,
-                },
+            _retry_on_db_lock(
+                lambda: Score.objects.update_or_create(
+                    registration=booking.registration,
+                    problem=problem,
+                    defaults={
+                        "points": points,
+                        "venue": booking.venue,
+                        "entered_by": request.user,
+                        "is_skipped": is_skipped,
+                    },
+                )
             )
 
     active_variant = booking.effective_variant
