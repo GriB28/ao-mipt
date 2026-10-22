@@ -303,6 +303,8 @@ def _get_grading_context(request, season, stage):
         all_venues = all_venues.filter(seasons=season).order_by("city", "short_title", "title")
 
     problems = _venue_problems(stage)
+    for p in problems:
+        p.max_score_plain = _format_points(p.max_score) if p.max_score is not None else ""
 
     bookings = (
         VenueBooking.objects.filter(stage=stage)
@@ -371,6 +373,7 @@ def _get_grading_context(request, season, stage):
                 "value": val_str,
                 "is_inactive": is_inactive,
                 "is_skipped": score_obj.is_skipped if score_obj else is_inactive,
+                "max_score": _format_points(problem.max_score) if problem.max_score is not None else "",
             })
 
         total_str = _format_points(row_total)
@@ -424,6 +427,8 @@ def _save_all_offline_scores(request, bookings, problems):
             try:
                 points = Decimal(raw.replace(",", "."))
             except InvalidOperation:
+                continue
+            if points < 0 or (problem.max_score is not None and points > problem.max_score):
                 continue
             is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
             Score.objects.update_or_create(
@@ -556,6 +561,14 @@ def offline_save_scores(request):
                 points = Decimal(raw_points.replace(",", "."))
             except InvalidOperation:
                 return JsonResponse({"error": "Invalid number"}, status=400)
+            if points < 0:
+                return JsonResponse({"error": "Балл не может быть отрицательным."}, status=400)
+            if problem.max_score is not None and points > problem.max_score:
+                max_str = _format_points(problem.max_score)
+                return JsonResponse(
+                    {"error": f"Балл не может превышать максимум за задачу ({max_str})."},
+                    status=400,
+                )
             is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
             Score.objects.update_or_create(
                 registration=booking.registration,
@@ -740,6 +753,15 @@ def _save_scores(request, venue, bookings, problems):
                 points = Decimal(raw.replace(",", "."))
             except InvalidOperation:
                 messages.error(request, f"«{raw}» — это не число, балл не сохранён.")
+                continue
+            if points < 0:
+                messages.error(request, "Балл не может быть отрицательным.")
+                continue
+            if problem.max_score is not None and points > problem.max_score:
+                messages.error(
+                    request,
+                    f"Балл {points} за задачу {problem.number} превышает максимум ({_format_points(problem.max_score)})."
+                )
                 continue
             Score.objects.update_or_create(
                 registration_id=registration_id,

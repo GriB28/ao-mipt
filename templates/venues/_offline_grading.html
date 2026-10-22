@@ -52,8 +52,11 @@
           <th>Дата</th>
           <th>Комплект</th>
           {% for p in problems %}
-            <th class="cell-problem-header" title="{{ p.title }}">
+            <th class="cell-problem-header" title="{{ p.title }}{% if p.max_score_plain %} (макс: {{ p.max_score_plain }}){% endif %}">
               <a href="{{ p.get_absolute_url }}" target="_blank">{{ p.number }}</a>
+              {% if p.max_score_plain %}
+                <br><small class="muted" style="font-weight: normal; font-size: 11px;">макс: {{ p.max_score_plain }}</small>
+              {% endif %}
             </th>
           {% endfor %}
           <th>Сумма</th>
@@ -96,6 +99,8 @@
                      data-booking-id="{{ row.booking.pk }}"
                      data-problem-id="{{ cell.problem.pk }}"
                      data-variant="{{ cell.problem.variant|default:'' }}"
+                     data-max-score="{{ cell.max_score }}"
+                     {% if cell.max_score %}title="Максимум: {{ cell.max_score }}"{% endif %}
                      size="3">
             </td>
           {% endfor %}
@@ -127,6 +132,15 @@
   </noscript>
 </form>
 
+<style>
+.score-input.score-input-error {
+  border-color: var(--color-danger-500, #b3261e) !important;
+  background-color: var(--color-danger-50, #fdf2f2) !important;
+  color: var(--color-danger-500, #b3261e) !important;
+  outline: 2px solid var(--color-danger-500, #b3261e) !important;
+}
+</style>
+
 <script>
 (function() {
   const saveUrl = "{% url 'venues:save_scores' %}";
@@ -139,14 +153,17 @@
     return match ? match[1] : "";
   }
 
+  let indicatorTimer = null;
   function showIndicator(msg, isError) {
     if (!indicator) return;
+    if (indicatorTimer) clearTimeout(indicatorTimer);
     indicator.textContent = msg;
     indicator.style.color = isError ? "var(--color-danger-500, #b3261e)" : "var(--color-success-500, #1c7a49)";
+    indicator.style.fontWeight = isError ? "600" : "normal";
     indicator.style.opacity = "1";
-    setTimeout(function() {
+    indicatorTimer = setTimeout(function() {
       indicator.style.opacity = "0";
-    }, 2500);
+    }, isError ? 4000 : 2500);
   }
 
   function recalculateRowTotal(bookingId) {
@@ -166,7 +183,7 @@
     }
   }
 
-  function sendAjax(payload, callback) {
+  function sendAjax(payload, onSuccess, onError) {
     fetch(saveUrl, {
       method: "POST",
       headers: {
@@ -177,16 +194,27 @@
       body: JSON.stringify(payload)
     })
     .then(function(res) {
-      if (!res.ok) throw new Error("HTTP error " + res.status);
-      return res.json();
+      return res.json().catch(function() {
+        return {};
+      }).then(function(data) {
+        if (!res.ok) {
+          const msg = data.error || ("HTTP error " + res.status);
+          const err = new Error(msg);
+          err.serverMessage = data.error;
+          throw err;
+        }
+        return data;
+      });
     })
     .then(function(data) {
-      if (callback) callback(data);
+      if (onSuccess) onSuccess(data);
       showIndicator("✓ Сохранено", false);
     })
     .catch(function(err) {
       console.error(err);
-      showIndicator("Ошибка сохранения", true);
+      const msg = err.serverMessage || err.message || "Ошибка сохранения";
+      showIndicator(msg, true);
+      if (onError) onError(msg);
     });
   }
 
@@ -232,26 +260,69 @@
 
   // Ввод и автосохранение баллов
   document.querySelectorAll(".offline-score-input").forEach(function(inp) {
+    let prevValue = inp.value;
+
+    inp.addEventListener("focus", function() {
+      inp.classList.remove("score-input-error");
+    });
+
     inp.addEventListener("input", function() {
+      inp.classList.remove("score-input-error");
       const bookingId = this.dataset.bookingId;
       recalculateRowTotal(bookingId);
     });
 
-    let prevValue = inp.value;
     function handleScoreSave() {
       if (inp.value === prevValue) return;
-      prevValue = inp.value;
+
+      const rawVal = inp.value.trim();
+      const maxScoreStr = inp.dataset.maxScore;
+      const maxScore = maxScoreStr ? parseFloat(maxScoreStr) : null;
+
+      if (rawVal !== "") {
+        const num = parseFloat(rawVal.replace(",", "."));
+        if (isNaN(num)) {
+          showIndicator("Некорректное число", true);
+          inp.classList.add("score-input-error");
+          inp.value = prevValue;
+          recalculateRowTotal(inp.dataset.bookingId);
+          return;
+        }
+        if (num < 0) {
+          showIndicator("Балл не может быть меньше 0", true);
+          inp.classList.add("score-input-error");
+          inp.value = prevValue;
+          recalculateRowTotal(inp.dataset.bookingId);
+          return;
+        }
+        if (maxScore !== null && num > maxScore) {
+          showIndicator("Балл (" + num + ") превышает максимум (" + maxScoreStr + ")", true);
+          inp.classList.add("score-input-error");
+          inp.value = prevValue;
+          recalculateRowTotal(inp.dataset.bookingId);
+          return;
+        }
+      }
+
+      inp.classList.remove("score-input-error");
+      const valueToSave = inp.value;
       const bookingId = inp.dataset.bookingId;
       const problemId = inp.dataset.problemId;
+
       sendAjax({
         booking_id: bookingId,
         problem_id: problemId,
-        points: inp.value
+        points: valueToSave
       }, function(data) {
+        prevValue = valueToSave;
         const totalElem = document.getElementById("total-" + bookingId);
         if (totalElem && data.total !== undefined) {
           totalElem.textContent = data.total;
         }
+      }, function(errorMsg) {
+        inp.classList.add("score-input-error");
+        inp.value = prevValue;
+        recalculateRowTotal(bookingId);
       });
     }
 

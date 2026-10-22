@@ -2,6 +2,7 @@
 
 import io
 from datetime import date, timedelta
+from decimal import Decimal
 
 import openpyxl
 from django.test import TestCase
@@ -367,6 +368,61 @@ class OfflineGradingAndScansTests(TestCase):
         s2_1.refresh_from_db()
         self.assertTrue(s1_1.is_skipped)
         self.assertFalse(s2_1.is_skipped)
+
+    def test_offline_grading_score_max_validation(self):
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+
+        # 1. Попытка поставить балл больше максимального (10)
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "15"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.json())
+        self.assertIn("10", resp.json()["error"])
+        self.assertFalse(self.Score.objects.filter(registration=self.booking1.registration, problem=self.p1_1).exists())
+
+        # 2. Попытка поставить отрицательный балл
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "-1"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.json())
+        self.assertFalse(self.Score.objects.filter(registration=self.booking1.registration, problem=self.p1_1).exists())
+
+        # 3. Валидный балл (ровно максимум 10)
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "10"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        score = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
+        self.assertEqual(score.points, Decimal("10"))
+
+        # 4. Проблема без max_score (None) принимает любые неотрицательные баллы
+        self.p1_1.max_score = None
+        self.p1_1.save()
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "25"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("25"))
+
+        # 5. Проверка отображения max_score в шаблоне ведомости
+        self.p1_1.max_score = Decimal("10")
+        self.p1_1.save()
+        map_resp = self.client.get(f"{reverse('venues:map')}?tab=grading")
+        self.assertEqual(map_resp.status_code, 200)
+        self.assertContains(map_resp, 'data-max-score="10"')
+        self.assertContains(map_resp, "макс: 10")
 
     def test_offline_scan_upload_download_and_permissions(self):
         self.client.force_login(self.organizer)
