@@ -710,35 +710,13 @@ class VenueRegistrationLockTests(TestCase):
         feature_updated = self.venue.as_geojson_feature()
         self.assertTrue(feature_updated["properties"]["registration_closed"])
 
-    def test_admin_changelist_shows_registration_closed_and_button(self):
+    def test_admin_changelist_shows_registration_closed_checkbox(self):
         self.client.force_login(self.admin)
         url = reverse("admin:venues_venue_changelist")
         res = self.client.get(url)
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'name="form-0-registration_closed"')
-        toggle_url = reverse("admin:venues_venue_toggle_registration", args=[self.venue.pk])
-        self.assertContains(res, toggle_url)
-        self.assertContains(res, "Заблокировать")
-
-    def test_admin_toggle_registration_view(self):
-        self.client.force_login(self.admin)
-        toggle_url = reverse("admin:venues_venue_toggle_registration", args=[self.venue.pk])
-
-        # Click to lock
-        res = self.client.get(toggle_url)
-        self.assertEqual(res.status_code, 302)
-        self.venue.refresh_from_db()
-        self.assertTrue(self.venue.registration_closed)
-
-        # Changelist now shows "Разблокировать"
-        res_list = self.client.get(reverse("admin:venues_venue_changelist"))
-        self.assertContains(res_list, "Разблокировать")
-
-        # Click to unlock
-        res = self.client.get(toggle_url)
-        self.assertEqual(res.status_code, 302)
-        self.venue.refresh_from_db()
-        self.assertFalse(self.venue.registration_closed)
+        self.assertNotContains(res, "toggle-registration")
 
     def test_admin_actions_lock_and_unlock_registration(self):
         self.client.force_login(self.admin)

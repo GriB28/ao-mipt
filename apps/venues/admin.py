@@ -1,9 +1,6 @@
 from django.contrib import admin
-from django.core.exceptions import PermissionDenied
 from django.db.models import Case, IntegerField, Value, When
-from django.http import HttpResponseRedirect
-from django.shortcuts import get_object_or_404
-from django.urls import path, reverse
+from django.urls import reverse
 from django.utils.html import format_html
 
 from .models import Venue
@@ -32,10 +29,9 @@ class VenueAdmin(admin.ModelAdmin):
         "is_visible",
         "stage_passed",
         "registration_closed",
-        "toggle_registration_button",
         "book_link",
     )
-    list_editable = ("stage_passed", "registration_closed")
+    list_editable = ("is_visible", "stage_passed", "registration_closed")
     list_filter = ("status", "default_variant", "is_visible", "stage_passed", "registration_closed", "region", "seasons")
     search_fields = ("title", "city", "address", "contact_name")
     filter_horizontal = ("managers", "seasons")
@@ -114,39 +110,4 @@ class VenueAdmin(admin.ModelAdmin):
     def unlock_registration(self, request, queryset):
         updated = queryset.update(registration_closed=False)
         self.message_user(request, f"Разблокирована запись на площадках: {updated}.")
-
-    @admin.display(description="блокировка")
-    def toggle_registration_button(self, obj):
-        url = reverse("admin:venues_venue_toggle_registration", args=[obj.pk])
-        if obj.registration_closed:
-            return format_html(
-                '<a class="button" style="padding: 2px 8px; font-size: 11px; background: #059669; color: white; border: none; white-space: nowrap;" href="{}">Разблокировать</a>',
-                url,
-            )
-        return format_html(
-            '<a class="button" style="padding: 2px 8px; font-size: 11px; background: #dc2626; color: white; border: none; white-space: nowrap;" href="{}">Заблокировать</a>',
-            url,
-        )
-
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                "<int:venue_id>/toggle-registration/",
-                self.admin_site.admin_view(self.toggle_registration_view),
-                name="venues_venue_toggle_registration",
-            ),
-        ]
-        return custom_urls + urls
-
-    def toggle_registration_view(self, request, venue_id):
-        venue = get_object_or_404(Venue, pk=venue_id)
-        if not self.has_change_permission(request, venue):
-            raise PermissionDenied
-        venue.registration_closed = not venue.registration_closed
-        venue.save(update_fields=["registration_closed"])
-        status_msg = "заблокирована" if venue.registration_closed else "разблокирована"
-        self.message_user(request, f"Запись на площадку «{venue.title}» {status_msg}.")
-        referer = request.META.get("HTTP_REFERER")
-        return HttpResponseRedirect(referer or reverse("admin:venues_venue_changelist"))
 

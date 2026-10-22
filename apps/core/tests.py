@@ -364,3 +364,65 @@ class PluralizationTest(TestCase):
         self.assertEqual(resp.context_data["title"], "Добавить рассылку")
 
 
+
+
+class AdminAjaxListEditableTests(TestCase):
+    def setUp(self):
+        from apps.accounts.models import User
+        from apps.venues.models import Venue
+
+        self.admin = User.objects.create_superuser("admin_ajax@test.ru", "pass12345")
+        self.venue = Venue.objects.create(
+            title="Тестовая площадка",
+            region="Москва",
+            city="Москва",
+            address="Улица 1",
+            latitude=55.75,
+            longitude=37.61,
+            status=Venue.Status.APPROVED,
+            is_visible=True,
+            stage_passed=False,
+            registration_closed=False,
+        )
+
+    def test_changelist_template_contains_ajax_script_and_styles(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "admin_ajax_editable.js")
+        self.assertContains(resp, "admin-ajax-indicator")
+        self.assertContains(resp, 'name="form-0-registration_closed"')
+        self.assertContains(resp, 'name="form-0-is_visible"')
+        self.assertContains(resp, 'name="form-0-stage_passed"')
+
+    def test_changelist_post_via_ajax_returns_json_and_updates_model(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+
+        # Получаем данные formset
+        get_resp = self.client.get(url)
+        cl = get_resp.context["cl"]
+        formset = cl.formset
+
+        post_data = {
+            "form-TOTAL_FORMS": str(len(formset.forms)),
+            "form-INITIAL_FORMS": str(len(formset.forms)),
+            "form-MIN_NUM_FORMS": "0",
+            "form-MAX_NUM_FORMS": "1000",
+            "_save": "Save",
+            "form-0-id": str(self.venue.pk),
+            "form-0-is_visible": "on",
+            "form-0-registration_closed": "on",  # переключаем в True
+        }
+
+        resp = self.client.post(
+            url,
+            post_data,
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"status": "ok", "message": "Сохранено"})
+
+        self.venue.refresh_from_db()
+        self.assertTrue(self.venue.registration_closed)
