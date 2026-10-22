@@ -176,6 +176,7 @@ class VenueBookingAdminForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        user = cleaned_data.get("user")
         season = cleaned_data.get("season")
         stage = cleaned_data.get("stage")
         venue = cleaned_data.get("venue")
@@ -189,6 +190,18 @@ class VenueBookingAdminForm(forms.ModelForm):
         if season and venue:
             if not venue.seasons.filter(pk=season.pk).exists():
                 self.add_error("venue", f"Точка «{venue.title}» не заявлена на сезон «{season.title}».")
+
+        if user and stage and venue:
+            existing = VenueBooking.objects.filter(
+                registration__user=user,
+                stage=stage,
+                venue=venue,
+            ).exclude(status=VenueBooking.Status.CANCELLED)
+            if self.instance and self.instance.pk:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                user_name = getattr(getattr(user, "profile", None), "full_name", "") or user.email
+                self.add_error("user", f"Участник «{user_name}» уже прикреплён к точке «{venue.title}».")
 
         return cleaned_data
 
@@ -226,6 +239,7 @@ class VenueBookingAdminForm(forms.ModelForm):
                 booking.status = status
                 if comment:
                     booking.comment = comment
+                self.instance = booking
             else:
                 booking = super().save(commit=False)
                 booking.registration = registration
@@ -233,6 +247,9 @@ class VenueBookingAdminForm(forms.ModelForm):
                 booking.venue = venue
                 booking.status = status
                 booking.comment = comment
+
+        if not hasattr(self, "save_m2m"):
+            self.save_m2m = getattr(self, "_save_m2m", lambda: None)
 
         if commit:
             booking.save()
