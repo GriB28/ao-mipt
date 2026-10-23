@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Очный тур — площадки{% endblock %}
+{% block title %}Очный тур{% if tab == 'grading' %} — Проверка задач{% elif tab == 'scans' %} — Загрузка скана работы{% else %} — Площадки{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -13,11 +13,97 @@
     {{ stage.registration_closes_at|default:stage.ends_at|date:"d.m.Y" }}{% else %}закрыта{% endif %}.
   </p>
   {% if my_booking and not user.is_manager %}
-    <p class="badge ok">Вы записаны: {{ my_booking.venue.title }}</p>
-    <p class="muted"><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку или отменить запись →</a></p>
+    {% if not my_results %}
+      <p class="badge ok">Вы записаны: {{ my_booking.venue.display_title }} (г. {{ my_booking.venue.city }})</p>
+      {% if stage.ends_at < now %}
+        <p class="muted">Тур завершён. Сейчас идёт проверка решений жюри. Ваши баллы и скан работы появятся на этой странице сразу после публикации результатов.</p>
+      {% else %}
+        <p class="muted"><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку или отменить запись →</a></p>
+      {% endif %}
+    {% endif %}
   {% endif %}
 {% endif %}
-{% if online_twin %}
+{% if my_results and not user.is_manager %}
+  <section class="card offline-results-card" style="margin: var(--space-5) 0 var(--space-6); padding: var(--space-5); border: 2px solid var(--color-brand-500, #0d2050); border-radius: var(--radius-md); background: var(--bg-card);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4);">
+      <div>
+        <h2 style="margin: 0 0 var(--space-1); font-size: var(--text-xl);">Ваши результаты очного тура</h2>
+        <p class="muted" style="margin: 0; font-size: var(--text-sm);">
+          Площадка: <strong>{{ my_results.venue.display_title }}</strong> (г. {{ my_results.venue.city }})
+          {% if my_results.held_at %} · Дата: {{ my_results.held_at|date:"d.m.Y" }}{% endif %}
+          · Комплект {{ my_results.variant }}
+        </p>
+      </div>
+      <div>
+        <span class="badge ok" style="font-size: var(--text-base); padding: var(--space-2) var(--space-3); display: inline-block;">
+          Итоговый балл: <strong>{{ my_results.total }}</strong>
+        </span>
+      </div>
+    </div>
+
+    {% if my_results.has_scan and my_results.scan_url %}
+      <div class="scan-banner" style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-muted); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); margin-bottom: var(--space-4); flex-wrap: wrap; gap: var(--space-3); border: 1px solid var(--border-default);">
+        <div>
+          <strong>Скан вашей работы</strong>
+          <span class="muted" style="font-size: var(--text-xs); display: block;">PDF-файл со всеми проверенными страницами решений</span>
+        </div>
+        <a href="{{ my_results.scan_url }}" target="_blank" class="btn btn-small btn-accent">
+          Открыть скан работы (PDF) →
+        </a>
+      </div>
+    {% elif not my_results.has_scan %}
+      <div class="note" style="margin-bottom: var(--space-4);">
+        Скан работы ещё не был прикреплен организаторами площадки.
+      </div>
+    {% endif %}
+
+    <h3 style="font-size: var(--text-base); margin: var(--space-4) 0 var(--space-2);">Баллы по задачам:</h3>
+    <table class="table-stack score-table" style="margin: 0;">
+      <thead>
+        <tr>
+          <th>Задача</th>
+          <th style="width: 120px; text-align: center;">Максимум</th>
+          <th style="width: 140px; text-align: right;">Ваш балл</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in my_results.problems %}
+          <tr>
+            <td data-label="Задача">
+              <strong>
+                <a href="{{ item.problem.get_absolute_url }}" target="_blank">
+                  {{ item.problem.number }}. {{ item.problem.title }}
+                </a>
+              </strong>
+            </td>
+            <td data-label="Максимум" style="text-align: center;" class="muted">
+              {{ item.problem.max_score }}
+            </td>
+            <td data-label="Ваш балл" style="text-align: right;">
+              <strong style="font-size: var(--text-base); color: var(--color-brand-500, #0d2050);">
+                {{ item.points_display }}
+              </strong>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="3" class="muted" style="text-align: center; padding: var(--space-4);">
+              Нет данных по задачам этого комплекта.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="font-weight: var(--weight-bold); background: var(--bg-muted);">
+          <td colspan="2">Сумма баллов:</td>
+          <td style="text-align: right; font-size: var(--text-base);">{{ my_results.total }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </section>
+{% endif %}
+
+{% if online_twin and not user.is_manager %}
   <p class="note">
     Первый отборочный этап идёт в двух форматах: очно на площадке и дистанционно
     ({{ online_twin.starts_at|date:"d.m" }}–{{ online_twin.ends_at|date:"d.m.Y" }}).
@@ -26,10 +112,26 @@
   </p>
 {% endif %}
 
-<p class="muted prose">Выберите точку на карте, чтобы посмотреть адрес и записаться.
-  Не нашли свой город — участвуйте дистанционно, это равноценный вариант.</p>
+{% if user.is_manager %}
+  <nav class="sub-tabs-nav" aria-label="Разделы очного тура">
+    <a href="{% url 'venues:map' %}?tab=map" class="sub-tab-link {% if tab == 'map' or not tab %}active{% endif %}">Карта точек проведения</a>
+    <a href="{% url 'venues:map' %}?tab=grading" class="sub-tab-link {% if tab == 'grading' %}active{% endif %}">Проверка задач</a>
+    <a href="{% url 'venues:map' %}?tab=scans" class="sub-tab-link {% if tab == 'scans' %}active{% endif %}">Загрузка скана работы</a>
+  </nav>
 
-{% include "venues/_organizer_bar.html" %}
-
-{% include "venues/_map.html" %}
+  {% if tab == "grading" %}
+    {% include "venues/_offline_grading.html" %}
+  {% elif tab == "scans" %}
+    {% include "venues/_offline_scans.html" %}
+  {% else %}
+    <p class="muted prose">Выберите точку на карте, чтобы посмотреть адрес и записаться.
+      Не нашли свой город — участвуйте дистанционно, это равноценный вариант.</p>
+    {% include "venues/_organizer_bar.html" %}
+    {% include "venues/_map.html" %}
+  {% endif %}
+{% else %}
+  <p class="muted prose">Выберите точку на карте, чтобы посмотреть адрес и записаться.
+    Не нашли свой город — участвуйте дистанционно, это равноценный вариант.</p>
+  {% include "venues/_map.html" %}
+{% endif %}
 {% endblock %}

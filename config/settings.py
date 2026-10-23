@@ -82,6 +82,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.core.middleware.AdminAjaxListEditableMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -119,6 +120,9 @@ DATABASES = {
         _database_url or f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
     )
 }
+if DATABASES["default"].get("ENGINE") == "django.db.backends.sqlite3":
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"]["timeout"] = 20
 
 # --- Пользователи ---------------------------------------------------------
 

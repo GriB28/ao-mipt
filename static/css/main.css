@@ -873,6 +873,39 @@ form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0
   gap: var(--space-1);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+.filter-bar select {
+  width: auto;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.filter-search-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.filter-search-group label {
+  margin-bottom: 0;
+}
+
+.filter-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-search-row input[type="search"] {
+  min-width: 220px;
+  flex: 1 1 auto;
+}
+
+.filter-search-row .btn {
+  flex: none;
+  white-space: nowrap;
 }
 
 .file-list { list-style: none; padding: 0; margin: var(--space-3) 0; }
@@ -1388,10 +1421,88 @@ pre { overflow-x: auto; }
   }
 }
 
-
 /* Метка площадки на карте, если этап уже прошёл */
 .leaflet-marker-icon.venue-marker-gray {
   filter: grayscale(100%);
   -webkit-filter: grayscale(100%);
   opacity: 0.8;
+}
+
+/* --- Вкладки организатора и ведомости оценивания ------------------------- */
+
+.sub-tabs-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-5) 0 var(--space-6);
+  border-bottom: 2px solid var(--border-default);
+}
+
+.sub-tab-link {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.sub-tab-link:hover {
+  color: var(--text-primary);
+}
+
+.sub-tab-link.active {
+  color: var(--color-brand-500);
+  border-bottom-color: var(--color-brand-500);
+  font-weight: var(--weight-bold);
+}
+
+.cell-inactive {
+  background-color: var(--color-surface-alt, #ebe4e3) !important;
+  color: var(--color-ink-300, #97a0bb) !important;
+  border-color: var(--border-default) !important;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.save-indicator {
+  display: inline-block;
+  font-size: var(--text-sm);
+  color: var(--color-success-500);
+  font-weight: var(--weight-medium);
+  transition: opacity 0.3s ease;
+  min-height: 1.2em;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  text-decoration: none;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip:hover {
+  background: var(--bg-card);
+  border-color: var(--color-brand-500);
+}
+
+.scan-upload-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
 }

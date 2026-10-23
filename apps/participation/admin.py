@@ -39,7 +39,7 @@ def get_seasons_venues_data() -> dict:
         ]
         offline_stages.sort(key=lambda x: (x.order, x.starts_at))
         default_stage = (
-            Stage.objects.current_or_next(season, Stage.Kind.OFFLINE)
+            Stage.objects.current_or_latest_started(season, Stage.Kind.OFFLINE)
             or (offline_stages[0] if offline_stages else None)
         )
 
@@ -139,8 +139,18 @@ class VenueBookingAdmin(admin.ModelAdmin):
             )
         }
 
-    list_display = ("participant_name", "user_email", "season_title", "stage", "venue", "status")
-    list_filter = ("stage__season", "stage", "status", "venue__region", "venue")
+    list_display = (
+        "participant_name",
+        "user_email",
+        "season_title",
+        "stage",
+        "venue",
+        "variant",
+        "held_at",
+        "has_scan",
+        "status",
+    )
+    list_filter = ("stage__season", "stage", "variant", "status", "venue__region", "venue")
     search_fields = (
         "registration__user__email",
         "registration__user__profile__last_name",
@@ -157,6 +167,10 @@ class VenueBookingAdmin(admin.ModelAdmin):
         "stage__season",
         "venue",
     )
+
+    @admin.display(description="скан", boolean=True)
+    def has_scan(self, obj):
+        return bool(obj.work_scan)
 
     @admin.display(description="участник (ФИО)", ordering="registration__user__profile__last_name")
     def participant_name(self, obj):

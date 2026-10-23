@@ -629,6 +629,30 @@ class VenueBookingAdminTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(VenueBooking.objects.filter(registration__user=self.student, venue=self.venue).exists())
 
+    def test_admin_add_view_post_duplicate_participant_rejected_with_validation_error(self):
+        # Первичная запись участника на площадку
+        reg = Registration.objects.create(user=self.student, season=self.season)
+        VenueBooking.objects.create(
+            registration=reg,
+            stage=self.stage,
+            venue=self.venue,
+            status=VenueBooking.Status.BOOKED,
+        )
+
+        # Попытка снова прикрепить этого же человека к той же площадке через админку
+        url = reverse("admin:participation_venuebooking_add")
+        data = {
+            "user": self.student.pk,
+            "season": self.season.pk,
+            "stage": self.stage.pk,
+            "venue": self.venue.pk,
+            "status": VenueBooking.Status.BOOKED,
+        }
+        response = self.client.post(url, data)
+        # Должен вернуться статус 200 (форма не сохраняется, а перерисовывается с ошибкой валидации, без 500 ошибки)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "уже прикреплён к точке")
+
     def test_search_participants_by_name(self):
         url = reverse("admin:participation_venuebooking_search_participants")
         response = self.client.get(url, {"q": "смирнов", "by": "name"})

@@ -2,13 +2,14 @@
 
 import io
 from datetime import date, timedelta
+from decimal import Decimal
 
 import openpyxl
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.accounts.models import DocumentType, ParticipantProfile, User
+from apps.accounts.models import ConsentDocument, DocumentType, ParticipantProfile, User
 from apps.participation.models import Registration, VenueBooking
 from apps.seasons.models import Season, Stage
 from apps.venues.export import format_passport_data
@@ -228,6 +229,322 @@ class VenueExportViewTests(TestCase):
         self.assertNotContains(response, reverse("venues:export", args=[self.venue.pk]))
 
 
+class OfflineGradingAndScansTests(TestCase):
+    """Тесты ведомости очного тура, переключения комплектов и загрузки сканов."""
+
+    def setUp(self):
+        from decimal import Decimal
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.contest.models import Problem, Score
+
+        self.Decimal = Decimal
+        self.SimpleUploadedFile = SimpleUploadedFile
+        self.Problem = Problem
+        self.Score = Score
+
+        now = timezone.now()
+        self.season = Season.objects.create(
+            year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True
+        )
+        self.stage = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-final",
+            title="Очный тур",
+            starts_at=now - timedelta(days=1),
+            ends_at=now + timedelta(days=2),
+            is_published=True,
+            order=1,
+        )
+        self.venue = Venue.objects.create(
+            title="МФТИ КПМ",
+            city="Долгопрудный",
+            address="Первомайская 7",
+            latitude=55.93,
+            longitude=37.52,
+            status=Venue.Status.APPROVED,
+            default_variant=1,
+            event_date=date(2099, 10, 15),
+        )
+        self.venue.seasons.add(self.season)
+
+        self.organizer = User.objects.create_user("org_offline@b.ru", "pass12345", role=User.Role.ORGANIZER)
+        self.participant1 = User.objects.create_user("part1@b.ru", "pass12345", role=User.Role.PARTICIPANT)
+        self.participant2 = User.objects.create_user("part2@b.ru", "pass12345", role=User.Role.PARTICIPANT)
+
+        reg1 = Registration.objects.create(user=self.participant1, season=self.season)
+        self.booking1 = VenueBooking.objects.create(
+            registration=reg1,
+            stage=self.stage,
+            venue=self.venue,
+            status=VenueBooking.Status.CONFIRMED,
+        )
+
+        reg2 = Registration.objects.create(user=self.participant2, season=self.season)
+        self.booking2 = VenueBooking.objects.create(
+            registration=reg2,
+            stage=self.stage,
+            venue=self.venue,
+            status=VenueBooking.Status.CONFIRMED,
+        )
+
+        # Задачи: 1.1, 1.2 (Комплект 1), 2.1, 2.2 (Комплект 2)
+        self.p1_1 = Problem.objects.create(
+            stage=self.stage, number="1.1", title="Задача 1.1",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+        self.p1_2 = Problem.objects.create(
+            stage=self.stage, number="1.2", title="Задача 1.2",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+        self.p2_1 = Problem.objects.create(
+            stage=self.stage, number="2.1", title="Задача 2.1",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+        self.p2_2 = Problem.objects.create(
+            stage=self.stage, number="2.2", title="Задача 2.2",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+
+    def test_manager_sees_tabs_participant_does_not(self):
+        # Обычный участник: нет вкладок
+        self.client.force_login(self.participant1)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "sub-tabs-nav")
+        self.assertNotContains(resp, "Проверка задач")
+        self.assertNotContains(resp, "Загрузка скана работы")
+
+        # Организатор: видит вкладки
+        self.client.force_login(self.organizer)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "sub-tabs-nav")
+        self.assertContains(resp, "Проверка задач")
+        self.assertContains(resp, "Загрузка скана работы")
+
+    def test_offline_grading_ajax_scores_and_variant_deactivation(self):
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+
+        # Ставим балл 8.5 за 1.1 (Комплект 1)
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "8.5"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["total"], "8.5")
+
+        # Ставим балл 7.0 за 2.1 (Комплект 2) — при активном комплекте 1 он должен быть skipped
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p2_1.pk, "points": "7"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["total"], "8.5")  # 7 не входит в сумму!
+
+        s1_1 = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
+        self.assertFalse(s1_1.is_skipped)
+        s2_1 = self.Score.objects.get(registration=self.booking1.registration, problem=self.p2_1)
+        self.assertTrue(s2_1.is_skipped)
+
+        # Переключаем комплект участника на 2
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "variant": "2"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["variant"], 2)
+        self.assertEqual(data["total"], "7")  # теперь в сумме только 2.1!
+
+        s1_1.refresh_from_db()
+        s2_1.refresh_from_db()
+        self.assertTrue(s1_1.is_skipped)
+        self.assertFalse(s2_1.is_skipped)
+
+    def test_offline_grading_score_max_validation(self):
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+
+        # 1. Попытка поставить балл больше максимального (10)
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "15"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.json())
+        self.assertIn("10", resp.json()["error"])
+        self.assertFalse(self.Score.objects.filter(registration=self.booking1.registration, problem=self.p1_1).exists())
+
+        # 2. Попытка поставить отрицательный балл
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "-1"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.json())
+        self.assertFalse(self.Score.objects.filter(registration=self.booking1.registration, problem=self.p1_1).exists())
+
+        # 3. Валидный балл (ровно максимум 10)
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "10"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        score = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
+        self.assertEqual(score.points, Decimal("10"))
+
+        # 4. Проблема без max_score (None) принимает любые неотрицательные баллы
+        self.p1_1.max_score = None
+        self.p1_1.save()
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "25"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("25"))
+
+        # 5. Проверка отображения max_score в шаблоне ведомости
+        self.p1_1.max_score = Decimal("10")
+        self.p1_1.save()
+        map_resp = self.client.get(f"{reverse('venues:map')}?tab=grading")
+        self.assertEqual(map_resp.status_code, 200)
+        self.assertContains(map_resp, 'data-max-score="10"')
+        self.assertContains(map_resp, "макс: 10")
+
+    def test_offline_scan_upload_download_and_permissions(self):
+        self.client.force_login(self.organizer)
+        upload_url = reverse("venues:upload_work_scan")
+
+        # Не-PDF отклоняется
+        txt_file = self.SimpleUploadedFile("work.txt", b"not a pdf", content_type="text/plain")
+        resp = self.client.post(upload_url, {"booking_id": self.booking1.pk, "work_scan": txt_file})
+        self.booking1.refresh_from_db()
+        self.assertFalse(bool(self.booking1.work_scan))
+
+        # Валидный PDF загружается
+        pdf_file = self.SimpleUploadedFile("work.pdf", b"%PDF-1.4 sample content", content_type="application/pdf")
+        resp = self.client.post(
+            upload_url,
+            {"booking_id": self.booking1.pk, "work_scan": pdf_file, "variant": "2", "held_at": "2099-10-16"},
+        )
+        self.booking1.refresh_from_db()
+        self.assertTrue(bool(self.booking1.work_scan))
+        self.assertEqual(self.booking1.variant, 2)
+        self.assertEqual(str(self.booking1.held_at), "2099-10-16")
+
+        scan_url = self.booking1.get_scan_url()
+
+        # Организатор может скачать/просмотреть скан
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+
+        # Участник до публикации результатов получает 404
+        self.client.force_login(self.participant1)
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 404)
+
+        # Публикуем результаты
+        self.stage.results_published = True
+        self.stage.save()
+
+        # Теперь участник видит свой скан
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 200)
+
+        # Чужой участник не видит
+        self.client.force_login(self.participant2)
+        resp = self.client.get(scan_url)
+        self.assertEqual(resp.status_code, 404)
+
+        # Удаление скана организатором
+        self.client.force_login(self.organizer)
+        del_url = reverse("venues:delete_work_scan", args=[self.booking1.pk])
+        resp = self.client.post(del_url)
+        self.booking1.refresh_from_db()
+        self.assertFalse(bool(self.booking1.work_scan))
+
+    def test_export_grading_excel(self):
+        self.client.force_login(self.organizer)
+        url = reverse("venues:export_grading")
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("vedomost_ochny_tur_", resp["Content-Disposition"])
+
+        wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+        self.assertIn("Общая ведомость", wb.sheetnames)
+        self.assertIn("Долгопрудный", wb.sheetnames)
+
+        ws_all = wb["Общая ведомость"]
+        self.assertEqual(ws_all.cell(row=1, column=1).value, "ФИО участника")
+        names_all = [ws_all.cell(row=r, column=1).value for r in range(2, ws_all.max_row + 1)]
+        self.assertIn("part1@b.ru", names_all)
+        self.assertIn("part2@b.ru", names_all)
+
+        ws_city = wb["Долгопрудный"]
+        self.assertEqual(ws_city.cell(row=1, column=1).value, "ФИО участника")
+        names_city = [ws_city.cell(row=r, column=1).value for r in range(2, ws_city.max_row + 1)]
+        self.assertIn("part1@b.ru", names_city)
+        self.assertIn("part2@b.ru", names_city)
+
+    def test_participant_views_results_and_scan_on_offline_page(self):
+        # 1. До публикации результатов участник видит только статус записи, но не баллы и не результаты
+        self.stage.results_published = False
+        self.stage.save()
+
+        self.Score.objects.create(
+            registration=self.booking1.registration,
+            problem=self.p1_1,
+            points=self.Decimal("8"),
+            venue=self.venue,
+        )
+        self.Score.objects.create(
+            registration=self.booking1.registration,
+            problem=self.p1_2,
+            points=self.Decimal("10"),
+            venue=self.venue,
+        )
+
+        self.client.force_login(self.participant1)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "Ваши результаты очного тура")
+        self.assertNotContains(resp, "Итоговый балл:")
+
+        # 2. Публикуем результаты этапа
+        self.stage.results_published = True
+        self.stage.save()
+
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Ваши результаты очного тура")
+        self.assertContains(resp, "Итоговый балл:")
+        self.assertContains(resp, "18")  # 8 + 10 = 18
+        self.assertContains(resp, "Задача 1.1")
+        self.assertContains(resp, "Задача 1.2")
+        # Задачи комплекта 2 не показываются участнику комплекта 1
+        self.assertNotContains(resp, "Задача 2.1")
+        self.assertNotContains(resp, "Задача 2.2")
+
+
+
 
 class VenueStagePassedTests(TestCase):
     def setUp(self):
@@ -316,3 +633,133 @@ class VenueStagePassedTests(TestCase):
         self.assertEqual(res.status_code, 302)
         self.venue.refresh_from_db()
         self.assertFalse(self.venue.stage_passed)
+
+
+class VenueRegistrationLockTests(TestCase):
+    """Тесты блокировки регистрации на площадку через админку и запрета записи."""
+
+    def setUp(self):
+        now = timezone.now()
+        self.season = Season.objects.create(
+            year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True
+        )
+        self.stage = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-final",
+            title="Очный тур",
+            starts_at=now - timedelta(days=1),
+            ends_at=now + timedelta(days=2),
+            is_published=True,
+            order=1,
+        )
+        self.admin = User.objects.create_user(
+            "admin_lock@b.ru", "pass12345", role=User.Role.ADMIN, is_staff=True, is_superuser=True
+        )
+        self.student = User.objects.create_user(
+            "student_lock@b.ru", "pass12345", role=User.Role.PARTICIPANT, email_confirmed=True
+        )
+        ParticipantProfile.objects.create(
+            user=self.student,
+            last_name="Иванов",
+            first_name="Иван",
+            birth_date=date(2010, 1, 1),
+            birth_place="г. Москва",
+            doc_type=DocumentType.PASSPORT_RF,
+            doc_series="4510",
+            doc_number="123456",
+            doc_issued_at=date(2024, 1, 1),
+            doc_issued_by="ГУ МВД",
+            doc_division_code="770001",
+            reg_address="г. Москва",
+            grade=10,
+            school="Школа №1",
+            city="Москва",
+            region="Москва",
+            phone="+79991234567",
+            telegram="@ivanov",
+            acknowledged_at=now,
+        )
+        ConsentDocument.objects.create(
+            user=self.student,
+            file="consents/test.pdf",
+            status=ConsentDocument.Status.APPROVED,
+        )
+        self.venue = Venue.objects.create(
+            title="Тестовая площадка",
+            region="Москва",
+            city="Москва",
+            address="ул. Примерная, 10",
+            latitude=55.75,
+            longitude=37.62,
+            status=Venue.Status.APPROVED,
+            registration_closed=False,
+        )
+        self.venue.seasons.add(self.season)
+
+    def test_default_registration_closed_is_false(self):
+        self.assertFalse(self.venue.registration_closed)
+
+    def test_as_geojson_feature_contains_registration_closed(self):
+        feature = self.venue.as_geojson_feature()
+        self.assertIn("registration_closed", feature["properties"])
+        self.assertFalse(feature["properties"]["registration_closed"])
+
+        self.venue.registration_closed = True
+        self.venue.save()
+        feature_updated = self.venue.as_geojson_feature()
+        self.assertTrue(feature_updated["properties"]["registration_closed"])
+
+    def test_admin_changelist_shows_registration_closed_checkbox(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'name="form-0-registration_closed"')
+        self.assertNotContains(res, "toggle-registration")
+
+    def test_admin_actions_lock_and_unlock_registration(self):
+        self.client.force_login(self.admin)
+        url = reverse("admin:venues_venue_changelist")
+
+        # Lock
+        post_data = {
+            "action": "lock_registration",
+            "_selected_action": [str(self.venue.pk)],
+        }
+        res = self.client.post(url, post_data)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertTrue(self.venue.registration_closed)
+
+        # Unlock
+        post_data["action"] = "unlock_registration"
+        res = self.client.post(url, post_data)
+        self.assertEqual(res.status_code, 302)
+        self.venue.refresh_from_db()
+        self.assertFalse(self.venue.registration_closed)
+
+    def test_detail_page_and_booking_prevented_when_registration_closed(self):
+        self.client.force_login(self.student)
+        url = reverse("venues:detail", args=[self.venue.pk])
+
+        # Registration open: booking button is shown
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Записаться")
+
+        # Lock registration
+        self.venue.registration_closed = True
+        self.venue.save()
+
+        # Detail page shows locked badge and no booking button
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Запись заблокирована")
+        self.assertNotContains(res, ">Записаться<")
+
+        # Attempt to book via POST is rejected
+        book_url = reverse("venues:book", args=[self.venue.pk])
+        res = self.client.post(book_url)
+        self.assertEqual(res.status_code, 302)
+        self.assertFalse(VenueBooking.objects.filter(venue=self.venue, registration__user=self.student).exists())

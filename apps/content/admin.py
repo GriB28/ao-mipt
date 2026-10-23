@@ -7,6 +7,7 @@ from .models import ArchiveMaterial, Lecture, News, Page, Photo, Playlist, Topic
 @admin.register(News)
 class NewsAdmin(admin.ModelAdmin):
     list_display = ("title", "season", "published_at", "is_published")
+    list_editable = ("is_published",)
     list_filter = ("season", "is_published")
     prepopulated_fields = {"slug": ("title",)}
     search_fields = ("title", "body")
@@ -16,7 +17,7 @@ class NewsAdmin(admin.ModelAdmin):
 class PlaylistAdmin(admin.ModelAdmin):
     list_display = ("title", "season", "platform_title", "order", "is_published")
     list_filter = ("season", "is_published")
-    list_editable = ("order", "season")
+    list_editable = ("order", "season", "is_published")
     search_fields = ("title",)
 
 
@@ -57,6 +58,7 @@ class LectureAdmin(admin.ModelAdmin):
 @admin.register(Page)
 class PageAdmin(admin.ModelAdmin):
     list_display = ("title", "slug", "show_in_menu", "menu_order", "is_published")
+    list_editable = ("show_in_menu", "menu_order", "is_published")
     prepopulated_fields = {"slug": ("title",)}
 
 
@@ -65,7 +67,7 @@ class ArchiveMaterialAdmin(admin.ModelAdmin):
     list_display = ("title", "season", "kind", "problem_number", "size_display", "is_published")
     list_filter = ("season", "kind", "stage", "is_published")
     search_fields = ("title", "description", "source_path")
-    list_editable = ("problem_number",)
+    list_editable = ("problem_number", "is_published")
     readonly_fields = ("source_path", "size_bytes")
 
 

@@ -13,6 +13,7 @@ class StageInline(admin.TabularInline):
 @admin.register(Season)
 class SeasonAdmin(admin.ModelAdmin):
     list_display = ("title", "year", "is_active", "is_published")
+    list_editable = ("is_active", "is_published")
     list_filter = ("is_active", "is_published")
     prepopulated_fields = {"slug": ("title",)}
     inlines = [StageInline]
@@ -31,7 +32,7 @@ class StageAdmin(admin.ModelAdmin):
     list_display = ("title", "season", "order", "kind", "starts_at", "ends_at",
                     "is_practice", "is_published")
     list_filter = ("season", "kind", "is_published", "is_practice")
-    list_editable = ("order",)
+    list_editable = ("order", "is_practice", "is_published")
     date_hierarchy = "starts_at"
 
 

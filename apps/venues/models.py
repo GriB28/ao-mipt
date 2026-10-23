@@ -75,6 +75,11 @@ class Venue(TimeStampedModel):
         default=False,
         help_text="Отметьте, если тур на этой площадке уже завершился. На карте метка станет серой.",
     )
+    registration_closed = models.BooleanField(
+        "блокировка регистрации",
+        default=False,
+        help_text="Запретить участникам запись на эту площадку (блокировка регистрации).",
+    )
 
     managers = models.ManyToManyField(
         settings.AUTH_USER_MODEL, related_name="managed_venues", blank=True,
@@ -85,6 +90,14 @@ class Venue(TimeStampedModel):
         related_name="created_venues", verbose_name="кто подал заявку",
     )
     seasons = models.ManyToManyField(Season, related_name="venues", blank=True, verbose_name="сезоны")
+    default_variant = models.PositiveSmallIntegerField(
+        "комплект по умолчанию", choices=[(1, "Комплект 1"), (2, "Комплект 2")],
+        default=1, help_text="Комплект заданий очного тура на этой площадке",
+    )
+    event_date = models.DateField(
+        "дата проведения", null=True, blank=True,
+        help_text="Дата проведения тура на этой площадке",
+    )
 
     objects = VenueQuerySet.as_manager()
 
@@ -103,6 +116,11 @@ class Venue(TimeStampedModel):
     @property
     def is_public(self):
         return self.status == self.Status.APPROVED and self.is_visible
+
+    @property
+    def display_title(self):
+        """Короткое название площадки для списков и меню (МФТИ, Лицей №14); если не задано — полное."""
+        return self.short_title.strip() if self.short_title else self.title
 
     def booked_count(self, stage=None):
         """Сколько человек записалось. Ограничения сверху нет:
@@ -127,5 +145,6 @@ class Venue(TimeStampedModel):
                 "booked": self.booked_count(stage),
                 "url": self.get_absolute_url(),
                 "stage_passed": self.stage_passed,
+                "registration_closed": self.registration_closed,
             },
         }

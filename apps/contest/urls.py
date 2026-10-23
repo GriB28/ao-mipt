@@ -12,6 +12,7 @@ urlpatterns = [
     path("file/<int:pk>/", views.submission_file, name="submission_file"),
     # Проверка решений организатором — прямо на сайте, без админки.
     path("review/", views.review_list, name="review_list"),
+    path("review/save-grade/", views.review_save_grade, name="review_save_grade"),
     path("review/<int:pk>/", views.review_detail, name="review_detail"),
     # Задачи: заводит организатор, одобряет администратор.
     path("problems/manage/", views.problem_manage, name="problem_manage"),

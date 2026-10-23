@@ -1,0 +1,352 @@
+{% comment %}
+Ведомость очного тура: матрица участников и задач с возможностью автосохранения и выбора комплекта.
+{% endcomment %}
+
+<form method="get" class="filter-bar grading-filter-bar" style="margin-bottom: var(--space-4);">
+  <input type="hidden" name="tab" value="grading">
+  <label>
+    Площадка
+    <select name="venue" onchange="this.form.submit()">
+      <option value="">Все площадки</option>
+      {% for v in all_venues %}
+        <option value="{{ v.pk }}" {% if selected_venue_id == v.pk|stringformat:"s" %}selected{% endif %}>
+          {{ v.city }} — {{ v.short_title|default:v.title }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="filter-search-group">
+    <label for="grading-search-q">Поиск</label>
+    <div class="filter-search-row">
+      <input id="grading-search-q" type="search" name="q" value="{{ search_query }}" placeholder="ФИО, email, город...">
+      <button class="btn btn-small" type="submit">Найти</button>
+      {% if search_query or selected_venue_id %}
+        <a href="{% url 'venues:map' %}?tab=grading" class="btn btn-small btn-secondary">Сбросить</a>
+      {% endif %}
+    </div>
+  </div>
+</form>
+
+<div class="grading-actions-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); flex-wrap: wrap; gap: var(--space-3);">
+  <div>
+    <strong>Участников: {{ rows|length }}</strong>
+    {% if not problems %}<span class="badge warn">Нет одобренных задач очного тура</span>{% endif %}
+  </div>
+  <div style="display: flex; align-items: center; gap: var(--space-3);">
+    <span id="offline-save-indicator" class="save-indicator"></span>
+    <a href="{% url 'venues:export_grading' %}?venue={{ selected_venue_id }}&q={{ search_query }}" class="btn btn-small btn-secondary">
+      Выгрузить в Excel
+    </a>
+  </div>
+</div>
+
+<form method="post" id="grading-form">
+  {% csrf_token %}
+  <div class="table-scroll">
+    <table class="score-table grading-matrix-table">
+      <thead>
+        <tr>
+          <th>ФИО участника</th>
+          <th>Точка проведения</th>
+          <th>Город</th>
+          <th>Дата</th>
+          <th>Комплект</th>
+          {% for p in problems %}
+            <th class="cell-problem-header" title="{{ p.title }}{% if p.max_score_plain %} (макс: {{ p.max_score_plain }}){% endif %}">
+              <a href="{{ p.get_absolute_url }}" target="_blank">{{ p.number }}</a>
+              {% if p.max_score_plain %}
+                <br><small class="muted" style="font-weight: normal; font-size: 11px;">макс: {{ p.max_score_plain }}</small>
+              {% endif %}
+            </th>
+          {% endfor %}
+          <th>Сумма</th>
+          <th>Скан</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        <tr id="row-{{ row.booking.pk }}" data-booking-id="{{ row.booking.pk }}">
+          <td>
+            <strong>
+              {% if row.booking.registration.user.profile %}
+                {{ row.booking.registration.user.profile.full_name }}
+              {% else %}
+                {{ row.booking.registration.user.email }}
+              {% endif %}
+            </strong>
+          </td>
+          <td title="{{ row.booking.venue.title }}">{{ row.booking.venue.short_title|default:row.booking.venue.title }}</td>
+          <td>{{ row.booking.venue.city }}</td>
+          <td>
+            <input type="date" name="held_at_{{ row.booking.pk }}" value="{{ row.held_at_val }}"
+                   class="date-input" data-booking-id="{{ row.booking.pk }}"
+                   style="width: 135px; font-size: var(--text-xs);">
+          </td>
+          <td>
+            <select name="variant_{{ row.booking.pk }}" class="variant-select"
+                    data-booking-id="{{ row.booking.pk }}" style="font-size: var(--text-xs); padding: 2px 4px;">
+              <option value="1" {% if row.variant == 1 %}selected{% endif %}>1</option>
+              <option value="2" {% if row.variant == 2 %}selected{% endif %}>2</option>
+            </select>
+          </td>
+          {% for cell in row.cells %}
+            <td class="cell-score">
+              <input type="text" inputmode="decimal"
+                     name="{{ cell.name }}"
+                     value="{{ cell.value }}"
+                     class="score-input offline-score-input {% if cell.is_inactive %}cell-inactive{% endif %}"
+                     {% if cell.is_inactive %}disabled{% endif %}
+                     data-booking-id="{{ row.booking.pk }}"
+                     data-problem-id="{{ cell.problem.pk }}"
+                     data-variant="{{ cell.problem.variant|default:'' }}"
+                     data-max-score="{{ cell.max_score }}"
+                     {% if cell.max_score %}title="Максимум: {{ cell.max_score }}"{% endif %}
+                     size="3">
+            </td>
+          {% endfor %}
+          <td>
+            <strong class="total-score" id="total-{{ row.booking.pk }}">{{ row.total }}</strong>
+          </td>
+          <td class="cell-scan" style="text-align: center;">
+            {% if row.has_scan %}
+              <a href="{{ row.work_scan_url }}" target="_blank" class="badge ok scan-badge" title="Открыть скан работы">📄 Скан</a>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="{{ problems|length|add:7 }}" class="muted" style="text-align: center; padding: var(--space-6);">
+            Участники не найдены.
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <noscript>
+    <p class="actions" style="margin-top: var(--space-4);">
+      <button class="btn" type="submit">Сохранить изменения</button>
+    </p>
+  </noscript>
+</form>
+
+<style>
+.score-input.score-input-error {
+  border-color: var(--color-danger-500, #b3261e) !important;
+  background-color: var(--color-danger-50, #fdf2f2) !important;
+  color: var(--color-danger-500, #b3261e) !important;
+  outline: 2px solid var(--color-danger-500, #b3261e) !important;
+}
+</style>
+
+<script>
+(function() {
+  const saveUrl = "{% url 'venues:save_scores' %}";
+  const indicator = document.getElementById("offline-save-indicator");
+
+  function getCsrfToken() {
+    const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (input) return input.value;
+    const match = document.cookie.match(/csrftoken=([^;]+)/);
+    return match ? match[1] : "";
+  }
+
+  let indicatorTimer = null;
+  function showIndicator(msg, isError) {
+    if (!indicator) return;
+    if (indicatorTimer) clearTimeout(indicatorTimer);
+    indicator.textContent = msg;
+    indicator.style.color = isError ? "var(--color-danger-500, #b3261e)" : "var(--color-success-500, #1c7a49)";
+    indicator.style.fontWeight = isError ? "600" : "normal";
+    indicator.style.opacity = "1";
+    indicatorTimer = setTimeout(function() {
+      indicator.style.opacity = "0";
+    }, isError ? 4000 : 2500);
+  }
+
+  function recalculateRowTotal(bookingId) {
+    const row = document.getElementById("row-" + bookingId);
+    if (!row) return;
+    let sum = 0;
+    const inputs = row.querySelectorAll(".offline-score-input:not(:disabled)");
+    inputs.forEach(function(inp) {
+      const val = parseFloat(inp.value.replace(",", "."));
+      if (!isNaN(val)) {
+        sum += val;
+      }
+    });
+    const totalElem = document.getElementById("total-" + bookingId);
+    if (totalElem) {
+      totalElem.textContent = Number.isInteger(sum) ? sum : sum.toFixed(2).replace(/\.?0+$/, "");
+    }
+  }
+
+  const ajaxQueue = [];
+  let isSending = false;
+
+  function processQueue() {
+    if (isSending || ajaxQueue.length === 0) return;
+    const task = ajaxQueue.shift();
+    isSending = true;
+
+    fetch(saveUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken(),
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: JSON.stringify(task.payload)
+    })
+    .then(function(res) {
+      return res.json().catch(function() {
+        return {};
+      }).then(function(data) {
+        if (!res.ok) {
+          const msg = data.error || ("HTTP error " + res.status);
+          const err = new Error(msg);
+          err.serverMessage = data.error;
+          throw err;
+        }
+        return data;
+      });
+    })
+    .then(function(data) {
+      if (task.onSuccess) task.onSuccess(data);
+      showIndicator("✓ Сохранено", false);
+    })
+    .catch(function(err) {
+      console.error(err);
+      const msg = err.serverMessage || err.message || "Ошибка сохранения";
+      showIndicator(msg, true);
+      if (task.onError) task.onError(msg);
+    })
+    .finally(function() {
+      isSending = false;
+      processQueue();
+    });
+  }
+
+  function sendAjax(payload, onSuccess, onError) {
+    ajaxQueue.push({ payload: payload, onSuccess: onSuccess, onError: onError });
+    processQueue();
+  }
+
+  // Смена комплекта: переключение неактивных ячеек и пересчёт
+  document.querySelectorAll(".variant-select").forEach(function(sel) {
+    sel.addEventListener("change", function() {
+      const bookingId = this.dataset.bookingId;
+      const newVariant = this.value;
+      const row = document.getElementById("row-" + bookingId);
+
+      if (row) {
+        const inputs = row.querySelectorAll(".offline-score-input");
+        inputs.forEach(function(inp) {
+          const varAttr = inp.dataset.variant;
+          if (varAttr) {
+            if (varAttr === newVariant) {
+              inp.disabled = false;
+              inp.classList.remove("cell-inactive");
+            } else {
+              inp.disabled = true;
+              inp.classList.add("cell-inactive");
+            }
+          }
+        });
+      }
+
+      sendAjax({ booking_id: bookingId, variant: newVariant }, function(data) {
+        const totalElem = document.getElementById("total-" + bookingId);
+        if (totalElem && data.total !== undefined) {
+          totalElem.textContent = data.total;
+        }
+      });
+    });
+  });
+
+  // Изменение даты проведения
+  document.querySelectorAll(".date-input").forEach(function(inp) {
+    inp.addEventListener("change", function() {
+      const bookingId = this.dataset.bookingId;
+      sendAjax({ booking_id: bookingId, held_at: this.value });
+    });
+  });
+
+  // Ввод и автосохранение баллов
+  document.querySelectorAll(".offline-score-input").forEach(function(inp) {
+    let prevValue = inp.value;
+
+    inp.addEventListener("focus", function() {
+      inp.classList.remove("score-input-error");
+    });
+
+    inp.addEventListener("input", function() {
+      inp.classList.remove("score-input-error");
+      const bookingId = this.dataset.bookingId;
+      recalculateRowTotal(bookingId);
+    });
+
+    function handleScoreSave() {
+      if (inp.value === prevValue) return;
+
+      const rawVal = inp.value.trim();
+      const maxScoreStr = inp.dataset.maxScore;
+      const maxScore = maxScoreStr ? parseFloat(maxScoreStr) : null;
+
+      if (rawVal !== "") {
+        const num = parseFloat(rawVal.replace(",", "."));
+        if (isNaN(num)) {
+          showIndicator("Некорректное число", true);
+          inp.classList.add("score-input-error");
+          inp.value = prevValue;
+          recalculateRowTotal(inp.dataset.bookingId);
+          return;
+        }
+        if (num < 0) {
+          showIndicator("Балл не может быть меньше 0", true);
+          inp.classList.add("score-input-error");
+          inp.value = prevValue;
+          recalculateRowTotal(inp.dataset.bookingId);
+          return;
+        }
+        if (maxScore !== null && num > maxScore) {
+          showIndicator("Балл (" + num + ") превышает максимум (" + maxScoreStr + ")", true);
+          inp.classList.add("score-input-error");
+          inp.value = prevValue;
+          recalculateRowTotal(inp.dataset.bookingId);
+          return;
+        }
+      }
+
+      inp.classList.remove("score-input-error");
+      const oldValue = prevValue;
+      const valueToSave = inp.value;
+      prevValue = valueToSave;
+
+      const bookingId = inp.dataset.bookingId;
+      const problemId = inp.dataset.problemId;
+
+      sendAjax({
+        booking_id: bookingId,
+        problem_id: problemId,
+        points: valueToSave
+      }, function(data) {
+        const totalElem = document.getElementById("total-" + bookingId);
+        if (totalElem && data.total !== undefined) {
+          totalElem.textContent = data.total;
+        }
+      }, function(errorMsg) {
+        prevValue = oldValue;
+        inp.classList.add("score-input-error");
+        inp.value = prevValue;
+        recalculateRowTotal(bookingId);
+      });
+    }
+
+    inp.addEventListener("change", handleScoreSave);
+    inp.addEventListener("blur", handleScoreSave);
+  });
+})();
+</script>

@@ -58,6 +58,14 @@
           </div>
         </header>
 
+        {% if res.work_scan_url %}
+          <div class="stage-result-scan" style="margin: var(--space-3) 0;">
+            <a href="{{ res.work_scan_url }}" target="_blank" class="badge ok" style="text-decoration:none; font-size:var(--text-sm); padding:6px 12px; display:inline-flex; align-items:center; gap:6px;">
+              📄 Скан проверенной работы (PDF)
+            </a>
+          </div>
+        {% endif %}
+
         <table class="table-stack stage-result-table">
           <thead>
             <tr>

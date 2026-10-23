@@ -1,18 +1,27 @@
+from datetime import date
+import json
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
+import time
+from django.db import OperationalError
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
+from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.contest.models import Problem, Score
 from apps.contest.scoring import total as total_points
+from apps.core.files import protected_file_response
 from apps.participation.models import Registration, VenueBooking, VenueBookingError
 from apps.seasons.models import Season, Stage
 
-from .export import generate_venue_participants_excel
+from .export import generate_offline_grading_excel, generate_venue_participants_excel
 from .forms import VenueForm, VenueMailForm
 from .models import Venue
 
@@ -20,10 +29,12 @@ from .models import Venue
 def _offline_stage(season):
     """Очный тур, который показываем на вкладке.
 
-    Очных этапов два — осенний отбор и финал. Пока идёт или предстоит
-    осенний, показываем его; после него вкладка переключится на финал.
+    Показываем текущий или последний начавшийся очный тур (чтобы после
+    окончания тура ведомость, проверка и сканы оставались доступны),
+    пока не начнётся следующий очный тур (финал).
+    Если ещё ни один тур не начался — показываем ближайший предстоящий.
     """
-    return Stage.objects.current_or_next(season, Stage.Kind.OFFLINE)
+    return Stage.objects.current_or_latest_started(season, Stage.Kind.OFFLINE)
 
 
 def _twin_stage(stage, kind):
@@ -50,21 +61,98 @@ def _my_booking(user, stage):
     )
 
 
+
+
+def _get_participant_offline_results(user, stage, my_booking):
+    """Результаты очного тура для участника: баллы по задачам своего комплекта и скан."""
+    if not (user.is_authenticated and stage and my_booking and stage.results_published):
+        return None
+
+    active_variant = my_booking.effective_variant
+    all_problems = _venue_problems(stage)
+
+    # Задачи комплекта участника (или общие без комплекта)
+    variant_problems = [
+        p for p in all_problems
+        if p.variant is None or p.variant == active_variant
+    ]
+    if not variant_problems and all_problems:
+        variant_problems = all_problems
+
+    scores_map = {
+        s.problem_id: s
+        for s in Score.objects.filter(
+            registration=my_booking.registration,
+            problem__in=variant_problems,
+        )
+    }
+
+    items = []
+    total = Decimal("0")
+    for p in variant_problems:
+        score_obj = scores_map.get(p.pk)
+        pts = score_obj.points if (score_obj and not score_obj.is_skipped) else None
+        if pts is not None:
+            total += pts
+
+        items.append({
+            "problem": p,
+            "score": score_obj,
+            "points": pts,
+            "points_display": _format_points(pts) if pts is not None else "0",
+            "is_skipped": score_obj.is_skipped if score_obj else False,
+        })
+
+    scan_url = ""
+    if my_booking.work_scan and my_booking.can_view_scan(user):
+        scan_url = my_booking.get_scan_url()
+
+    return {
+        "booking": my_booking,
+        "venue": my_booking.venue,
+        "held_at": my_booking.effective_held_at,
+        "variant": active_variant,
+        "has_scan": bool(my_booking.work_scan),
+        "scan_url": scan_url,
+        "problems": items,
+        "total": _format_points(total),
+    }
+
+
 def venue_map(request):
-    """Страница с картой площадок."""
+    """Страница очного тура: карта площадок, проверка задач и загрузка сканов."""
     season = Season.objects.active()
     stage = _offline_stage(season)
-    return render(
-        request,
-        "venues/map.html",
-        {
-            "season": season,
-            "stage": stage,
-            "my_booking": _my_booking(request.user, stage),
-            "my_venues": Venue.objects.managed_by(request.user),
-            "online_twin": _twin_stage(stage, Stage.Kind.ONLINE),
-        },
-    )
+
+    tab = request.GET.get("tab", "map")
+    if not (request.user.is_authenticated and request.user.is_manager):
+        tab = "map"
+
+    my_booking = _my_booking(request.user, stage)
+
+    context = {
+        "season": season,
+        "stage": stage,
+        "my_booking": my_booking,
+        "my_venues": Venue.objects.managed_by(request.user),
+        "online_twin": _twin_stage(stage, Stage.Kind.ONLINE),
+        "tab": tab,
+        "now": timezone.now(),
+        "my_results": _get_participant_offline_results(request.user, stage, my_booking),
+    }
+
+    if tab == "grading":
+        context.update(_get_grading_context(request, season, stage))
+        if request.method == "POST":
+            saved = _save_all_offline_scores(request, context["bookings"], context["problems"])
+            messages.success(request, f"Сохранено оценок и данных: {saved}.")
+            venue_arg = f"&venue={request.GET.get('venue')}" if request.GET.get('venue') else ""
+            return redirect(f"{reverse('venues:map')}?tab=grading{venue_arg}")
+
+    elif tab == "scans":
+        context.update(_get_scans_context(request, season, stage))
+
+    return render(request, "venues/map.html", context)
 
 
 def venues_geojson(request):
@@ -112,6 +200,9 @@ def book_venue(request, pk):
     if request.user.is_manager:
         raise PermissionDenied("Организаторы на площадки не записываются.")
     venue = get_object_or_404(Venue.objects.public(), pk=pk)
+    if venue.registration_closed:
+        messages.error(request, "Запись на эту площадку заблокирована организаторами.")
+        return redirect("venues:detail", pk=venue.pk)
     if not request.user.can_participate:
         messages.error(
             request,
@@ -193,12 +284,412 @@ def _managed_venue_or_403(user, pk):
 def _venue_problems(stage):
     """Задачи тура, по которым выставляются баллы.
 
-    Берём все одобренные, а не только опубликованные: ведомость заполняют
-    после тура, когда задачи уже могли снять с публикации.
+    Берём все одобренные, сортируем по натуральному ключу (1.1, 1.2, 2.1...).
     """
     if not stage:
-        return Problem.objects.none()
-    return Problem.objects.filter(stage=stage, status=Problem.Status.APPROVED).order_by("number")
+        return []
+    problems = list(Problem.objects.filter(stage=stage, status=Problem.Status.APPROVED))
+    problems.sort(key=lambda p: p.sort_key)
+    return problems
+
+
+def _format_points(val):
+    if val is None:
+        return ""
+    return str(int(val)) if val == val.to_integral() else f"{val:.2f}".rstrip("0").rstrip(".")
+
+
+def _get_grading_context(request, season, stage):
+    all_venues = Venue.objects.public()
+    if season:
+        all_venues = all_venues.filter(seasons=season).order_by("city", "short_title", "title")
+
+    problems = _venue_problems(stage)
+    for p in problems:
+        p.max_score_plain = _format_points(p.max_score) if p.max_score is not None else ""
+
+    bookings = (
+        VenueBooking.objects.filter(stage=stage)
+        .exclude(status=VenueBooking.Status.CANCELLED)
+        .select_related("registration__user", "registration__user__profile", "venue")
+    )
+    selected_venue_id = request.GET.get("venue", "").strip()
+    if selected_venue_id and selected_venue_id.isdigit():
+        bookings = bookings.filter(venue_id=int(selected_venue_id))
+
+    search_query = request.GET.get("q", "").strip()
+    if search_query:
+        query_lower = search_query.lower()
+        filtered = []
+        for b in bookings:
+            user = b.registration.user
+            profile = getattr(user, "profile", None)
+            full_name = profile.full_name.lower() if profile and profile.full_name else ""
+            v_short = (b.venue.short_title or "").lower()
+            v_full = (b.venue.title or "").lower()
+            if (
+                query_lower in full_name
+                or query_lower in user.email.lower()
+                or query_lower in b.venue.city.lower()
+                or query_lower in v_short
+                or query_lower in v_full
+            ):
+                filtered.append(b)
+        bookings = filtered
+    else:
+        bookings = bookings.order_by(
+            "venue__city",
+            "venue__short_title",
+            "venue__title",
+            "registration__user__profile__last_name",
+            "registration__user__email",
+        )
+
+    existing_scores = {
+        (s.registration_id, s.problem_id): s
+        for s in Score.objects.filter(registration__bookings__stage=stage, problem__in=problems)
+    }
+
+    rows = []
+    for booking in bookings:
+        active_variant = booking.effective_variant
+        held_at_val = (
+            booking.held_at.strftime("%Y-%m-%d")
+            if booking.held_at
+            else (booking.venue.event_date.strftime("%Y-%m-%d") if booking.venue and booking.venue.event_date else "")
+        )
+        cells = []
+        row_total = Decimal("0")
+        for problem in problems:
+            is_inactive = problem.variant is not None and problem.variant != active_variant
+            score_obj = existing_scores.get((booking.registration_id, problem.pk))
+            val = score_obj.points if score_obj else None
+            if not is_inactive and val is not None:
+                row_total += val
+
+            val_str = _format_points(val)
+
+            cells.append({
+                "problem": problem,
+                "name": f"score_{booking.pk}_{problem.pk}",
+                "value": val_str,
+                "is_inactive": is_inactive,
+                "is_skipped": score_obj.is_skipped if score_obj else is_inactive,
+                "max_score": _format_points(problem.max_score) if problem.max_score is not None else "",
+            })
+
+        total_str = _format_points(row_total)
+
+        rows.append({
+            "booking": booking,
+            "held_at_val": held_at_val,
+            "variant": active_variant,
+            "cells": cells,
+            "total": total_str,
+            "work_scan_url": booking.get_scan_url() if booking.work_scan else "",
+            "has_scan": bool(booking.work_scan),
+        })
+
+    return {
+        "all_venues": all_venues,
+        "selected_venue_id": selected_venue_id,
+        "search_query": search_query,
+        "problems": problems,
+        "bookings": bookings,
+        "rows": rows,
+    }
+
+
+def _save_all_offline_scores(request, bookings, problems):
+    saved = 0
+    allowed_bookings = {b.id: b for b in bookings}
+    for booking_id, booking in allowed_bookings.items():
+        raw_held_at = request.POST.get(f"held_at_{booking_id}")
+        if raw_held_at is not None:
+            raw_held_at = raw_held_at.strip()
+            booking.held_at = raw_held_at if raw_held_at else None
+            booking.save(update_fields=["held_at"])
+
+        raw_variant = request.POST.get(f"variant_{booking_id}")
+        if raw_variant is not None and raw_variant.strip().isdigit():
+            v = int(raw_variant.strip())
+            if v in (1, 2):
+                booking.variant = v
+                booking.save(update_fields=["variant"])
+
+        for problem in problems:
+            key = f"score_{booking_id}_{problem.pk}"
+            raw = request.POST.get(key)
+            if raw is None:
+                continue
+            raw = raw.strip()
+            if raw == "":
+                Score.objects.filter(registration=booking.registration, problem=problem).delete()
+                continue
+            try:
+                points = Decimal(raw.replace(",", "."))
+            except InvalidOperation:
+                continue
+            if points < 0 or (problem.max_score is not None and points > problem.max_score):
+                continue
+            is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
+            Score.objects.update_or_create(
+                registration=booking.registration,
+                problem=problem,
+                defaults={
+                    "points": points,
+                    "venue": booking.venue,
+                    "entered_by": request.user,
+                    "is_skipped": is_skipped,
+                },
+            )
+            saved += 1
+    return saved
+
+
+def _get_scans_context(request, season, stage):
+    all_venues = Venue.objects.public()
+    if season:
+        all_venues = all_venues.filter(seasons=season).order_by("city", "short_title", "title")
+
+    bookings = (
+        VenueBooking.objects.filter(stage=stage)
+        .exclude(status=VenueBooking.Status.CANCELLED)
+        .select_related("registration__user", "registration__user__profile", "venue")
+        .order_by(
+            "registration__user__profile__last_name",
+            "registration__user__profile__first_name",
+            "registration__user__email",
+        )
+    )
+    selected_venue_id = request.GET.get("venue", "").strip()
+    if selected_venue_id and selected_venue_id.isdigit():
+        bookings = bookings.filter(venue_id=int(selected_venue_id))
+
+    search_query = request.GET.get("q", "").strip()
+
+    participants_list = []
+    for b in bookings:
+        user = b.registration.user
+        profile = getattr(user, "profile", None)
+        full_name = profile.full_name if profile and profile.full_name else user.email
+        if search_query:
+            q_lower = search_query.lower()
+            v_short = (b.venue.short_title or "").lower()
+            v_full = (b.venue.title or "").lower()
+            if (
+                q_lower not in full_name.lower()
+                and q_lower not in user.email.lower()
+                and q_lower not in b.venue.city.lower()
+                and q_lower not in v_short
+                and q_lower not in v_full
+            ):
+                continue
+        held_at_val = (
+            b.held_at.strftime("%Y-%m-%d")
+            if b.held_at
+            else (b.venue.event_date.strftime("%Y-%m-%d") if b.venue and b.venue.event_date else "")
+        )
+        participants_list.append({
+            "booking": b,
+            "id": b.pk,
+            "name": full_name,
+            "email": user.email,
+            "venue_title": b.venue.short_title or b.venue.title,
+            "venue_full_title": b.venue.title,
+            "venue_city": b.venue.city,
+            "has_scan": bool(b.work_scan),
+            "scan_url": b.get_scan_url(),
+            "held_at": held_at_val,
+            "variant": b.effective_variant,
+        })
+
+    return {
+        "all_venues": all_venues,
+        "selected_venue_id": selected_venue_id,
+        "search_query": search_query,
+        "participants_list": participants_list,
+        "no_scan_count": sum(1 for p in participants_list if not p["has_scan"]),
+        "has_scan_count": sum(1 for p in participants_list if p["has_scan"]),
+    }
+
+
+def _retry_on_db_lock(func, max_attempts=4):
+    """Повторяет операцию при временной блокировке SQLite базы данных."""
+    for attempt in range(max_attempts):
+        try:
+            return func()
+        except OperationalError as exc:
+            if "locked" in str(exc).lower() and attempt < max_attempts - 1:
+                time.sleep(0.15 * (attempt + 1))
+            else:
+                raise
+
+
+@require_POST
+@login_required
+def offline_save_scores(request):
+    """AJAX-сохранение балла, даты или комплекта очного тура."""
+    if not request.user.is_manager:
+        return JsonResponse({"error": "Forbidden"}, status=403)
+
+    if request.content_type == "application/json":
+        data = json.loads(request.body)
+    else:
+        data = request.POST
+
+    booking_id = data.get("booking_id")
+    if not booking_id:
+        return JsonResponse({"error": "No booking_id"}, status=400)
+
+    booking = get_object_or_404(
+        VenueBooking.objects.select_related("registration", "stage", "venue"),
+        pk=booking_id,
+    )
+
+    if "held_at" in data:
+        raw_date = str(data.get("held_at") or "").strip()
+        booking.held_at = raw_date if raw_date else None
+        _retry_on_db_lock(lambda: booking.save(update_fields=["held_at"]))
+
+    if "variant" in data:
+        raw_v = str(data.get("variant") or "").strip()
+        if raw_v in ("1", "2"):
+            booking.variant = int(raw_v)
+            _retry_on_db_lock(lambda: booking.save(update_fields=["variant"]))
+            scores = Score.objects.filter(registration=booking.registration, problem__stage=booking.stage).select_related("problem")
+            for s in scores:
+                should_skip = s.problem.variant is not None and s.problem.variant != booking.effective_variant
+                if s.is_skipped != should_skip:
+                    s.is_skipped = should_skip
+                    _retry_on_db_lock(lambda s=s: s.save(update_fields=["is_skipped"]))
+
+    problem_id = data.get("problem_id")
+    if problem_id:
+        problem = get_object_or_404(Problem, pk=problem_id)
+        raw_points = str(data.get("points") if data.get("points") is not None else "").strip()
+        if raw_points == "":
+            _retry_on_db_lock(lambda: Score.objects.filter(registration=booking.registration, problem=problem).delete())
+        else:
+            try:
+                points = Decimal(raw_points.replace(",", "."))
+            except InvalidOperation:
+                return JsonResponse({"error": "Invalid number"}, status=400)
+            if points < 0:
+                return JsonResponse({"error": "Балл не может быть отрицательным."}, status=400)
+            if problem.max_score is not None and points > problem.max_score:
+                max_str = _format_points(problem.max_score)
+                return JsonResponse(
+                    {"error": f"Балл не может превышать максимум за задачу ({max_str})."},
+                    status=400,
+                )
+            is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
+            _retry_on_db_lock(
+                lambda: Score.objects.update_or_create(
+                    registration=booking.registration,
+                    problem=problem,
+                    defaults={
+                        "points": points,
+                        "venue": booking.venue,
+                        "entered_by": request.user,
+                        "is_skipped": is_skipped,
+                    },
+                )
+            )
+
+    active_variant = booking.effective_variant
+    scores = Score.objects.filter(registration=booking.registration, problem__stage=booking.stage).select_related("problem")
+    total = Decimal("0")
+    for s in scores:
+        if s.points is not None:
+            p_var = s.problem.variant
+            if p_var is None or p_var == active_variant:
+                total += s.points
+
+    total_str = _format_points(total)
+
+    return JsonResponse({
+        "status": "ok",
+        "total": total_str,
+        "variant": active_variant,
+    })
+
+
+@require_POST
+@login_required
+def upload_offline_work_scan(request, pk=None):
+    if not request.user.is_manager:
+        raise PermissionDenied("Доступно только организаторам.")
+
+    booking_id = pk or request.POST.get("booking_id")
+    booking = get_object_or_404(
+        VenueBooking.objects.select_related("registration__user", "stage", "venue"),
+        pk=booking_id,
+    )
+
+    scan_file = request.FILES.get("work_scan")
+    if not scan_file:
+        messages.error(request, "Файл не выбран.")
+        return redirect(f"{reverse('venues:map')}?tab=scans")
+
+    ext = Path(scan_file.name).suffix.lower()
+    if ext != ".pdf":
+        messages.error(request, "Скан работы должен быть файлом в формате PDF (.pdf).")
+        return redirect(f"{reverse('venues:map')}?tab=scans")
+
+    limit = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if scan_file.size > limit:
+        messages.error(request, f"Файл больше {settings.MAX_UPLOAD_SIZE_MB} МБ.")
+        return redirect(f"{reverse('venues:map')}?tab=scans")
+
+    if booking.work_scan:
+        booking.work_scan.delete(save=False)
+    booking.work_scan = scan_file
+
+    if request.POST.get("variant") in ("1", "2"):
+        booking.variant = int(request.POST.get("variant"))
+    if request.POST.get("held_at"):
+        booking.held_at = request.POST.get("held_at").strip() or None
+
+    booking.save()
+    messages.success(
+        request,
+        f"Скан работы для {booking.registration.user.get_full_name() or booking.registration.user.email} успешно сохранён.",
+    )
+
+    venue_arg = f"&venue={booking.venue_id}" if request.POST.get("from_venue") else ""
+    return redirect(f"{reverse('venues:map')}?tab=scans{venue_arg}")
+
+
+@require_POST
+@login_required
+def delete_offline_work_scan(request, pk):
+    if not request.user.is_manager:
+        raise PermissionDenied("Доступно только организаторам.")
+
+    booking = get_object_or_404(VenueBooking, pk=pk)
+    if booking.work_scan:
+        booking.work_scan.delete(save=False)
+        booking.work_scan = ""
+        booking.save(update_fields=["work_scan"])
+        messages.success(request, "Скан работы удалён.")
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse({"status": "ok"})
+    return redirect(f"{reverse('venues:map')}?tab=scans")
+
+
+@login_required
+def offline_work_scan(request, pk):
+    booking = get_object_or_404(
+        VenueBooking.objects.select_related("stage", "registration__user"), pk=pk
+    )
+    if not booking.can_view_scan(request.user) or not booking.work_scan:
+        raise Http404
+
+    user = booking.registration.user
+    filename = f"scan_{user.get_full_name() or user.id}.pdf"
+    return protected_file_response(request, booking.work_scan, filename)
 
 
 @login_required
@@ -278,6 +769,15 @@ def _save_scores(request, venue, bookings, problems):
                 points = Decimal(raw.replace(",", "."))
             except InvalidOperation:
                 messages.error(request, f"«{raw}» — это не число, балл не сохранён.")
+                continue
+            if points < 0:
+                messages.error(request, "Балл не может быть отрицательным.")
+                continue
+            if problem.max_score is not None and points > problem.max_score:
+                messages.error(
+                    request,
+                    f"Балл {points} за задачу {problem.number} превышает максимум ({_format_points(problem.max_score)})."
+                )
                 continue
             Score.objects.update_or_create(
                 registration_id=registration_id,
@@ -452,3 +952,33 @@ def venue_export(request, pk):
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+@login_required
+def offline_grading_export(request):
+    """Выгрузка общей ведомости очного тура в Excel."""
+    if not request.user.is_manager:
+        raise PermissionDenied("Доступно только организаторам.")
+
+    season = Season.objects.active()
+    stage = _offline_stage(season)
+    if not stage:
+        raise Http404("Очный тур не найден.")
+
+    context = _get_grading_context(request, season, stage)
+    rows = context["rows"]
+    problems = context["problems"]
+
+    content = generate_offline_grading_excel(stage, rows, problems, request=request)
+
+    today_str = date.today().strftime("%Y-%m-%d")
+    filename = f"vedomost_ochny_tur_{today_str}.xlsx"
+
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+

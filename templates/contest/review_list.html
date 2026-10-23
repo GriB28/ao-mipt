@@ -1,17 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Проверка решений{% endblock %}
 {% block content %}
-<h1>Проверка решений</h1>
-<p class="lead">Не проверено: {{ todo_count }}.</p>
+<div class="page-head">
+  <div>
+    <h1>Проверка решений</h1>
+  </div>
+</div>
+<p class="lead">Дистанционный тур · Не проверено: {{ todo_count }}.</p>
 
-<form method="get" class="filter-bar">
+<form method="get" class="filter-bar" style="margin-bottom: var(--space-4);">
   <label>
     Задача
     <select name="problem" onchange="this.form.submit()">
       <option value="">все задачи</option>
       {% for p in problems %}
         <option value="{{ p.pk }}" {% if selected_problem == p.pk|stringformat:"s" %}selected{% endif %}>
-          {{ p.stage.title }} — {{ p.number }}. {{ p.title }}
+          {{ p.number }}. {{ p.title }}
         </option>
       {% endfor %}
     </select>
@@ -24,35 +28,184 @@
       <option value="all" {% if status == "all" %}selected{% endif %}>все</option>
     </select>
   </label>
-  <noscript><button class="btn btn-small" type="submit">Показать</button></noscript>
+  <label>
+    Поиск
+    <input type="search" name="q" value="{{ search_query }}" placeholder="ФИО, email...">
+  </label>
+  <button class="btn btn-small" type="submit">Показать</button>
+  {% if search_query or selected_problem or status != "todo" %}
+    <a href="{% url 'contest:review_list' %}" class="btn btn-small btn-secondary">Сбросить</a>
+  {% endif %}
 </form>
 
-<table class="table-stack">
-  <thead>
-    <tr><th>Задача</th><th>Участник</th><th>Отправлено</th><th>Статус</th><th>Балл</th><th></th></tr>
-  </thead>
-  <tbody>
-  {% for s in submissions %}
-    <tr>
-      <td>{{ s.problem.number }}. {{ s.problem.title }}</td>
-      <td data-label="Участник"><span>
-        {% if s.user.profile %}{{ s.user.profile.full_name }}{% else %}{{ s.user.email }}{% endif %}
-        {% if s.user.profile.grade %}<span class="muted">{{ s.user.profile.grade }} кл.</span>{% endif %}
-      </span></td>
-      <td data-label="Отправлено">{{ s.created_at|date:"d.m.Y H:i" }}{% if s.is_late %}
-        <span class="badge warn">после дедлайна</span>{% endif %}</td>
-      <td data-label="Статус">
-        {% if s.grade %}{{ s.grade.get_status_display }}
-        {% else %}<span class="badge none">не проверено</span>{% endif %}
-      </td>
-      <td data-label="Балл">{% if s.grade and s.grade.score is not None %}{{ s.grade.score|floatformat:"-2" }}{% else %}—{% endif %}</td>
-      <td><a href="{% url 'contest:review_detail' s.pk %}?back={{ request.get_full_path|urlencode }}">Проверить →</a></td>
-    </tr>
-  {% empty %}
-    <tr><td colspan="6" class="muted">
-      {% if status == "todo" %}Всё проверено.{% else %}Решений пока нет.{% endif %}
-    </td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="grading-actions-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); flex-wrap: wrap; gap: var(--space-3);">
+  <div>
+    <strong>Участников с решениями: {{ rows|length }}</strong>
+  </div>
+  <div style="display: flex; align-items: center; gap: var(--space-3);">
+    <span id="online-save-indicator" class="save-indicator"></span>
+    <button type="submit" form="review-matrix-form" class="btn btn-small">Сохранить все изменения</button>
+  </div>
+</div>
+
+<form method="post" id="review-matrix-form">
+  {% csrf_token %}
+  <div class="table-scroll">
+    <table class="score-table review-matrix-table">
+      <thead>
+        <tr>
+          <th>Участник</th>
+          {% for p in problems %}
+            <th class="cell-problem-header" title="{{ p.title }}">
+              <a href="{{ p.get_absolute_url }}" target="_blank">{{ p.number }}. {{ p.title }}</a>
+              <br><small class="muted" style="font-weight: normal;">макс: {{ p.max_score|default:"—" }}</small>
+            </th>
+          {% endfor %}
+          <th>Сумма</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        <tr id="online-row-{{ row.user.pk }}">
+          <td>
+            <strong>{{ row.full_name }}</strong>
+            <br><small class="muted">{{ row.user.email }}</small>
+          </td>
+          {% for cell in row.cells %}
+            <td class="cell-online-task" style="vertical-align: top; min-width: 140px;">
+              {% if cell.submission %}
+                <div class="cell-sub-content">
+                  <div class="sub-files-list" style="margin-bottom: 6px; display: flex; flex-direction: column; gap: 4px;">
+                    {% for f in cell.files %}
+                      <a href="{{ f.file.url }}" target="_blank" rel="noopener" class="file-chip" title="{{ f.filename }}">
+                        {% if f.is_image %}🖼️{% else %}📄{% endif %} {{ f.filename|truncatechars:18 }}
+                      </a>
+                    {% empty %}
+                      <span class="muted" style="font-size: var(--text-xs);">(без файлов)</span>
+                    {% endfor %}
+                  </div>
+                  <div class="sub-score-row" style="display: flex; align-items: center; gap: 6px;">
+                    <input type="text" inputmode="decimal"
+                           name="score_{{ cell.submission.pk }}"
+                           value="{{ cell.score_str }}"
+                           class="score-input online-score-input"
+                           data-sub-id="{{ cell.submission.pk }}"
+                           data-user-id="{{ row.user.pk }}"
+                           data-max="{{ cell.problem.max_score|default:'' }}"
+                           size="3">
+                    <a href="{% url 'contest:review_detail' cell.submission.pk %}?back={{ request.get_full_path|urlencode }}"
+                       class="link-button" title="Подробный отзыв и рецензия" style="font-size: var(--text-base); text-decoration: none;">📝</a>
+                  </div>
+                  <div style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">
+                    {% if cell.submission.is_late %}<span class="badge warn" style="font-size: 10px; padding: 2px 4px;">опоздание</span>{% endif %}
+                    {% if cell.status == 'graded' %}<span class="badge ok" style="font-size: 10px; padding: 2px 4px;">проверено</span>{% else %}<span class="badge none" style="font-size: 10px; padding: 2px 4px;">не проверено</span>{% endif %}
+                  </div>
+                </div>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          {% endfor %}
+          <td>
+            <strong class="total-score" id="online-total-{{ row.user.pk }}">{{ row.total }}</strong>
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="{{ problems|length|add:2 }}" class="muted" style="text-align: center; padding: var(--space-6);">
+            {% if status == "todo" %}Все решения проверены.{% else %}Решений пока нет.{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="actions" style="margin-top: var(--space-4);">
+    <button class="btn" type="submit">Сохранить все изменения</button>
+  </p>
+</form>
+
+<script>
+(function() {
+  const saveUrl = "{% url 'contest:review_save_grade' %}";
+  const indicator = document.getElementById("online-save-indicator");
+
+  function getCsrfToken() {
+    const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    if (input) return input.value;
+    const match = document.cookie.match(/csrftoken=([^;]+)/);
+    return match ? match[1] : "";
+  }
+
+  function showIndicator(msg, isError) {
+    if (!indicator) return;
+    indicator.textContent = msg;
+    indicator.style.color = isError ? "var(--color-danger-500, #b3261e)" : "var(--color-success-500, #1c7a49)";
+    indicator.style.opacity = "1";
+    setTimeout(function() {
+      indicator.style.opacity = "0";
+    }, 2500);
+  }
+
+  function recalculateUserTotal(userId) {
+    const row = document.getElementById("online-row-" + userId);
+    if (!row) return;
+    let sum = 0;
+    const inputs = row.querySelectorAll(".online-score-input");
+    inputs.forEach(function(inp) {
+      const val = parseFloat(inp.value.replace(",", "."));
+      if (!isNaN(val)) {
+        sum += val;
+      }
+    });
+    const totalElem = document.getElementById("online-total-" + userId);
+    if (totalElem) {
+      totalElem.textContent = Number.isInteger(sum) ? sum : sum.toFixed(2).replace(/\.?0+$/, "");
+    }
+  }
+
+  document.querySelectorAll(".online-score-input").forEach(function(inp) {
+    inp.addEventListener("input", function() {
+      const userId = this.dataset.userId;
+      recalculateUserTotal(userId);
+    });
+
+    let prevVal = inp.value;
+    function handleOnlineSave() {
+      if (inp.value === prevVal) return;
+      prevVal = inp.value;
+      const subId = inp.dataset.subId;
+      const userId = inp.dataset.userId;
+
+      fetch(saveUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken(),
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: JSON.stringify({
+          submission_id: subId,
+          score: inp.value
+        })
+      })
+      .then(function(res) {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json();
+      })
+      .then(function(data) {
+        showIndicator("✓ Сохранено", false);
+        recalculateUserTotal(userId);
+      })
+      .catch(function(err) {
+        console.error(err);
+        showIndicator("Ошибка сохранения", true);
+      });
+    }
+
+    inp.addEventListener("change", handleOnlineSave);
+    inp.addEventListener("blur", handleOnlineSave);
+  });
+})();
+</script>
 {% endblock %}
