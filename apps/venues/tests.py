@@ -546,6 +546,51 @@ class OfflineGradingAndScansTests(TestCase):
         self.assertNotContains(resp, self.p1_1.get_absolute_url())
         self.assertNotContains(resp, self.p1_2.get_absolute_url())
 
+    def test_results_custom_html_text_on_offline_results_page(self):
+        # Задаём текст с HTML и опасным тегом для проверки санитизации
+        self.stage.results_text = "<p>Апелляции принимаются до <b>28 октября</b>.</p><script>alert('xss')</script>"
+        self.stage.full_clean()
+        self.stage.save()
+        self.stage.refresh_from_db()
+
+        # full_clean() очищает от опасных тегов
+        self.assertNotIn("<script>", self.stage.results_text)
+        self.assertIn("<b>28 октября</b>", self.stage.results_text)
+
+        # 1. До публикации результатов участник не видит блок результатов и текст
+        self.stage.results_published = False
+        self.stage.save()
+
+        self.client.force_login(self.participant1)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "28 октября")
+
+        # 2. После публикации результатов участник видит текст внутри карточки результатов
+        self.stage.results_published = True
+        self.stage.save()
+
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Ваши результаты очного тура")
+        self.assertContains(resp, "Апелляции принимаются до <b>28 октября</b>.")
+        self.assertNotContains(resp, "alert('xss')")
+        self.assertNotContains(resp, "<script>alert")
+
+        # 3. Пользователь без записи / неавторизованный при опубликованных результатах видит текст тура
+        self.client.logout()
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Результаты очного тура")
+        self.assertContains(resp, "Апелляции принимаются до <b>28 октября</b>.")
+
+        # 4. Текст также отображается на странице итогов площадки организатора
+        self.venue.managers.add(self.organizer)
+        self.client.force_login(self.organizer)
+        resp = self.client.get(reverse("venues:results", args=[self.venue.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Апелляции принимаются до <b>28 октября</b>.")
+
 
 
 
