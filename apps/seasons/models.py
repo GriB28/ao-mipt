@@ -11,6 +11,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.core.models import TimeStampedModel
+from apps.core.sanitize import clean_html
 
 
 class SeasonQuerySet(models.QuerySet):
@@ -150,6 +151,11 @@ class Stage(TimeStampedModel):
         help_text="Пока галочки нет, баллы видят только организаторы. "
                   "Снимается и ставится вручную — ведомость должна быть готова целиком",
     )
+    results_text = models.TextField(
+        "текст на странице результатов (HTML)",
+        blank=True,
+        help_text="Показывается на странице результатов тура. Поддерживает HTML-разметку (абзацы, списки, ссылки, таблицы).",
+    )
 
     registration_opens_at = models.DateTimeField("запись открывается", null=True, blank=True)
     registration_closes_at = models.DateTimeField("запись закрывается", null=True, blank=True)
@@ -180,8 +186,27 @@ class Stage(TimeStampedModel):
         return f"{self.season.title} — {self.title}"
 
     def clean(self):
+        super().clean()
         if self.starts_at and self.ends_at and self.starts_at >= self.ends_at:
             raise ValidationError({"ends_at": "Дедлайн должен быть позже начала."})
+        if self.results_text:
+            self.results_text = clean_html(self.results_text)
+
+    @property
+    def results_description(self) -> str:
+        return self.results_text
+
+    @results_description.setter
+    def results_description(self, value: str):
+        self.results_text = value
+
+    @property
+    def results_html(self) -> str:
+        return self.results_text
+
+    @results_html.setter
+    def results_html(self, value: str):
+        self.results_text = value
 
     @property
     def has_online(self) -> bool:
