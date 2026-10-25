@@ -113,6 +113,19 @@ class VenueBooking(TimeStampedModel):
             return ""
         return reverse("venues:work_scan", args=[self.pk])
 
+    @property
+    def can_cancel(self) -> bool:
+        """Можно ли участнику отменить эту запись.
+
+        Запрещено, если очный этап прошёл: либо на самой площадке тур завершился
+        (venue.stage_passed), либо наступил дедлайн очного этапа (stage.is_past).
+        """
+        if self.venue and self.venue.stage_passed:
+            return False
+        if self.stage and self.stage.is_past:
+            return False
+        return True
+
     @classmethod
     @transaction.atomic
     def book(cls, registration, stage, venue):
@@ -129,6 +142,17 @@ class VenueBooking(TimeStampedModel):
             raise VenueBookingError("Площадка недоступна для записи.")
         if venue.registration_closed:
             raise VenueBookingError("Запись на эту площадку заблокирована организаторами.")
+        if venue.stage_passed:
+            raise VenueBookingError("Запись на эту площадку закрыта: очный этап уже прошёл.")
+
+        current_booking = cls.objects.filter(
+            registration=registration, stage=stage
+        ).exclude(status=cls.Status.CANCELLED).select_related("venue").first()
+
+        if current_booking and current_booking.venue_id != venue.pk:
+            if current_booking.venue.stage_passed:
+                raise VenueBookingError("Нельзя сменить площадку: очный этап уже прошёл.")
+
         booking, _ = cls.objects.update_or_create(
             registration=registration, stage=stage,
             defaults={"venue": venue, "status": cls.Status.BOOKED},

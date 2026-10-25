@@ -766,3 +766,168 @@ class VenueRegistrationLockTests(TestCase):
         res = self.client.post(book_url)
         self.assertEqual(res.status_code, 302)
         self.assertFalse(VenueBooking.objects.filter(venue=self.venue, registration__user=self.student).exists())
+
+
+class VenueStagePassedCancelTests(TestCase):
+    """Тесты запрета участникам отписываться от точек, когда очный этап прошёл."""
+
+    def setUp(self):
+        from apps.accounts.testing import make_eligible
+
+        now = timezone.now()
+        self.season = Season.objects.create(
+            year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True
+        )
+        self.stage = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-final",
+            title="Очный тур",
+            starts_at=now - timedelta(days=1),
+            ends_at=now + timedelta(days=2),
+            registration_opens_at=now - timedelta(days=5),
+            is_published=True,
+            order=1,
+        )
+        self.venue1 = Venue.objects.create(
+            title="Площадка 1",
+            region="Москва",
+            city="Москва",
+            address="ул. Первая, 1",
+            latitude=55.75,
+            longitude=37.62,
+            status=Venue.Status.APPROVED,
+            stage_passed=False,
+        )
+        self.venue1.seasons.add(self.season)
+
+        self.venue2 = Venue.objects.create(
+            title="Площадка 2",
+            region="Москва",
+            city="Москва",
+            address="ул. Вторая, 2",
+            latitude=55.76,
+            longitude=37.63,
+            status=Venue.Status.APPROVED,
+            stage_passed=False,
+        )
+        self.venue2.seasons.add(self.season)
+
+        self.make_eligible = make_eligible
+        self.student = make_eligible(User.objects.create_user("student_cancel@b.ru", "pass12345", role=User.Role.PARTICIPANT))
+        self.registration = Registration.objects.create(user=self.student, season=self.season)
+        self.booking = VenueBooking.objects.create(
+            registration=self.registration,
+            stage=self.stage,
+            venue=self.venue1,
+            status=VenueBooking.Status.BOOKED,
+        )
+
+    def test_can_cancel_when_stage_has_not_passed(self):
+        self.assertTrue(self.booking.can_cancel)
+        self.client.force_login(self.student)
+        url = reverse("venues:detail", args=[self.venue1.pk])
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Отменить запись")
+
+        cancel_url = reverse("venues:cancel_booking", args=[self.venue1.pk])
+        post_res = self.client.post(cancel_url)
+        self.assertEqual(post_res.status_code, 302)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, VenueBooking.Status.CANCELLED)
+
+    def test_cannot_cancel_when_venue_stage_passed(self):
+        self.venue1.stage_passed = True
+        self.venue1.save()
+        self.booking.refresh_from_db()
+        self.assertFalse(self.booking.can_cancel)
+
+        self.client.force_login(self.student)
+        url = reverse("venues:detail", args=[self.venue1.pk])
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotContains(res, 'class="link-button">Отменить запись</button>')
+        self.assertContains(res, "Отменить запись нельзя: очный этап уже прошёл.")
+
+        # Attempt to cancel via POST is rejected
+        cancel_url = reverse("venues:cancel_booking", args=[self.venue1.pk])
+        post_res = self.client.post(cancel_url)
+        self.assertEqual(post_res.status_code, 302)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, VenueBooking.Status.BOOKED)
+
+    def test_cannot_cancel_when_stage_deadline_is_past(self):
+        self.stage.ends_at = timezone.now() - timedelta(hours=1)
+        self.stage.save()
+        self.booking.refresh_from_db()
+        self.assertFalse(self.booking.can_cancel)
+
+        self.client.force_login(self.student)
+        url = reverse("venues:detail", args=[self.venue1.pk])
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotContains(res, 'class="link-button">Отменить запись</button>')
+        self.assertContains(res, "Отменить запись нельзя: очный этап уже прошёл.")
+
+        cancel_url = reverse("venues:cancel_booking", args=[self.venue1.pk])
+        post_res = self.client.post(cancel_url)
+        self.assertEqual(post_res.status_code, 302)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, VenueBooking.Status.BOOKED)
+
+    def test_cannot_switch_venue_when_current_venue_stage_passed(self):
+        self.venue1.stage_passed = True
+        self.venue1.save()
+
+        self.client.force_login(self.student)
+        # Detail page for venue 2 should forbid switching
+        url = reverse("venues:detail", args=[self.venue2.pk])
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotContains(res, "Перенести запись сюда")
+        self.assertContains(res, "Сменить площадку нельзя.")
+        self.assertContains(res, "где очный этап уже прошёл")
+
+        # POST to book venue 2 is rejected
+        book_url = reverse("venues:book", args=[self.venue2.pk])
+        post_res = self.client.post(book_url)
+        self.assertEqual(post_res.status_code, 302)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.venue, self.venue1)
+        self.assertEqual(self.booking.status, VenueBooking.Status.BOOKED)
+
+    def test_cannot_book_venue_when_target_venue_stage_passed(self):
+        self.venue2.stage_passed = True
+        self.venue2.save()
+
+        other_student = self.make_eligible(User.objects.create_user("student_other@b.ru", "pass12345", role=User.Role.PARTICIPANT))
+        self.client.force_login(other_student)
+
+        url = reverse("venues:detail", args=[self.venue2.pk])
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotContains(res, ">Записаться<")
+        self.assertContains(res, "Запись на эту площадку закрыта: очный этап уже прошёл.")
+
+        book_url = reverse("venues:book", args=[self.venue2.pk])
+        post_res = self.client.post(book_url)
+        self.assertEqual(post_res.status_code, 302)
+        self.assertFalse(VenueBooking.objects.filter(venue=self.venue2, registration__user=other_student).exists())
+
+    def test_map_hides_cancel_link_when_venue_stage_passed(self):
+        self.client.force_login(self.student)
+        map_url = reverse("venues:map")
+
+        # Initially stage not passed -> shows link with cancel mention
+        res = self.client.get(map_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Посмотреть площадку или отменить запись →")
+
+        # Once venue stage_passed is marked -> does not suggest cancelling
+        self.venue1.stage_passed = True
+        self.venue1.save()
+        res = self.client.get(map_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotContains(res, "или отменить запись")
+        self.assertContains(res, "Посмотреть площадку →")

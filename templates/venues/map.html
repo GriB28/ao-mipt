@@ -15,8 +15,11 @@
   {% if my_booking and not user.is_manager %}
     {% if not my_results %}
       <p class="badge ok">Вы записаны: {{ my_booking.venue.display_title }} (г. {{ my_booking.venue.city }})</p>
-      {% if stage.ends_at < now %}
-        <p class="muted">Тур завершён. Сейчас идёт проверка решений жюри. Ваши баллы и скан работы появятся на этой странице сразу после публикации результатов.</p>
+      {% if stage.ends_at < now or my_booking.venue.stage_passed %}
+        <p class="muted">
+          Тур завершён. Сейчас идёт проверка решений жюри. Ваши баллы и скан работы появятся на этой странице сразу после публикации результатов.
+          <br><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку →</a>
+        </p>
       {% else %}
         <p class="muted"><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку или отменить запись →</a></p>
       {% endif %}

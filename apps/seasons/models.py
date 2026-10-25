@@ -197,6 +197,11 @@ class Stage(TimeStampedModel):
         return timezone.now() < self.starts_at
 
     @property
+    def is_past(self) -> bool:
+        """Этап уже завершился."""
+        return bool(self.ends_at and timezone.now() > self.ends_at)
+
+    @property
     def is_open(self) -> bool:
         """Идёт ли приём решений прямо сейчас."""
         now = timezone.now()
