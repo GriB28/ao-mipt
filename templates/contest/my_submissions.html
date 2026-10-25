@@ -78,7 +78,7 @@
             {% for s in res.scores %}
               <tr>
                 <td data-label="Задача">
-                  {% if s.problem.is_approved and s.problem.stage.is_published %}
+                  {% if res.stage.kind != "offline" and s.problem.is_approved and s.problem.stage.is_published %}
                     <a href="{% url 'contest:problem_detail' s.problem.pk %}">{{ s.problem.number }}. {{ s.problem.title }}</a>
                   {% else %}
                     {{ s.problem.number }}. {{ s.problem.title }}

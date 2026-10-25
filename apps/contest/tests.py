@@ -945,5 +945,7 @@ class OnlineReviewMatrixTests(TestCase):
         resp = self.client.get(url)
         self.assertContains(resp, "Скан проверенной работы")
         self.assertContains(resp, booking.get_scan_url())
+        self.assertContains(resp, "Задача Очная")
+        self.assertNotContains(resp, reverse("contest:problem_detail", args=[p_off.pk]))
 
 

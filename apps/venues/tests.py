@@ -542,6 +542,9 @@ class OfflineGradingAndScansTests(TestCase):
         # Задачи комплекта 2 не показываются участнику комплекта 1
         self.assertNotContains(resp, "Задача 2.1")
         self.assertNotContains(resp, "Задача 2.2")
+        # У задач нет гиперссылок
+        self.assertNotContains(resp, self.p1_1.get_absolute_url())
+        self.assertNotContains(resp, self.p1_2.get_absolute_url())
 
 
 
