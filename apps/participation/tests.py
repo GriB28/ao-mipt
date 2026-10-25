@@ -320,7 +320,8 @@ class BookingRulesTest(TestCase):
             status=VenueBooking.Status.CANCELLED
         )
         self.assertEqual(bookings.count(), 1)
-        self.assertEqual(bookings.first().venue, self.venues[1])
+        # Первая запись создаётся, а перезапись на другую площадку после окончания тура запрещена
+        self.assertEqual(bookings.first().venue, self.venues[0])
 
     def test_organizer_does_not_book_places(self):
         organizer = User.objects.create_user("o8@e.ru", "olymp12345", role=User.Role.ORGANIZER)

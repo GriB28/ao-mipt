@@ -931,8 +931,26 @@ class VenueStagePassedCancelTests(TestCase):
         res = self.client.get(url)
         self.assertEqual(res.status_code, 200)
         self.assertNotContains(res, "Перенести запись сюда")
-        self.assertContains(res, "Сменить площадку нельзя.")
-        self.assertContains(res, "где очный этап уже прошёл")
+        self.assertContains(res, "Сменить площадку нельзя: очный этап уже прошёл.")
+
+        # POST to book venue 2 is rejected
+        book_url = reverse("venues:book", args=[self.venue2.pk])
+        post_res = self.client.post(book_url)
+        self.assertEqual(post_res.status_code, 302)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.venue, self.venue1)
+        self.assertEqual(self.booking.status, VenueBooking.Status.BOOKED)
+
+    def test_cannot_switch_venue_when_stage_deadline_is_past(self):
+        self.stage.ends_at = timezone.now() - timedelta(hours=1)
+        self.stage.save()
+
+        self.client.force_login(self.student)
+        url = reverse("venues:detail", args=[self.venue2.pk])
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotContains(res, "Перенести запись сюда")
+        self.assertContains(res, "Сменить площадку нельзя: очный этап уже прошёл.")
 
         # POST to book venue 2 is rejected
         book_url = reverse("venues:book", args=[self.venue2.pk])
