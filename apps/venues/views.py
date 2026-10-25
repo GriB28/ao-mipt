@@ -219,6 +219,12 @@ def book_venue(request, pk):
         messages.error(request, "Очный тур пока не объявлен.")
         return redirect("venues:map")
 
+    existing_booking = _my_booking(request.user, stage)
+    if existing_booking and existing_booking.venue_id != venue.pk:
+        if not existing_booking.can_cancel or venue.stage_passed:
+            messages.error(request, "Нельзя сменить площадку: очный этап уже прошёл.")
+            return redirect("venues:detail", pk=venue.pk)
+
     # Участие в сезоне могло не появиться, если человек зарегистрировался
     # раньше, чем сезон стал активным, — заводим его здесь.
     registration, _ = Registration.objects.get_or_create(user=request.user, season=season)

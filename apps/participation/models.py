@@ -150,7 +150,7 @@ class VenueBooking(TimeStampedModel):
         ).exclude(status=cls.Status.CANCELLED).select_related("venue").first()
 
         if current_booking and current_booking.venue_id != venue.pk:
-            if current_booking.venue.stage_passed:
+            if not current_booking.can_cancel or venue.stage_passed:
                 raise VenueBookingError("Нельзя сменить площадку: очный этап уже прошёл.")
 
         booking, _ = cls.objects.update_or_create(
