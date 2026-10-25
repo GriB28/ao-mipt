@@ -335,6 +335,8 @@ def review_list(request):
     else:
         problems = list(Problem.objects.filter(status=Problem.Status.APPROVED))
     problems.sort(key=lambda p: p.sort_key)
+    for p in problems:
+        p.max_score_plain = _format_points(p.max_score)
 
     problem_id = request.GET.get("problem", "").strip()
     status_filter = request.GET.get("status", "todo")
@@ -363,23 +365,43 @@ def review_list(request):
     # Обработка POST сохранения всей таблицы
     if request.method == "POST":
         saved = 0
+        has_errors = False
         for sub in submissions_qs:
             raw = request.POST.get(f"score_{sub.pk}")
             if raw is not None:
                 raw = raw.strip()
                 if raw == "":
-                    if hasattr(sub, "grade"):
+                    if hasattr(sub, "grade") and sub.grade.score is not None:
                         sub.grade.score = None
                         sub.grade.status = Grade.Status.NEW
                         sub.grade.save()
-                    Score.objects.filter(
-                        registration__user=sub.user, problem=sub.problem
-                    ).delete()
+                        Score.objects.filter(
+                            registration__user=sub.user, problem=sub.problem
+                        ).delete()
+                        saved += 1
                 else:
                     try:
                         points = Decimal(raw.replace(",", "."))
                     except InvalidOperation:
+                        messages.error(request, f"«{raw}» — не число, балл не сохранён.")
+                        has_errors = True
                         continue
+                    if points < 0:
+                        messages.error(
+                            request,
+                            f"Балл за задачу {sub.problem.number} не может быть отрицательным.",
+                        )
+                        has_errors = True
+                        continue
+                    if sub.problem.max_score is not None and points > sub.problem.max_score:
+                        max_str = _format_points(sub.problem.max_score)
+                        messages.error(
+                            request,
+                            f"Балл {points:g} за задачу {sub.problem.number} превышает максимум ({max_str}).",
+                        )
+                        has_errors = True
+                        continue
+
                     grade, _ = Grade.objects.get_or_create(submission=sub)
                     grade.score = points
                     grade.reviewer = request.user
@@ -399,7 +421,10 @@ def review_list(request):
                         },
                     )
                     saved += 1
-        messages.success(request, f"Сохранено оценок: {saved}.")
+        if saved > 0:
+            messages.success(request, f"Сохранено оценок: {saved}.")
+        elif not has_errors:
+            messages.info(request, "Нет изменений для сохранения.")
         return redirect(request.get_full_path())
 
     # Формируем строки для отображения
@@ -509,10 +534,17 @@ def review_save_grade(request):
         try:
             points = Decimal(raw_score.replace(",", "."))
         except InvalidOperation:
-            return JsonResponse({"error": "Invalid number"}, status=400)
+            return JsonResponse({"error": "Некорректное число."}, status=400)
 
         if points < 0:
-            return JsonResponse({"error": "Negative score"}, status=400)
+            return JsonResponse({"error": "Балл не может быть отрицательным."}, status=400)
+
+        if sub.problem.max_score is not None and points > sub.problem.max_score:
+            max_str = _format_points(sub.problem.max_score)
+            return JsonResponse(
+                {"error": f"Балл не может превышать максимум за задачу ({max_str})."},
+                status=400,
+            )
 
         if not grade:
             grade = Grade(submission=sub)

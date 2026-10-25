@@ -945,6 +945,46 @@ class OnlineReviewMatrixTests(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_ajax_score_above_max_rejected(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_save_grade")
+        resp = self.client.post(
+            url,
+            {"submission_id": self.sub1_1.pk, "score": "999"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("превышать максимум", resp.json().get("error", ""))
+        self.assertFalse(Grade.objects.filter(submission=self.sub1_1).exists())
+
+    def test_bulk_save_score_above_max_rejected(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_list")
+        resp = self.client.post(
+            url,
+            {f"score_{self.sub1_1.pk}": "999"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("превышает максимум", content)
+        self.assertNotIn("Сохранено оценок:", content)
+        self.assertFalse(Grade.objects.filter(submission=self.sub1_1).exists())
+
+    def test_bulk_save_valid_score_accepted(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_list")
+        resp = self.client.post(
+            url,
+            {f"score_{self.sub1_1.pk}": "8"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("Сохранено оценок: 1", content)
+        grade = Grade.objects.get(submission=self.sub1_1)
+        self.assertEqual(grade.score, Decimal("8"))
+
     def test_my_submissions_shows_offline_scan_when_published(self):
         from datetime import date
         from django.core.files.uploadedfile import SimpleUploadedFile
