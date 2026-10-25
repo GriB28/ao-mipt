@@ -86,9 +86,7 @@ class ProblemForm(forms.ModelForm):
     Заведение и правка задачи организатором.
 
     Статуса и проверяющих здесь нет намеренно: одобряет задачу и назначает
-    дополнительных проверяющих администратор, а не автор. Максимального
-    балла тоже нет — участникам он не показывается, а шкалу удобнее
-    уточнять уже при проверке.
+    дополнительных проверяющих администратор, а не автор.
 
     Условие — только текстом на странице: PDF не читается на телефоне и
     не ищется. Времени публикации тоже нет: все задачи этапа открываются
@@ -98,8 +96,13 @@ class ProblemForm(forms.ModelForm):
 
     class Meta:
         model = Problem
-        fields = ("stage", "number", "title", "statement_html", "figure", "figure_caption")
+        fields = ("stage", "number", "title", "max_score", "statement_html", "figure", "figure_caption")
         widgets = {
+            "max_score": forms.NumberInput(attrs={
+                "min": "0",
+                "step": "any",
+                "placeholder": "10",
+            }),
             "statement_html": forms.Textarea(attrs={
                 "rows": 12,
                 "placeholder": "Условие задачи. Формулы — в долларах: $v_0 = \\sqrt{2gh}$",
@@ -117,6 +120,14 @@ class ProblemForm(forms.ModelForm):
         # PDF), а организатор без текста условия задачу не заведёт.
         self.fields["statement_html"].required = True
         self.fields["statement_html"].error_messages["required"] = "Нужно условие задачи."
+        if self.instance and self.instance.pk and self.instance.max_score is not None:
+            self.initial["max_score"] = _plain(self.instance.max_score)
+
+    def clean_max_score(self):
+        max_score = self.cleaned_data.get("max_score")
+        if max_score is not None and max_score <= 0:
+            raise forms.ValidationError("Максимальный балл должен быть больше нуля.")
+        return max_score
 
     def clean_statement_html(self):
         # Храним уже очищенный текст: в базе не должно лежать то, что

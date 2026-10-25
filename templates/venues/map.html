@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load html_clean %}
 {% block title %}Очный тур{% if tab == 'grading' %} — Проверка задач{% elif tab == 'scans' %} — Загрузка скана работы{% else %} — Площадки{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -15,8 +16,11 @@
   {% if my_booking and not user.is_manager %}
     {% if not my_results %}
       <p class="badge ok">Вы записаны: {{ my_booking.venue.display_title }} (г. {{ my_booking.venue.city }})</p>
-      {% if stage.ends_at < now %}
-        <p class="muted">Тур завершён. Сейчас идёт проверка решений жюри. Ваши баллы и скан работы появятся на этой странице сразу после публикации результатов.</p>
+      {% if stage.ends_at < now or my_booking.venue.stage_passed %}
+        <p class="muted">
+          Тур завершён. Сейчас идёт проверка решений жюри. Ваши баллы и скан работы появятся на этой странице сразу после публикации результатов.
+          <br><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку →</a>
+        </p>
       {% else %}
         <p class="muted"><a href="{% url 'venues:detail' my_booking.venue.pk %}">Посмотреть площадку или отменить запись →</a></p>
       {% endif %}
@@ -40,6 +44,12 @@
         </span>
       </div>
     </div>
+
+    {% if stage and stage.results_text %}
+      <div class="prose results-custom-text" style="margin-bottom: var(--space-4);">
+        {{ stage.results_text|clean_html }}
+      </div>
+    {% endif %}
 
     {% if my_results.has_scan and my_results.scan_url %}
       <div class="scan-banner" style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-muted); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); margin-bottom: var(--space-4); flex-wrap: wrap; gap: var(--space-3); border: 1px solid var(--border-default);">
@@ -71,9 +81,7 @@
           <tr>
             <td data-label="Задача">
               <strong>
-                <a href="{{ item.problem.get_absolute_url }}" target="_blank">
-                  {{ item.problem.number }}. {{ item.problem.title }}
-                </a>
+                {{ item.problem.number }}. {{ item.problem.title }}
               </strong>
             </td>
             <td data-label="Максимум" style="text-align: center;" class="muted">
@@ -100,6 +108,13 @@
         </tr>
       </tfoot>
     </table>
+  </section>
+{% elif stage and stage.results_published and stage.results_text and not user.is_manager %}
+  <section class="card offline-results-card" style="margin: var(--space-5) 0 var(--space-6); padding: var(--space-5); border: 2px solid var(--color-brand-500, #0d2050); border-radius: var(--radius-md); background: var(--bg-card);">
+    <h2 style="margin: 0 0 var(--space-3); font-size: var(--text-xl);">Результаты очного тура</h2>
+    <div class="prose results-custom-text">
+      {{ stage.results_text|clean_html }}
+    </div>
   </section>
 {% endif %}
 

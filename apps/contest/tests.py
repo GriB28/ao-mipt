@@ -488,6 +488,61 @@ class ProblemApprovalTest(TestCase):
         problem.refresh_from_db()
         self.assertEqual(problem.status, Problem.Status.DRAFT)
 
+    def test_max_score_field_rendered_in_forms(self):
+        self.client.force_login(self.organizer)
+        new_page = self.client.get(reverse("contest:problem_new")).content.decode()
+        self.assertIn('name="max_score"', new_page)
+        self.assertIn("Максимальный балл", new_page)
+
+        self._create(max_score="10")
+        problem = Problem.objects.get(number=90)
+        edit_page = self.client.get(reverse("contest:problem_edit", args=[problem.pk])).content.decode()
+        self.assertIn('name="max_score"', edit_page)
+        self.assertIn('value="10"', edit_page)
+
+    def test_max_score_can_be_set_on_creation(self):
+        self._create(max_score="15.5")
+        problem = Problem.objects.get(number=90)
+        self.assertEqual(problem.max_score, Decimal("15.5"))
+
+    def test_max_score_is_optional_on_creation(self):
+        self._create(max_score="")
+        problem = Problem.objects.get(number=90)
+        self.assertIsNone(problem.max_score)
+
+    def test_max_score_validation_rejects_non_positive(self):
+        response = self._create(max_score="-5")
+        self.assertIn("Максимальный балл должен быть больше нуля", response.content.decode())
+        self.assertFalse(Problem.objects.filter(number=90).exists())
+
+        response = self._create(max_score="0")
+        self.assertIn("Максимальный балл должен быть больше нуля", response.content.decode())
+        self.assertFalse(Problem.objects.filter(number=90).exists())
+
+    def test_max_score_can_be_edited_and_cleared(self):
+        self._create(max_score="10")
+        problem = Problem.objects.get(number=90)
+        self.assertEqual(problem.max_score, Decimal("10"))
+
+        self.client.force_login(self.organizer)
+        url = reverse("contest:problem_edit", args=[problem.pk])
+
+        # Изменяем балл
+        self.client.post(url, {
+            "stage": self.stage.pk, "number": 90, "title": "Новая задача",
+            "statement_html": "Найдите $v_0$.", "max_score": "25",
+        })
+        problem.refresh_from_db()
+        self.assertEqual(problem.max_score, Decimal("25"))
+
+        # Очищаем балл
+        self.client.post(url, {
+            "stage": self.stage.pk, "number": 90, "title": "Новая задача",
+            "statement_html": "Найдите $v_0$.", "max_score": "",
+        })
+        problem.refresh_from_db()
+        self.assertIsNone(problem.max_score)
+
 
 class ManagerViewTest(TestCase):
     """Организатор и админ управляют, а не участвуют: вид сайта у них другой."""
@@ -890,6 +945,46 @@ class OnlineReviewMatrixTests(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_ajax_score_above_max_rejected(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_save_grade")
+        resp = self.client.post(
+            url,
+            {"submission_id": self.sub1_1.pk, "score": "999"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("превышать максимум", resp.json().get("error", ""))
+        self.assertFalse(Grade.objects.filter(submission=self.sub1_1).exists())
+
+    def test_bulk_save_score_above_max_rejected(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_list")
+        resp = self.client.post(
+            url,
+            {f"score_{self.sub1_1.pk}": "999"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("превышает максимум", content)
+        self.assertNotIn("Сохранено оценок:", content)
+        self.assertFalse(Grade.objects.filter(submission=self.sub1_1).exists())
+
+    def test_bulk_save_valid_score_accepted(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_list")
+        resp = self.client.post(
+            url,
+            {f"score_{self.sub1_1.pk}": "8"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("Сохранено оценок: 1", content)
+        grade = Grade.objects.get(submission=self.sub1_1)
+        self.assertEqual(grade.score, Decimal("8"))
+
     def test_my_submissions_shows_offline_scan_when_published(self):
         from datetime import date
         from django.core.files.uploadedfile import SimpleUploadedFile
@@ -945,5 +1040,7 @@ class OnlineReviewMatrixTests(TestCase):
         resp = self.client.get(url)
         self.assertContains(resp, "Скан проверенной работы")
         self.assertContains(resp, booking.get_scan_url())
+        self.assertContains(resp, "Задача Очная")
+        self.assertNotContains(resp, reverse("contest:problem_detail", args=[p_off.pk]))
 
 

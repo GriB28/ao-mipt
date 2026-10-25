@@ -47,10 +47,17 @@
     <p><a class="btn" href="{% url 'accounts:login' %}?next={{ request.path }}">Войдите, чтобы записаться</a></p>
   {% elif booked_here %}
     <p class="badge ok">Вы записаны на эту площадку</p>
-    <form method="post" action="{% url 'venues:cancel_booking' venue.pk %}" class="inline-form">
-      {% csrf_token %}
-      <button type="submit" class="link-button">Отменить запись</button>
-    </form>
+    {% if not my_booking.can_cancel %}
+      <p class="muted">Отменить запись нельзя: очный этап уже прошёл.</p>
+    {% else %}
+      <form method="post" action="{% url 'venues:cancel_booking' venue.pk %}" class="inline-form">
+        {% csrf_token %}
+        <button type="submit" class="link-button">Отменить запись</button>
+      </form>
+    {% endif %}
+  {% elif venue.stage_passed %}
+    <p class="badge none">Этап прошёл</p>
+    <p class="muted">Запись на эту площадку закрыта: очный этап уже прошёл.</p>
   {% elif not stage.registration_is_open %}
     <p class="badge warn">Запись закрыта</p>
     <p class="muted">
@@ -64,21 +71,31 @@
     {% include "accounts/_participation_gate.html" with what="записаться на площадку" %}
   {% else %}
     {% if my_booking %}
-      {% comment %}
-        Запись одна на этап: показываем, что выбор площадки сменится,
-        чтобы человек не думал, что записывается на вторую.
-      {% endcomment %}
-      <p class="muted">
-        Сейчас вы записаны на «{{ my_booking.venue.title }}».
-        Запись перенесётся сюда.
-      </p>
+      {% if not my_booking.can_cancel or venue.stage_passed %}
+        <p class="muted">
+          Вы записаны на «{{ my_booking.venue.title }}».
+          Сменить площадку нельзя: очный этап уже прошёл.
+        </p>
+      {% else %}
+        {% comment %}
+          Запись одна на этап: показываем, что выбор площадки сменится,
+          чтобы человек не думал, что записывается на вторую.
+        {% endcomment %}
+        <p class="muted">
+          Сейчас вы записаны на «{{ my_booking.venue.title }}».
+          Запись перенесётся сюда.
+        </p>
+        <form method="post" action="{% url 'venues:book' venue.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn">Перенести запись сюда</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <form method="post" action="{% url 'venues:book' venue.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn">Записаться</button>
+      </form>
     {% endif %}
-    <form method="post" action="{% url 'venues:book' venue.pk %}">
-      {% csrf_token %}
-      <button type="submit" class="btn">
-        {% if my_booking %}Перенести запись сюда{% else %}Записаться{% endif %}
-      </button>
-    </form>
   {% endif %}
 {% else %}
   <p class="muted">Очный тур пока не объявлен.</p>

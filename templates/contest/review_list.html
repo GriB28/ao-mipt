@@ -58,7 +58,7 @@
           {% for p in problems %}
             <th class="cell-problem-header" title="{{ p.title }}">
               <a href="{{ p.get_absolute_url }}" target="_blank">{{ p.number }}. {{ p.title }}</a>
-              <br><small class="muted" style="font-weight: normal;">макс: {{ p.max_score|default:"—" }}</small>
+              <br><small class="muted" style="font-weight: normal;">макс: {{ p.max_score_plain|default:p.max_score|default:"—" }}</small>
             </th>
           {% endfor %}
           <th>Сумма</th>
@@ -91,7 +91,7 @@
                            class="score-input online-score-input"
                            data-sub-id="{{ cell.submission.pk }}"
                            data-user-id="{{ row.user.pk }}"
-                           data-max="{{ cell.problem.max_score|default:'' }}"
+                           data-max="{{ cell.problem.max_score_plain|default:cell.problem.max_score|default:'' }}"
                            size="3">
                     <a href="{% url 'contest:review_detail' cell.submission.pk %}?back={{ request.get_full_path|urlencode }}"
                        class="link-button" title="Подробный отзыв и рецензия" style="font-size: var(--text-base); text-decoration: none;">📝</a>
@@ -125,10 +125,19 @@
   </p>
 </form>
 
+<style>
+.score-input.score-input-error {
+  border-color: var(--color-danger-500, #b3261e) !important;
+  background-color: var(--color-danger-50, #fdf2f2);
+  outline: 2px solid var(--color-danger-500, #b3261e);
+}
+</style>
+
 <script>
 (function() {
   const saveUrl = "{% url 'contest:review_save_grade' %}";
   const indicator = document.getElementById("online-save-indicator");
+  let indicatorTimer = null;
 
   function getCsrfToken() {
     const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
@@ -139,12 +148,13 @@
 
   function showIndicator(msg, isError) {
     if (!indicator) return;
+    if (indicatorTimer) clearTimeout(indicatorTimer);
     indicator.textContent = msg;
     indicator.style.color = isError ? "var(--color-danger-500, #b3261e)" : "var(--color-success-500, #1c7a49)";
     indicator.style.opacity = "1";
-    setTimeout(function() {
+    indicatorTimer = setTimeout(function() {
       indicator.style.opacity = "0";
-    }, 2500);
+    }, isError ? 4000 : 2500);
   }
 
   function recalculateUserTotal(userId) {
@@ -164,6 +174,30 @@
     }
   }
 
+  function validateInput(inp) {
+    const rawVal = inp.value.trim();
+    const maxScoreStr = inp.dataset.max;
+    const maxScore = maxScoreStr ? parseFloat(maxScoreStr) : null;
+
+    if (rawVal === "") {
+      inp.classList.remove("score-input-error");
+      return { valid: true };
+    }
+
+    const num = parseFloat(rawVal.replace(",", "."));
+    if (isNaN(num)) {
+      return { valid: false, message: "Некорректное число" };
+    }
+    if (num < 0) {
+      return { valid: false, message: "Балл не может быть меньше 0" };
+    }
+    if (maxScore !== null && !isNaN(maxScore) && num > maxScore) {
+      return { valid: false, message: "Балл (" + num + ") превышает максимум (" + maxScoreStr + ")" };
+    }
+    inp.classList.remove("score-input-error");
+    return { valid: true, num: num };
+  }
+
   document.querySelectorAll(".online-score-input").forEach(function(inp) {
     inp.addEventListener("input", function() {
       const userId = this.dataset.userId;
@@ -171,11 +205,24 @@
     });
 
     let prevVal = inp.value;
+
     function handleOnlineSave() {
       if (inp.value === prevVal) return;
-      prevVal = inp.value;
-      const subId = inp.dataset.subId;
+
+      const validation = validateInput(inp);
       const userId = inp.dataset.userId;
+
+      if (!validation.valid) {
+        showIndicator(validation.message, true);
+        inp.classList.add("score-input-error");
+        inp.value = prevVal;
+        recalculateUserTotal(userId);
+        return;
+      }
+
+      inp.classList.remove("score-input-error");
+      const valueToSave = inp.value;
+      const subId = inp.dataset.subId;
 
       fetch(saveUrl, {
         method: "POST",
@@ -186,26 +233,62 @@
         },
         body: JSON.stringify({
           submission_id: subId,
-          score: inp.value
+          score: valueToSave
         })
       })
       .then(function(res) {
-        if (!res.ok) throw new Error("HTTP error " + res.status);
-        return res.json();
+        return res.json().then(function(data) {
+          if (!res.ok) {
+            throw new Error(data.error || ("HTTP error " + res.status));
+          }
+          return data;
+        });
       })
       .then(function(data) {
+        prevVal = valueToSave;
         showIndicator("✓ Сохранено", false);
         recalculateUserTotal(userId);
       })
       .catch(function(err) {
+        if (err.name === "AbortError") return;
         console.error(err);
-        showIndicator("Ошибка сохранения", true);
+        inp.classList.add("score-input-error");
+        inp.value = prevVal;
+        recalculateUserTotal(userId);
+        showIndicator(err.message || "Ошибка сохранения", true);
       });
     }
 
     inp.addEventListener("change", handleOnlineSave);
     inp.addEventListener("blur", handleOnlineSave);
   });
+
+  const matrixForm = document.getElementById("review-matrix-form");
+  if (matrixForm) {
+    matrixForm.addEventListener("submit", function(e) {
+      let hasError = false;
+      let firstErrorInp = null;
+      let errorMsg = "";
+
+      matrixForm.querySelectorAll(".online-score-input").forEach(function(inp) {
+        const validation = validateInput(inp);
+        if (!validation.valid) {
+          hasError = true;
+          inp.classList.add("score-input-error");
+          if (!firstErrorInp) {
+            firstErrorInp = inp;
+            errorMsg = validation.message;
+          }
+        }
+      });
+
+      if (hasError) {
+        e.preventDefault();
+        showIndicator(errorMsg, true);
+        if (firstErrorInp) firstErrorInp.focus();
+      }
+    });
+  }
 })();
 </script>
 {% endblock %}

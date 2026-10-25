@@ -1,10 +1,17 @@
 {% extends "base.html" %}
+{% load html_clean %}
 {% block title %}Итоги — {{ venue.title }}{% endblock %}
 {% block content %}
 <p class="muted"><a href="{% url 'venues:participants' venue.pk %}">← Ведомость</a></p>
 
 <h1>Итоговая таблица</h1>
 <p class="lead">{{ venue.title }}{% if stage %} · {{ stage.title }}{% endif %}</p>
+
+{% if stage and stage.results_text %}
+  <div class="card prose results-custom-text" style="margin-bottom: var(--space-4); padding: var(--space-4);">
+    {{ stage.results_text|clean_html }}
+  </div>
+{% endif %}
 
 <div class="table-scroll">
   <table class="score-table">

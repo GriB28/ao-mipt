@@ -296,3 +296,65 @@ class HomeSectionsTest(TestCase):
         html = self.client.get("/").content.decode()
         self.assertIn("Новости", html)
         self.assertIn("Открыта регистрация", html)
+
+
+class StageResultsTextAdminTest(TestCase):
+    def setUp(self):
+        from apps.accounts.models import User
+        self.admin = User.objects.create_superuser("admin@example.ru", "pass12345")
+        self.season = Season.objects.create(year=2099, slug="s2099", title="Сезон 2099",
+                                            is_active=True, is_published=True)
+        now = timezone.now()
+        self.stage = Stage.objects.create(
+            season=self.season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-tour",
+            title="Очный тур",
+            starts_at=now - timedelta(days=2),
+            ends_at=now + timedelta(days=2),
+            is_published=True,
+            results_published=True,
+            results_text="<p>Текст с <b>HTML</b></p>",
+        )
+
+    def test_results_text_properties_and_sanitization(self):
+        self.assertEqual(self.stage.results_text, "<p>Текст с <b>HTML</b></p>")
+        self.assertEqual(self.stage.results_description, "<p>Текст с <b>HTML</b></p>")
+        self.assertEqual(self.stage.results_html, "<p>Текст с <b>HTML</b></p>")
+
+        self.stage.results_text = "<p>Разметка <script>bad()</script></p>"
+        self.stage.full_clean()
+        self.stage.save()
+        self.stage.refresh_from_db()
+
+        self.assertNotIn("<script>", self.stage.results_text)
+        self.assertIn("<p>Разметка </p>", self.stage.results_text)
+
+    def test_admin_can_edit_results_text_on_stage_page(self):
+        from django.urls import reverse
+        self.client.force_login(self.admin)
+        change_url = reverse("admin:seasons_stage_change", args=[self.stage.pk])
+        resp = self.client.get(change_url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "results_text")
+
+        post_data = {
+            "season": self.season.pk,
+            "kind": self.stage.kind,
+            "order": self.stage.order,
+            "slug": self.stage.slug,
+            "title": self.stage.title,
+            "starts_at_0": self.stage.starts_at.strftime("%Y-%m-%d"),
+            "starts_at_1": self.stage.starts_at.strftime("%H:%M:%S"),
+            "ends_at_0": self.stage.ends_at.strftime("%Y-%m-%d"),
+            "ends_at_1": self.stage.ends_at.strftime("%H:%M:%S"),
+            "results_published": "on",
+            "results_text": "<p>Инструкция: подайте заявку на <a href='/appeal'>апелляцию</a>.</p>",
+            "is_published": "on",
+        }
+        resp = self.client.post(change_url, post_data)
+        self.assertEqual(resp.status_code, 302)
+
+        self.stage.refresh_from_db()
+        self.assertIn("апелляцию</a>", self.stage.results_text)
+        self.assertIn('href="/appeal"', self.stage.results_text)

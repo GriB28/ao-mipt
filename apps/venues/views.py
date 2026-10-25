@@ -203,6 +203,9 @@ def book_venue(request, pk):
     if venue.registration_closed:
         messages.error(request, "Запись на эту площадку заблокирована организаторами.")
         return redirect("venues:detail", pk=venue.pk)
+    if venue.stage_passed:
+        messages.error(request, "Запись на эту площадку закрыта: очный этап уже прошёл.")
+        return redirect("venues:detail", pk=venue.pk)
     if not request.user.can_participate:
         messages.error(
             request,
@@ -215,6 +218,12 @@ def book_venue(request, pk):
     if not stage:
         messages.error(request, "Очный тур пока не объявлен.")
         return redirect("venues:map")
+
+    existing_booking = _my_booking(request.user, stage)
+    if existing_booking and existing_booking.venue_id != venue.pk:
+        if not existing_booking.can_cancel or venue.stage_passed:
+            messages.error(request, "Нельзя сменить площадку: очный этап уже прошёл.")
+            return redirect("venues:detail", pk=venue.pk)
 
     # Участие в сезоне могло не появиться, если человек зарегистрировался
     # раньше, чем сезон стал активным, — заводим его здесь.
@@ -236,6 +245,9 @@ def cancel_booking(request, pk):
     stage = _offline_stage(Season.objects.active())
     booking = _my_booking(request.user, stage)
     if booking and booking.venue_id == venue.pk:
+        if not booking.can_cancel:
+            messages.error(request, "Нельзя отменить запись: очный этап уже прошёл.")
+            return redirect("venues:detail", pk=venue.pk)
         booking.status = VenueBooking.Status.CANCELLED
         booking.save(update_fields=["status"])
         messages.success(request, "Запись отменена.")
