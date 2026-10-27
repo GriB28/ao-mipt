@@ -424,6 +424,56 @@ class OfflineGradingAndScansTests(TestCase):
         self.assertContains(map_resp, 'data-max-score="10"')
         self.assertContains(map_resp, "макс: 10")
 
+    def test_offline_grading_dash_scores_interpreted_as_zero_and_rendered_as_dash(self):
+        self.venue.managers.add(self.organizer)
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+
+        # 1. Проверяем сохранение через AJAX различных форм прочерков
+        dashes = ["-", "–", "—", "--", " - "]
+        for dash in dashes:
+            resp = self.client.post(
+                save_url,
+                {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": dash},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "ok")
+            score = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
+            self.assertEqual(score.points, Decimal("0"))
+
+        # 2. Не число (кроме прочерка) отклоняется
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "не число"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.json())
+
+        # 3. В таблице для организаторов на вкладке grading отображается именно "–"
+        map_resp = self.client.get(f"{reverse('venues:map')}?tab=grading")
+        self.assertEqual(map_resp.status_code, 200)
+        html = map_resp.content.decode()
+        self.assertIn(f'name="score_{self.booking1.pk}_{self.p1_1.pk}"\n                     value="–"', html)
+
+        # 4. Ведомость площадки venues:participants: сохранение прочерка через POST и отображение "–"
+        part_url = reverse("venues:participants", args=[self.venue.pk])
+        resp = self.client.post(
+            part_url,
+            {f"score-{self.booking1.registration_id}-{self.p1_1.pk}": "-"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("0"))
+
+        get_resp = self.client.get(part_url)
+        self.assertEqual(get_resp.status_code, 200)
+        html_part = get_resp.content.decode()
+        self.assertIn(f'name="score-{self.booking1.registration_id}-{self.p1_1.pk}"\n                         value="–"', html_part)
+
     def test_offline_scan_upload_download_and_permissions(self):
         self.client.force_login(self.organizer)
         upload_url = reverse("venues:upload_work_scan")
