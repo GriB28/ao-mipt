@@ -261,6 +261,20 @@ a { color: var(--text-link); }
 }
 .btn-secondary:hover { background: var(--color-surface-alt); }
 
+.btn-danger {
+  background: var(--color-danger-100);
+  color: var(--color-danger-500);
+  border: 1px solid rgba(179, 38, 30, 0.25);
+}
+.btn-danger:hover {
+  background: var(--color-danger-500);
+  color: #fff;
+}
+.btn-danger:active {
+  background: #8f1d16;
+  color: #fff;
+}
+
 /* --- Карточки ------------------------------------------------------------ */
 
 .grid {

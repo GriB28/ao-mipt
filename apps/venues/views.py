@@ -3,6 +3,7 @@ import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import time
+from urllib.parse import urlencode
 from django.db import OperationalError
 
 from django.conf import settings
@@ -709,7 +710,70 @@ def delete_offline_work_scan(request, pk):
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse({"status": "ok"})
-    return redirect(f"{reverse('venues:map')}?tab=scans")
+
+    redirect_params = {"tab": "scans"}
+    from_venue = request.POST.get("from_venue") or request.GET.get("venue")
+    if from_venue:
+        redirect_params["venue"] = from_venue
+    q = request.POST.get("q") or request.GET.get("q")
+    if q:
+        redirect_params["q"] = q
+    return redirect(f"{reverse('venues:map')}?{urlencode(redirect_params)}")
+
+
+@require_POST
+@login_required
+def delete_venue_booking(request, pk):
+    """Удаление записи участника на площадку организатором."""
+    if not request.user.is_manager:
+        raise PermissionDenied("Доступно только организаторам.")
+
+    booking = get_object_or_404(
+        VenueBooking.objects.select_related(
+            "registration__user",
+            "registration__user__profile",
+            "stage",
+            "venue",
+        ),
+        pk=pk,
+    )
+    user = booking.registration.user
+    profile = getattr(user, "profile", None)
+    participant_name = (
+        (profile.full_name if profile and profile.full_name else None)
+        or user.get_full_name()
+        or user.email
+    )
+    venue_title = booking.venue.short_title or booking.venue.title
+
+    if booking.work_scan:
+        booking.work_scan.delete(save=False)
+
+    def _do_delete():
+        Score.objects.filter(
+            registration=booking.registration,
+            problem__stage=booking.stage,
+        ).delete()
+        booking.delete()
+
+    _retry_on_db_lock(_do_delete)
+
+    messages.success(
+        request,
+        f"Запись участника {participant_name} на площадку «{venue_title}» удалена.",
+    )
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse({"status": "ok"})
+
+    redirect_params = {"tab": "scans"}
+    from_venue = request.POST.get("from_venue") or request.GET.get("venue")
+    if from_venue:
+        redirect_params["venue"] = from_venue
+    q = request.POST.get("q") or request.GET.get("q")
+    if q:
+        redirect_params["q"] = q
+    return redirect(f"{reverse('venues:map')}?{urlencode(redirect_params)}")
 
 
 @login_required
