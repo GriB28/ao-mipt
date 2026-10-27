@@ -527,6 +527,56 @@ class OfflineGradingAndScansTests(TestCase):
         self.booking1.refresh_from_db()
         self.assertFalse(bool(self.booking1.work_scan))
 
+    def test_delete_venue_booking_by_organizer(self):
+        pdf_file = self.SimpleUploadedFile("scan.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+        self.booking1.work_scan = pdf_file
+        self.booking1.save()
+
+        # Add a score for booking1
+        self.Score.objects.create(
+            registration=self.booking1.registration,
+            problem=self.p1_1,
+            points=self.Decimal("5"),
+            venue=self.venue,
+        )
+
+        self.client.force_login(self.organizer)
+        del_url = reverse("venues:delete_booking", args=[self.booking1.pk])
+        resp = self.client.post(del_url, {"from_venue": str(self.venue.pk), "q": "part1"})
+
+        expected_redirect = f"{reverse('venues:map')}?tab=scans&venue={self.venue.pk}&q=part1"
+        self.assertRedirects(resp, expected_redirect)
+
+        self.assertFalse(VenueBooking.objects.filter(pk=self.booking1.pk).exists())
+        self.assertFalse(self.Score.objects.filter(registration=self.booking1.registration, problem__stage=self.stage).exists())
+
+    def test_delete_venue_booking_permissions(self):
+        del_url = reverse("venues:delete_booking", args=[self.booking1.pk])
+
+        # Participant cannot delete
+        self.client.force_login(self.participant1)
+        resp = self.client.post(del_url)
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(VenueBooking.objects.filter(pk=self.booking1.pk).exists())
+
+        # Anonymous cannot delete
+        self.client.logout()
+        resp = self.client.post(del_url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(VenueBooking.objects.filter(pk=self.booking1.pk).exists())
+
+    def test_scans_tab_ui_contains_delete_booking_button_and_confirmation(self):
+        self.client.force_login(self.organizer)
+        resp = self.client.get(f"{reverse('venues:map')}?tab=scans")
+        self.assertEqual(resp.status_code, 200)
+
+        del_url1 = reverse("venues:delete_booking", args=[self.booking1.pk])
+        del_url2 = reverse("venues:delete_booking", args=[self.booking2.pk])
+        self.assertContains(resp, f'action="{del_url1}"')
+        self.assertContains(resp, f'action="{del_url2}"')
+        self.assertContains(resp, "Удалить запись")
+        self.assertContains(resp, 'onsubmit="return confirm(')
+
     def test_export_grading_excel(self):
         self.client.force_login(self.organizer)
         url = reverse("venues:export_grading")
