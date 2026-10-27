@@ -139,6 +139,13 @@
   const indicator = document.getElementById("online-save-indicator");
   let indicatorTimer = null;
 
+  const CANONICAL_DASH = "–";
+  const DASH_REGEX = /^[\-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]+$/;
+  function isDash(str) {
+    const s = (str || "").trim();
+    return Boolean(s) && DASH_REGEX.test(s);
+  }
+
   function getCsrfToken() {
     const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
     if (input) return input.value;
@@ -163,7 +170,11 @@
     let sum = 0;
     const inputs = row.querySelectorAll(".online-score-input");
     inputs.forEach(function(inp) {
-      const val = parseFloat(inp.value.replace(",", "."));
+      const v = inp.value.trim();
+      if (isDash(v)) {
+        return;
+      }
+      const val = parseFloat(v.replace(",", "."));
       if (!isNaN(val)) {
         sum += val;
       }
@@ -182,6 +193,11 @@
     if (rawVal === "") {
       inp.classList.remove("score-input-error");
       return { valid: true };
+    }
+
+    if (isDash(rawVal)) {
+      inp.classList.remove("score-input-error");
+      return { valid: true, isDash: true, num: 0 };
     }
 
     const num = parseFloat(rawVal.replace(",", "."));
@@ -207,8 +223,6 @@
     let prevVal = inp.value;
 
     function handleOnlineSave() {
-      if (inp.value === prevVal) return;
-
       const validation = validateInput(inp);
       const userId = inp.dataset.userId;
 
@@ -219,6 +233,12 @@
         recalculateUserTotal(userId);
         return;
       }
+
+      if (validation.isDash) {
+        inp.value = CANONICAL_DASH;
+      }
+
+      if (inp.value === prevVal) return;
 
       inp.classList.remove("score-input-error");
       const valueToSave = inp.value;
@@ -279,6 +299,8 @@
             firstErrorInp = inp;
             errorMsg = validation.message;
           }
+        } else if (validation.isDash) {
+          inp.value = CANONICAL_DASH;
         }
       });
 

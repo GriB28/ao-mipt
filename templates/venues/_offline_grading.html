@@ -146,6 +146,13 @@
   const saveUrl = "{% url 'venues:save_scores' %}";
   const indicator = document.getElementById("offline-save-indicator");
 
+  const CANONICAL_DASH = "–";
+  const DASH_REGEX = /^[\-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]+$/;
+  function isDash(str) {
+    const s = (str || "").trim();
+    return Boolean(s) && DASH_REGEX.test(s);
+  }
+
   function getCsrfToken() {
     const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
     if (input) return input.value;
@@ -172,7 +179,11 @@
     let sum = 0;
     const inputs = row.querySelectorAll(".offline-score-input:not(:disabled)");
     inputs.forEach(function(inp) {
-      const val = parseFloat(inp.value.replace(",", "."));
+      const v = inp.value.trim();
+      if (isDash(v)) {
+        return;
+      }
+      const val = parseFloat(v.replace(",", "."));
       if (!isNaN(val)) {
         sum += val;
       }
@@ -289,36 +300,40 @@
     });
 
     function handleScoreSave() {
-      if (inp.value === prevValue) return;
-
       const rawVal = inp.value.trim();
       const maxScoreStr = inp.dataset.maxScore;
       const maxScore = maxScoreStr ? parseFloat(maxScoreStr) : null;
 
       if (rawVal !== "") {
-        const num = parseFloat(rawVal.replace(",", "."));
-        if (isNaN(num)) {
-          showIndicator("Некорректное число", true);
-          inp.classList.add("score-input-error");
-          inp.value = prevValue;
-          recalculateRowTotal(inp.dataset.bookingId);
-          return;
-        }
-        if (num < 0) {
-          showIndicator("Балл не может быть меньше 0", true);
-          inp.classList.add("score-input-error");
-          inp.value = prevValue;
-          recalculateRowTotal(inp.dataset.bookingId);
-          return;
-        }
-        if (maxScore !== null && num > maxScore) {
-          showIndicator("Балл (" + num + ") превышает максимум (" + maxScoreStr + ")", true);
-          inp.classList.add("score-input-error");
-          inp.value = prevValue;
-          recalculateRowTotal(inp.dataset.bookingId);
-          return;
+        if (isDash(rawVal)) {
+          inp.value = CANONICAL_DASH;
+        } else {
+          const num = parseFloat(rawVal.replace(",", "."));
+          if (isNaN(num)) {
+            showIndicator("Некорректное число", true);
+            inp.classList.add("score-input-error");
+            inp.value = prevValue;
+            recalculateRowTotal(inp.dataset.bookingId);
+            return;
+          }
+          if (num < 0) {
+            showIndicator("Балл не может быть меньше 0", true);
+            inp.classList.add("score-input-error");
+            inp.value = prevValue;
+            recalculateRowTotal(inp.dataset.bookingId);
+            return;
+          }
+          if (maxScore !== null && num > maxScore) {
+            showIndicator("Балл (" + num + ") превышает максимум (" + maxScoreStr + ")", true);
+            inp.classList.add("score-input-error");
+            inp.value = prevValue;
+            recalculateRowTotal(inp.dataset.bookingId);
+            return;
+          }
         }
       }
+
+      if (inp.value === prevValue) return;
 
       inp.classList.remove("score-input-error");
       const oldValue = prevValue;

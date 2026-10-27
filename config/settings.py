@@ -244,9 +244,9 @@ PRIVACY_POLICY_URL = env("PRIVACY_POLICY_URL", default="https://mipt.ru/privacy"
 # Порядок — приказ Минобрнауки России от 16.01.2026 № 16 (действует с 2026/27).
 OLYMPIAD_ORDER_URL = env("OLYMPIAD_ORDER_URL",
                          default="http://publication.pravo.gov.ru/document/0001202602240023")
-# Положение и Регламент олимпиады — пока не опубликованы: ссылка-заглушка «#».
-OLYMPIAD_STATUTE_URL = env("OLYMPIAD_STATUTE_URL", default="#")
-OLYMPIAD_REGULATIONS_URL = env("OLYMPIAD_REGULATIONS_URL", default="#")
+# Положение и Регламент олимпиады.
+OLYMPIAD_STATUTE_URL = env("OLYMPIAD_STATUTE_URL", default="/page/statute/") or "/page/statute/"
+OLYMPIAD_REGULATIONS_URL = env("OLYMPIAD_REGULATIONS_URL", default="/page/regulations/") or "/page/regulations/"
 
 # --- Карты ----------------------------------------------------------------
 # Если ключ задан, карта площадок рисуется Яндекс.Картами.

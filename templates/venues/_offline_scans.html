@@ -125,11 +125,20 @@
           </button>
           {% if p.has_scan %}
             <form method="post" action="{% url 'venues:delete_work_scan' p.id %}" class="inline-form"
-                  onsubmit="return confirm('Удалить скан работы участника {{ p.name }}?');">
+                  onsubmit="return confirm('Удалить скан работы участника {{ p.name|escapejs }}?');">
               {% csrf_token %}
-              <button type="submit" class="link-button" style="color: var(--color-danger-500, #b3261e); font-size: var(--text-xs); margin-left: var(--space-2);">Удалить</button>
+              {% if selected_venue_id %}<input type="hidden" name="from_venue" value="{{ selected_venue_id }}">{% endif %}
+              {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+              <button type="submit" class="link-button" style="color: var(--color-danger-500, #b3261e); font-size: var(--text-xs); margin-left: var(--space-2);" title="Удалить только скан работы">Удалить скан</button>
             </form>
           {% endif %}
+          <form method="post" action="{% url 'venues:delete_booking' p.id %}" class="inline-form"
+                onsubmit="return confirm('Вы уверены, что хотите удалить запись участника {{ p.name|escapejs }} на точку «{{ p.venue_title|escapejs }}»?{% if p.has_scan %}\n\nВнимание: загруженный скан работы также будет удален!{% endif %}');">
+            {% csrf_token %}
+            {% if selected_venue_id %}<input type="hidden" name="from_venue" value="{{ selected_venue_id }}">{% endif %}
+            {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+            <button type="submit" class="btn btn-small btn-danger" title="Удалить запись участника на точку">Удалить запись</button>
+          </form>
         </div>
       </td>
     </tr>

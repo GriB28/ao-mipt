@@ -94,6 +94,8 @@ class Command(BaseCommand):
             ("/online/my/", "my-submissions.html", student),
             ("/online/review/", "review.html", organizer),
             ("/page/about/", "about.html", None),
+            ("/page/statute/", "statute.html", None),
+            ("/page/regulations/", "regulations.html", None),
         ]
         for problem in Problem.objects.visible():
             pages.append((f"/online/problem/{problem.pk}/", f"problem-{problem.pk}.html", student))

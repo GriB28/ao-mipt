@@ -424,6 +424,56 @@ class OfflineGradingAndScansTests(TestCase):
         self.assertContains(map_resp, 'data-max-score="10"')
         self.assertContains(map_resp, "макс: 10")
 
+    def test_offline_grading_dash_scores_interpreted_as_zero_and_rendered_as_dash(self):
+        self.venue.managers.add(self.organizer)
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+
+        # 1. Проверяем сохранение через AJAX различных форм прочерков
+        dashes = ["-", "–", "—", "--", " - "]
+        for dash in dashes:
+            resp = self.client.post(
+                save_url,
+                {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": dash},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "ok")
+            score = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
+            self.assertEqual(score.points, Decimal("0"))
+
+        # 2. Не число (кроме прочерка) отклоняется
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "не число"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.json())
+
+        # 3. В таблице для организаторов на вкладке grading отображается именно "–"
+        map_resp = self.client.get(f"{reverse('venues:map')}?tab=grading")
+        self.assertEqual(map_resp.status_code, 200)
+        html = map_resp.content.decode()
+        self.assertIn(f'name="score_{self.booking1.pk}_{self.p1_1.pk}"\n                     value="–"', html)
+
+        # 4. Ведомость площадки venues:participants: сохранение прочерка через POST и отображение "–"
+        part_url = reverse("venues:participants", args=[self.venue.pk])
+        resp = self.client.post(
+            part_url,
+            {f"score-{self.booking1.registration_id}-{self.p1_1.pk}": "-"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("0"))
+
+        get_resp = self.client.get(part_url)
+        self.assertEqual(get_resp.status_code, 200)
+        html_part = get_resp.content.decode()
+        self.assertIn(f'name="score-{self.booking1.registration_id}-{self.p1_1.pk}"\n                         value="–"', html_part)
+
     def test_offline_scan_upload_download_and_permissions(self):
         self.client.force_login(self.organizer)
         upload_url = reverse("venues:upload_work_scan")
@@ -476,6 +526,56 @@ class OfflineGradingAndScansTests(TestCase):
         resp = self.client.post(del_url)
         self.booking1.refresh_from_db()
         self.assertFalse(bool(self.booking1.work_scan))
+
+    def test_delete_venue_booking_by_organizer(self):
+        pdf_file = self.SimpleUploadedFile("scan.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+        self.booking1.work_scan = pdf_file
+        self.booking1.save()
+
+        # Add a score for booking1
+        self.Score.objects.create(
+            registration=self.booking1.registration,
+            problem=self.p1_1,
+            points=self.Decimal("5"),
+            venue=self.venue,
+        )
+
+        self.client.force_login(self.organizer)
+        del_url = reverse("venues:delete_booking", args=[self.booking1.pk])
+        resp = self.client.post(del_url, {"from_venue": str(self.venue.pk), "q": "part1"})
+
+        expected_redirect = f"{reverse('venues:map')}?tab=scans&venue={self.venue.pk}&q=part1"
+        self.assertRedirects(resp, expected_redirect)
+
+        self.assertFalse(VenueBooking.objects.filter(pk=self.booking1.pk).exists())
+        self.assertFalse(self.Score.objects.filter(registration=self.booking1.registration, problem__stage=self.stage).exists())
+
+    def test_delete_venue_booking_permissions(self):
+        del_url = reverse("venues:delete_booking", args=[self.booking1.pk])
+
+        # Participant cannot delete
+        self.client.force_login(self.participant1)
+        resp = self.client.post(del_url)
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(VenueBooking.objects.filter(pk=self.booking1.pk).exists())
+
+        # Anonymous cannot delete
+        self.client.logout()
+        resp = self.client.post(del_url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(VenueBooking.objects.filter(pk=self.booking1.pk).exists())
+
+    def test_scans_tab_ui_contains_delete_booking_button_and_confirmation(self):
+        self.client.force_login(self.organizer)
+        resp = self.client.get(f"{reverse('venues:map')}?tab=scans")
+        self.assertEqual(resp.status_code, 200)
+
+        del_url1 = reverse("venues:delete_booking", args=[self.booking1.pk])
+        del_url2 = reverse("venues:delete_booking", args=[self.booking2.pk])
+        self.assertContains(resp, f'action="{del_url1}"')
+        self.assertContains(resp, f'action="{del_url2}"')
+        self.assertContains(resp, "Удалить запись")
+        self.assertContains(resp, 'onsubmit="return confirm(')
 
     def test_export_grading_excel(self):
         self.client.force_login(self.organizer)

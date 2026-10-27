@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.testing import make_eligible
-from apps.contest.models import Grade, Problem, Submission, SubmissionFile
+from apps.contest.models import Grade, Problem, Score, Submission, SubmissionFile
 from apps.seasons.models import Season, Stage
 
 
@@ -984,6 +984,58 @@ class OnlineReviewMatrixTests(TestCase):
         self.assertIn("Сохранено оценок: 1", content)
         grade = Grade.objects.get(submission=self.sub1_1)
         self.assertEqual(grade.score, Decimal("8"))
+
+    def test_ajax_dash_scores_interpreted_as_zero(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_save_grade")
+        dashes = ["-", "–", "—", "--", " - "]
+        for dash in dashes:
+            resp = self.client.post(
+                url,
+                {"submission_id": self.sub1_1.pk, "score": dash},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "ok")
+            grade = Grade.objects.get(submission=self.sub1_1)
+            self.assertEqual(grade.score, Decimal("0"))
+            self.assertEqual(grade.status, Grade.Status.GRADED)
+            score = Score.objects.get(registration__user=self.sub1_1.user, problem=self.sub1_1.problem)
+            self.assertEqual(score.points, Decimal("0"))
+
+    def test_bulk_save_dash_interpreted_as_zero_and_rendered_as_dash(self):
+        self.client.force_login(self.reviewer)
+        url = reverse("contest:review_list")
+        resp = self.client.post(
+            url,
+            {f"score_{self.sub1_1.pk}": "-"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("Сохранено оценок: 1", content)
+        grade = Grade.objects.get(submission=self.sub1_1)
+        self.assertEqual(grade.score, Decimal("0"))
+
+        # В таблице для организаторов отображается именно форма прочерка "–"
+        get_resp = self.client.get(url)
+        self.assertEqual(get_resp.status_code, 200)
+        html = get_resp.content.decode()
+        self.assertIn(f'name="score_{self.sub1_1.pk}"\n                           value="–"', html)
+
+    def test_review_detail_dash_interpreted_as_zero(self):
+        self.client.force_login(self.author1)
+        url = reverse("contest:review_detail", args=[self.sub1_1.pk])
+        resp = self.client.post(
+            url,
+            {"score": "-", "comment": "Не решено", "status": Grade.Status.GRADED},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        grade = Grade.objects.get(submission=self.sub1_1)
+        self.assertEqual(grade.score, Decimal("0"))
+
 
     def test_my_submissions_shows_offline_scan_when_published(self):
         from datetime import date

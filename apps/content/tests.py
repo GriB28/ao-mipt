@@ -644,3 +644,47 @@ class ImportPhotosTest(TestCase):
         photo = self._photo()
         self.assertEqual(photo.image.name, name)
         self.assertEqual(photo.image.read(), b"new, high resolution")
+
+
+class LegalPagesTest(TestCase):
+    """Страницы Положения и Регламента олимпиады со ссылками в футере."""
+
+    def test_statute_page_renders_with_header_and_footer(self):
+        response = self.client.get("/page/statute/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "content/page.html")
+        self.assertTemplateUsed(response, "base.html")
+        content = response.content.decode()
+        self.assertIn("Положение об олимпиаде", content)
+        self.assertIn("АЭРОКОСМИЧЕСКАЯ ОЛИМПИАДА МФТИ", content)
+        # Проверяем наличие ссылок в футере
+        self.assertIn('href="/page/statute/"', content)
+        self.assertIn('href="/page/regulations/"', content)
+        self.assertIn("Политика обработки персональных данных", content)
+
+    def test_regulations_page_renders_with_header_and_footer(self):
+        response = self.client.get("/page/regulations/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "content/page.html")
+        self.assertTemplateUsed(response, "base.html")
+        content = response.content.decode()
+        self.assertIn("Регламент проведения олимпиады", content)
+        self.assertIn("АЭРОКОСМИЧЕСКАЯ ОЛИМПИАДА МФТИ", content)
+        self.assertIn('href="/page/statute/"', content)
+        self.assertIn('href="/page/regulations/"', content)
+
+    def test_direct_shortcut_urls(self):
+        self.assertEqual(self.client.get("/statute/").status_code, 200)
+        self.assertEqual(self.client.get("/regulations/").status_code, 200)
+
+    def test_fallback_renders_even_if_db_page_missing(self):
+        from apps.content.models import Page
+
+        Page.objects.filter(slug__in=["statute", "regulations"]).delete()
+        response = self.client.get("/page/statute/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Положение об олимпиаде", response.content.decode())
+
+    def test_unknown_slug_returns_404(self):
+        response = self.client.get("/page/unknown-document-page-slug/")
+        self.assertEqual(response.status_code, 404)

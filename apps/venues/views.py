@@ -3,6 +3,7 @@ import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import time
+from urllib.parse import urlencode
 from django.db import OperationalError
 
 from django.conf import settings
@@ -16,7 +17,12 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.contest.models import Problem, Score
-from apps.contest.scoring import total as total_points
+from apps.contest.scoring import (
+    format_cell_score,
+    format_points,
+    is_dash,
+    total as total_points,
+)
 from apps.core.files import protected_file_response
 from apps.participation.models import Registration, VenueBooking, VenueBookingError
 from apps.seasons.models import Season, Stage
@@ -305,10 +311,8 @@ def _venue_problems(stage):
     return problems
 
 
-def _format_points(val):
-    if val is None:
-        return ""
-    return str(int(val)) if val == val.to_integral() else f"{val:.2f}".rstrip("0").rstrip(".")
+_format_points = format_points
+_format_cell_score = format_cell_score
 
 
 def _get_grading_context(request, season, stage):
@@ -379,7 +383,7 @@ def _get_grading_context(request, season, stage):
             if not is_inactive and val is not None:
                 row_total += val
 
-            val_str = _format_points(val)
+            val_str = _format_cell_score(val)
 
             cells.append({
                 "problem": problem,
@@ -438,12 +442,15 @@ def _save_all_offline_scores(request, bookings, problems):
             if raw == "":
                 Score.objects.filter(registration=booking.registration, problem=problem).delete()
                 continue
-            try:
-                points = Decimal(raw.replace(",", "."))
-            except InvalidOperation:
-                continue
-            if points < 0 or (problem.max_score is not None and points > problem.max_score):
-                continue
+            elif is_dash(raw):
+                points = Decimal("0")
+            else:
+                try:
+                    points = Decimal(raw.replace(",", "."))
+                except InvalidOperation:
+                    continue
+                if points < 0 or (problem.max_score is not None and points > problem.max_score):
+                    continue
             is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
             Score.objects.update_or_create(
                 registration=booking.registration,
@@ -582,6 +589,21 @@ def offline_save_scores(request):
         raw_points = str(data.get("points") if data.get("points") is not None else "").strip()
         if raw_points == "":
             _retry_on_db_lock(lambda: Score.objects.filter(registration=booking.registration, problem=problem).delete())
+        elif is_dash(raw_points):
+            points = Decimal("0")
+            is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
+            _retry_on_db_lock(
+                lambda: Score.objects.update_or_create(
+                    registration=booking.registration,
+                    problem=problem,
+                    defaults={
+                        "points": points,
+                        "venue": booking.venue,
+                        "entered_by": request.user,
+                        "is_skipped": is_skipped,
+                    },
+                )
+            )
         else:
             try:
                 points = Decimal(raw_points.replace(",", "."))
@@ -688,7 +710,70 @@ def delete_offline_work_scan(request, pk):
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse({"status": "ok"})
-    return redirect(f"{reverse('venues:map')}?tab=scans")
+
+    redirect_params = {"tab": "scans"}
+    from_venue = request.POST.get("from_venue") or request.GET.get("venue")
+    if from_venue:
+        redirect_params["venue"] = from_venue
+    q = request.POST.get("q") or request.GET.get("q")
+    if q:
+        redirect_params["q"] = q
+    return redirect(f"{reverse('venues:map')}?{urlencode(redirect_params)}")
+
+
+@require_POST
+@login_required
+def delete_venue_booking(request, pk):
+    """Удаление записи участника на площадку организатором."""
+    if not request.user.is_manager:
+        raise PermissionDenied("Доступно только организаторам.")
+
+    booking = get_object_or_404(
+        VenueBooking.objects.select_related(
+            "registration__user",
+            "registration__user__profile",
+            "stage",
+            "venue",
+        ),
+        pk=pk,
+    )
+    user = booking.registration.user
+    profile = getattr(user, "profile", None)
+    participant_name = (
+        (profile.full_name if profile and profile.full_name else None)
+        or user.get_full_name()
+        or user.email
+    )
+    venue_title = booking.venue.short_title or booking.venue.title
+
+    if booking.work_scan:
+        booking.work_scan.delete(save=False)
+
+    def _do_delete():
+        Score.objects.filter(
+            registration=booking.registration,
+            problem__stage=booking.stage,
+        ).delete()
+        booking.delete()
+
+    _retry_on_db_lock(_do_delete)
+
+    messages.success(
+        request,
+        f"Запись участника {participant_name} на площадку «{venue_title}» удалена.",
+    )
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse({"status": "ok"})
+
+    redirect_params = {"tab": "scans"}
+    from_venue = request.POST.get("from_venue") or request.GET.get("venue")
+    if from_venue:
+        redirect_params["venue"] = from_venue
+    q = request.POST.get("q") or request.GET.get("q")
+    if q:
+        redirect_params["q"] = q
+    return redirect(f"{reverse('venues:map')}?{urlencode(redirect_params)}")
 
 
 @login_required
@@ -738,19 +823,20 @@ def venue_participants(request, pk):
     }
     rows = []
     for booking in bookings:
-        cells = [
-            {
+        cells = []
+        for problem in problems:
+            score_pts = (existing.get((booking.registration_id, problem.pk)) or Score()).points
+            cells.append({
                 "problem": problem,
                 "name": f"score-{booking.registration_id}-{problem.pk}",
-                "value": (existing.get((booking.registration_id, problem.pk)) or Score()).points,
-            }
-            for problem in problems
-        ]
+                "points": score_pts,
+                "value": _format_cell_score(score_pts),
+            })
         rows.append(
             {
                 "booking": booking,
                 "cells": cells,
-                "total": total_points((c["problem"], c["value"]) for c in cells),
+                "total": total_points((c["problem"], c["points"]) for c in cells),
             }
         )
 
@@ -777,20 +863,23 @@ def _save_scores(request, venue, bookings, problems):
             if raw == "":
                 Score.objects.filter(registration_id=registration_id, problem=problem).delete()
                 continue
-            try:
-                points = Decimal(raw.replace(",", "."))
-            except InvalidOperation:
-                messages.error(request, f"«{raw}» — это не число, балл не сохранён.")
-                continue
-            if points < 0:
-                messages.error(request, "Балл не может быть отрицательным.")
-                continue
-            if problem.max_score is not None and points > problem.max_score:
-                messages.error(
-                    request,
-                    f"Балл {points} за задачу {problem.number} превышает максимум ({_format_points(problem.max_score)})."
-                )
-                continue
+            elif is_dash(raw):
+                points = Decimal("0")
+            else:
+                try:
+                    points = Decimal(raw.replace(",", "."))
+                except InvalidOperation:
+                    messages.error(request, f"«{raw}» — это не число, балл не сохранён.")
+                    continue
+                if points < 0:
+                    messages.error(request, "Балл не может быть отрицательным.")
+                    continue
+                if problem.max_score is not None and points > problem.max_score:
+                    messages.error(
+                        request,
+                        f"Балл {points} за задачу {problem.number} превышает максимум ({_format_points(problem.max_score)})."
+                    )
+                    continue
             Score.objects.update_or_create(
                 registration_id=registration_id,
                 problem=problem,

@@ -11,6 +11,7 @@ urlpatterns = [
     path("booking/<int:pk>/upload-scan/", views.upload_offline_work_scan, name="upload_work_scan_item"),
     path("upload-scan/", views.upload_offline_work_scan, name="upload_work_scan"),
     path("booking/<int:pk>/delete-scan/", views.delete_offline_work_scan, name="delete_work_scan"),
+    path("booking/<int:pk>/delete/", views.delete_venue_booking, name="delete_booking"),
     path("save-scores/", views.offline_save_scores, name="save_scores"),
     path("export-grading/", views.offline_grading_export, name="export_grading"),
     path("venue/<int:pk>/", views.venue_detail, name="detail"),
