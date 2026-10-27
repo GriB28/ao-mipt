@@ -658,6 +658,9 @@ class LegalPagesTest(TestCase):
         self.assertIn("Положение об олимпиаде", content)
         self.assertIn("АЭРОКОСМИЧЕСКАЯ ОЛИМПИАДА МФТИ", content)
         # Проверяем наличие ссылок в футере
+        self.assertNotIn("Приложение № 1", content.split("<details>")[0])
+        self.assertNotIn("к приказу МФТИ", content.split("<details>")[0])
+        self.assertNotIn("от «___» ________ 2026 г. № ________", content)
         self.assertIn('href="/page/statute/"', content)
         self.assertIn('href="/page/regulations/"', content)
         self.assertIn("Политика обработки персональных данных", content)
@@ -670,6 +673,9 @@ class LegalPagesTest(TestCase):
         content = response.content.decode()
         self.assertIn("Регламент проведения олимпиады", content)
         self.assertIn("АЭРОКОСМИЧЕСКАЯ ОЛИМПИАДА МФТИ", content)
+        self.assertNotIn("Приложение № 2", content)
+        self.assertNotIn("к приказу МФТИ", content)
+        self.assertNotIn("от «___» ________ 2026 г. № ________", content)
         self.assertIn('href="/page/statute/"', content)
         self.assertIn('href="/page/regulations/"', content)
 
