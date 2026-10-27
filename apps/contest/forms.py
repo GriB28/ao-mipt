@@ -1,9 +1,20 @@
+from decimal import Decimal
+
 from django import forms
 from django.conf import settings
 
 from apps.core.sanitize import clean_html
 
 from .models import Grade, Problem, Submission
+from .scoring import is_dash
+
+
+class DashScoreField(forms.DecimalField):
+    def to_python(self, value):
+        if is_dash(value):
+            return Decimal("0")
+        return super().to_python(value)
+
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -53,6 +64,13 @@ class GradeForm(forms.ModelForm):
     Балл необязателен: бывает нужно отложить решение в «Проверяется»
     и вернуться к нему позже, не выставляя пока ничего.
     """
+
+    score = DashScoreField(
+        label="Балл",
+        required=False,
+        max_digits=6,
+        decimal_places=2,
+    )
 
     class Meta:
         model = Grade

@@ -22,7 +22,12 @@ from apps.seasons.models import Season, Stage
 
 from .forms import GradeForm, ProblemForm, SubmissionForm
 from .models import Grade, Problem, Score, Submission, SubmissionFile
-from .scoring import total as scoring_total
+from .scoring import (
+    format_cell_score,
+    format_points,
+    is_dash,
+    total as scoring_total,
+)
 
 
 def _online_stage(season):
@@ -315,10 +320,8 @@ def _require_reviewer(user):
         raise PermissionDenied("Проверять решения могут только организаторы.")
 
 
-def _format_points(val):
-    if val is None:
-        return ""
-    return str(int(val)) if val == val.to_integral() else f"{val:.2f}".rstrip("0").rstrip(".")
+_format_points = format_points
+_format_cell_score = format_cell_score
 
 
 @login_required
@@ -379,6 +382,27 @@ def review_list(request):
                             registration__user=sub.user, problem=sub.problem
                         ).delete()
                         saved += 1
+                elif is_dash(raw):
+                    points = Decimal("0")
+                    grade, _ = Grade.objects.get_or_create(submission=sub)
+                    grade.score = points
+                    grade.reviewer = request.user
+                    grade.status = Grade.Status.GRADED
+                    grade.save()
+
+                    reg, _ = Registration.objects.get_or_create(
+                        user=sub.user, season=sub.problem.stage.season
+                    )
+                    Score.objects.update_or_create(
+                        registration=reg,
+                        problem=sub.problem,
+                        defaults={
+                            "points": points,
+                            "entered_by": request.user,
+                            "is_skipped": False,
+                        },
+                    )
+                    saved += 1
                 else:
                     try:
                         points = Decimal(raw.replace(",", "."))
@@ -461,7 +485,7 @@ def review_list(request):
             if score is not None:
                 row_total += score
 
-            score_str = _format_points(score)
+            score_str = _format_cell_score(score)
 
             cells.append({
                 "problem": p,
@@ -530,6 +554,27 @@ def review_save_grade(request):
             grade.status = Grade.Status.NEW
             grade.save()
         Score.objects.filter(registration__user=sub.user, problem=sub.problem).delete()
+    elif is_dash(raw_score):
+        points = Decimal("0")
+        if not grade:
+            grade = Grade(submission=sub)
+        grade.score = points
+        grade.reviewer = request.user
+        grade.status = Grade.Status.GRADED
+        grade.save()
+
+        reg, _ = Registration.objects.get_or_create(
+            user=sub.user, season=sub.problem.stage.season
+        )
+        Score.objects.update_or_create(
+            registration=reg,
+            problem=sub.problem,
+            defaults={
+                "points": points,
+                "entered_by": request.user,
+                "is_skipped": False,
+            },
+        )
     else:
         try:
             points = Decimal(raw_score.replace(",", "."))
