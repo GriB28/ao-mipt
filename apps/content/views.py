@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.http import Http404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -189,8 +190,17 @@ def page(request, slug):
     # (письма, закладки) на /page/privacy/ не должны ломаться.
     if slug == "privacy":
         return redirect(settings.PRIVACY_POLICY_URL)
-    return render(request, "content/page.html",
-                  {"page": get_object_or_404(Page.objects.published(), slug=slug)})
+    page_obj = Page.objects.published().filter(slug=slug).first()
+    if page_obj is None:
+        if slug == "statute":
+            from apps.core.legal_templates import STATUTE_BODY, STATUTE_TITLE
+            page_obj = Page(slug="statute", title=STATUTE_TITLE, body=STATUTE_BODY)
+        elif slug == "regulations":
+            from apps.core.legal_templates import REGULATIONS_BODY, REGULATIONS_TITLE
+            page_obj = Page(slug="regulations", title=REGULATIONS_TITLE, body=REGULATIONS_BODY)
+        else:
+            raise Http404("Страница не найдена")
+    return render(request, "content/page.html", {"page": page_obj})
 
 
 # --- Лекции: добавляет организатор, одобряет администратор ------------------

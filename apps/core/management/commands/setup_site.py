@@ -17,7 +17,7 @@ from django.core.management.base import BaseCommand
 
 from apps.content.models import News, Page, Playlist
 from apps.contest.models import Problem
-from apps.core.legal_templates import CONSENT_PAGES
+from apps.core.legal_templates import CONSENT_PAGES, LEGAL_PAGES
 from apps.seasons.models import Season, Stage
 from apps.seasons.schedule import PRACTICE_STAGE, SEASON_YEAR, STAGES
 
@@ -92,6 +92,9 @@ class Command(BaseCommand):
         pages = [
             ("about", "Об олимпиаде", True, 10,
              "<p>Аэрокосмическая олимпиада МФТИ для школьников 7–11 классов.</p>"),
+        ] + [
+            (slug, title, False, order, body)
+            for order, (slug, title, body) in enumerate(LEGAL_PAGES, start=20)
         ]
         for slug, title, in_menu, order, body in pages:
             Page.objects.get_or_create(

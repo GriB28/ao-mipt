@@ -10,5 +10,8 @@ def site_settings(request):
         "VK_URL": settings.VK_URL,
         "MAX_URL": settings.MAX_URL,
         "PRIVACY_POLICY_URL": settings.PRIVACY_POLICY_URL,
+        "OLYMPIAD_ORDER_URL": settings.OLYMPIAD_ORDER_URL,
+        "OLYMPIAD_STATUTE_URL": settings.OLYMPIAD_STATUTE_URL,
+        "OLYMPIAD_REGULATIONS_URL": settings.OLYMPIAD_REGULATIONS_URL,
         "YANDEX_MAPS_API_KEY": settings.YANDEX_MAPS_API_KEY,
     }

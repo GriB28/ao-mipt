@@ -16,5 +16,7 @@ urlpatterns = [
     path("lectures/<int:pk>/edit/", views.lecture_edit, name="lecture_edit"),
     path("lectures/<slug:season_slug>/<slug:slug>/", views.lecture_detail, name="lecture_detail"),
     path("problems/", views.problem_archive, name="problem_archive"),
+    path("statute/", views.page, {"slug": "statute"}, name="statute"),
+    path("regulations/", views.page, {"slug": "regulations"}, name="regulations"),
     path("page/<slug:slug>/", views.page, name="page"),
 ]
