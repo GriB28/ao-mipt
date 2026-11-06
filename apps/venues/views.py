@@ -406,6 +406,7 @@ def _get_grading_context(request, season, stage):
             "total": total_str,
             "work_scan_url": booking.get_scan_url() if booking.work_scan else "",
             "has_scan": bool(booking.work_scan),
+            "comment": booking.comment,
         })
 
     return {
@@ -434,6 +435,11 @@ def _save_all_offline_scores(request, bookings, problems):
             if v in (1, 2):
                 booking.variant = v
                 booking.save(update_fields=["variant"])
+
+        raw_comment = request.POST.get(f"comment_{booking_id}")
+        if raw_comment is not None:
+            booking.comment = raw_comment
+            booking.save(update_fields=["comment"])
 
         for problem in problems:
             key = f"score_{booking_id}_{problem.pk}"
@@ -588,6 +594,11 @@ def offline_save_scores(request):
                     s.is_skipped = should_skip
                     _retry_on_db_lock(lambda s=s: s.save(update_fields=["is_skipped"]))
 
+    if "comment" in data:
+        raw_comment = str(data.get("comment") if data.get("comment") is not None else "")
+        booking.comment = raw_comment
+        _retry_on_db_lock(lambda: booking.save(update_fields=["comment"]))
+
     problem_id = data.get("problem_id")
     if problem_id:
         problem = get_object_or_404(Problem, pk=problem_id)
@@ -653,6 +664,7 @@ def offline_save_scores(request):
         "status": "ok",
         "total": total_str,
         "variant": active_variant,
+        "comment": booking.comment,
     })
 
 
