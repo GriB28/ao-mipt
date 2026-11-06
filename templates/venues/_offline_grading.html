@@ -141,6 +141,38 @@
 </form>
 
 <style>
+#offline-save-indicator {
+  position: fixed;
+  top: 85px;
+  right: 20px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.88);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(13, 32, 80, 0.12);
+  box-shadow: 0 4px 16px rgba(13, 32, 80, 0.12), 0 1px 3px rgba(0, 0, 0, 0.05);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-success-500, #1c7a49);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.25s ease, transform 0.25s ease, top 0.1s ease-out, visibility 0.25s ease;
+  max-width: calc(100vw - 40px);
+}
+@media (max-width: 600px) {
+  #offline-save-indicator {
+    right: 12px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm, 6px);
+  }
+}
 .score-input.score-input-error,
 .offline-comment-input.comment-input-error {
   border-color: var(--color-danger-500, #b3261e) !important;
@@ -197,15 +229,39 @@
   }
 
   let indicatorTimer = null;
+  let hideVisibilityTimer = null;
+
+  function updateIndicatorPosition() {
+    if (!indicator) return;
+    const header = document.querySelector(".site-header");
+    const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+    const topPos = Math.max(16, Math.round(headerBottom + 12));
+    indicator.style.top = topPos + "px";
+  }
+
+  window.addEventListener("scroll", updateIndicatorPosition, { passive: true });
+  window.addEventListener("resize", updateIndicatorPosition, { passive: true });
+  updateIndicatorPosition();
+
   function showIndicator(msg, isError) {
     if (!indicator) return;
     if (indicatorTimer) clearTimeout(indicatorTimer);
+    if (hideVisibilityTimer) clearTimeout(hideVisibilityTimer);
+    updateIndicatorPosition();
     indicator.textContent = msg;
     indicator.style.color = isError ? "var(--color-danger-500, #b3261e)" : "var(--color-success-500, #1c7a49)";
-    indicator.style.fontWeight = isError ? "600" : "normal";
+    indicator.style.borderColor = isError ? "rgba(179, 38, 30, 0.4)" : "rgba(28, 122, 73, 0.3)";
+    indicator.style.visibility = "visible";
     indicator.style.opacity = "1";
+    indicator.style.transform = "translateY(0)";
     indicatorTimer = setTimeout(function() {
       indicator.style.opacity = "0";
+      indicator.style.transform = "translateY(-6px)";
+      hideVisibilityTimer = setTimeout(function() {
+        if (indicator.style.opacity === "0") {
+          indicator.style.visibility = "hidden";
+        }
+      }, 300);
     }, isError ? 4000 : 2500);
   }
 
