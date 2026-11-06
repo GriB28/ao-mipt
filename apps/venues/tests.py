@@ -672,6 +672,9 @@ class OfflineGradingAndScansTests(TestCase):
         self.assertContains(resp, 'onsubmit="return confirm(')
 
     def test_export_grading_excel(self):
+        self.booking1.comment = "Комментарий к работе участника 1"
+        self.booking1.save()
+
         self.client.force_login(self.organizer)
         url = reverse("venues:export_grading")
         resp = self.client.get(url)
@@ -688,15 +691,91 @@ class OfflineGradingAndScansTests(TestCase):
 
         ws_all = wb["Общая ведомость"]
         self.assertEqual(ws_all.cell(row=1, column=1).value, "ФИО участника")
+        self.assertEqual(ws_all.cell(row=1, column=ws_all.max_column).value, "Комментарий")
         names_all = [ws_all.cell(row=r, column=1).value for r in range(2, ws_all.max_row + 1)]
         self.assertIn("part1@b.ru", names_all)
         self.assertIn("part2@b.ru", names_all)
 
+        # Проверяем, что комментарий попал в строку участника
+        for r in range(2, ws_all.max_row + 1):
+            if ws_all.cell(row=r, column=1).value == "part1@b.ru":
+                self.assertEqual(ws_all.cell(row=r, column=ws_all.max_column).value, "Комментарий к работе участника 1")
+
         ws_city = wb["Долгопрудный"]
         self.assertEqual(ws_city.cell(row=1, column=1).value, "ФИО участника")
+        self.assertEqual(ws_city.cell(row=1, column=ws_city.max_column).value, "Комментарий")
         names_city = [ws_city.cell(row=r, column=1).value for r in range(2, ws_city.max_row + 1)]
         self.assertIn("part1@b.ru", names_city)
         self.assertIn("part2@b.ru", names_city)
+
+    def test_offline_grading_ajax_comment_and_unlimited_length(self):
+        self.venue.managers.add(self.organizer)
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+        map_url = f"{reverse('venues:map')}?tab=grading"
+
+        # 1. Сохранение комментария через AJAX
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "comment": "Работа проверена. Есть замечания по задаче 1."},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["comment"], "Работа проверена. Есть замечания по задаче 1.")
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.comment, "Работа проверена. Есть замечания по задаче 1.")
+
+        # 2. Неограниченное количество символов (большой текст со спецсимволами и переводами строк)
+        huge_comment = "Очень длинный комментарий проверяющего.\n" * 500 + "Текст с символами: <>&'\"—–№123\n" * 200
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "comment": huge_comment},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.comment, huge_comment)
+
+        # 3. Очистка комментария (пустая строка)
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "comment": ""},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.comment, "")
+
+        # 4. Отображение поля комментариев в таблице ведомости (с правого края)
+        self.booking1.comment = "Комментарий в ячейке таблицы"
+        self.booking1.save()
+        map_resp = self.client.get(map_url)
+        self.assertEqual(map_resp.status_code, 200)
+        self.assertContains(map_resp, "<th>Комментарий</th>")
+        self.assertContains(map_resp, f'name="comment_{self.booking1.pk}"')
+        self.assertContains(map_resp, "offline-comment-input")
+        self.assertContains(map_resp, "Комментарий в ячейке таблицы")
+
+        # 5. Сохранение через POST форму (fallback без JS)
+        post_resp = self.client.post(
+            map_url,
+            {f"comment_{self.booking1.pk}": "Обновлено через форму без JS"},
+            follow=True,
+        )
+        self.assertEqual(post_resp.status_code, 200)
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.comment, "Обновлено через форму без JS")
+
+        # 6. Обычный участник не имеет доступа к AJAX сохранению
+        self.client.force_login(self.participant1)
+        forbidden_resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "comment": "Хакерская попытка"},
+            content_type="application/json",
+        )
+        self.assertEqual(forbidden_resp.status_code, 403)
 
     def test_participant_views_results_and_scan_on_offline_page(self):
         # 1. До публикации результатов участник видит только статус записи, но не баллы и не результаты
