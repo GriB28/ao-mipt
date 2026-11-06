@@ -6,14 +6,23 @@ from django.conf import settings
 from apps.core.sanitize import clean_html
 
 from .models import Grade, Problem, Submission
-from .scoring import is_dash
+from .scoring import CANONICAL_DASH, format_points, is_dash
 
 
 class DashScoreField(forms.DecimalField):
+    widget = forms.TextInput
+
     def to_python(self, value):
         if is_dash(value):
             return Decimal("0")
         return super().to_python(value)
+
+    def prepare_value(self, value):
+        if is_dash(value):
+            return CANONICAL_DASH
+        if isinstance(value, Decimal):
+            return format_points(value)
+        return super().prepare_value(value)
 
 
 
@@ -85,6 +94,8 @@ class GradeForm(forms.ModelForm):
         self.max_score = max_score
         if max_score is not None:
             self.fields["score"].help_text = f"Максимум за задачу: {_plain(max_score)}"
+        if self.instance and self.instance.pk and getattr(self.instance, "is_dash", False):
+            self.initial["score"] = CANONICAL_DASH
 
     def clean_score(self):
         score = self.cleaned_data.get("score")
@@ -97,6 +108,29 @@ class GradeForm(forms.ModelForm):
         if self.max_score is not None and score > self.max_score:
             raise forms.ValidationError(f"Больше максимума за задачу ({_plain(self.max_score)}).")
         return score
+
+    def clean(self):
+        cleaned_data = super().clean()
+        raw_score = (
+            self.data.get(self.add_prefix("score"))
+            if hasattr(self, "add_prefix")
+            else self.data.get("score")
+        )
+        if raw_score is None:
+            raw_score = self.data.get("score")
+        if is_dash(raw_score):
+            self.cleaned_data["is_dash"] = True
+        else:
+            self.cleaned_data["is_dash"] = False
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if "is_dash" in self.cleaned_data:
+            instance.is_dash = self.cleaned_data["is_dash"]
+        if commit:
+            instance.save()
+        return instance
 
 
 class ProblemForm(forms.ModelForm):

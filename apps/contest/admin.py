@@ -86,8 +86,8 @@ class SubmissionAdmin(admin.ModelAdmin):
 
 @admin.register(Grade)
 class GradeAdmin(admin.ModelAdmin):
-    list_display = ("submission", "score", "status", "reviewer")
-    list_filter = ("status", "reviewer", "submission__problem")
+    list_display = ("submission", "score", "is_dash", "status", "reviewer")
+    list_filter = ("status", "is_dash", "reviewer", "submission__problem")
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "reviewer":
@@ -100,8 +100,8 @@ class GradeAdmin(admin.ModelAdmin):
 class ScoreAdmin(admin.ModelAdmin):
     """Баллы, внесённые с очных площадок и по итогам проверки."""
 
-    list_display = ("registration", "problem", "points", "is_skipped", "venue", "entered_by")
-    list_filter = ("problem__stage", "is_skipped", "venue", "problem")
+    list_display = ("registration", "problem", "points", "is_dash", "is_skipped", "venue", "entered_by")
+    list_filter = ("problem__stage", "is_dash", "is_skipped", "venue", "problem")
     search_fields = ("registration__user__email", "registration__user__profile__last_name")
     list_select_related = ("registration__user", "problem", "venue")
 
