@@ -61,6 +61,7 @@
           {% endfor %}
           <th>Сумма</th>
           <th>Скан</th>
+          <th>Комментарий</th>
         </tr>
       </thead>
       <tbody>
@@ -114,10 +115,17 @@
               <span class="muted">—</span>
             {% endif %}
           </td>
+          <td class="cell-comment">
+            <textarea name="comment_{{ row.booking.pk }}"
+                      class="comment-input offline-comment-input"
+                      data-booking-id="{{ row.booking.pk }}"
+                      placeholder="Комментарий..."
+                      rows="1">{{ row.booking.comment }}</textarea>
+          </td>
         </tr>
       {% empty %}
         <tr>
-          <td colspan="{{ problems|length|add:7 }}" class="muted" style="text-align: center; padding: var(--space-6);">
+          <td colspan="{{ problems|length|add:8 }}" class="muted" style="text-align: center; padding: var(--space-6);">
             Участники не найдены.
           </td>
         </tr>
@@ -133,11 +141,39 @@
 </form>
 
 <style>
-.score-input.score-input-error {
+.score-input.score-input-error,
+.offline-comment-input.comment-input-error {
   border-color: var(--color-danger-500, #b3261e) !important;
   background-color: var(--color-danger-50, #fdf2f2) !important;
   color: var(--color-danger-500, #b3261e) !important;
   outline: 2px solid var(--color-danger-500, #b3261e) !important;
+}
+.score-table td.cell-comment {
+  white-space: normal;
+  vertical-align: middle;
+  min-width: 220px;
+  max-width: 340px;
+}
+.offline-comment-input {
+  width: 100%;
+  min-width: 200px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  padding: 4px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 32px;
+  line-height: 1.35;
+  display: block;
+}
+.offline-comment-input:focus {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 1px;
+  border-color: var(--color-brand-500);
 }
 </style>
 
@@ -362,6 +398,49 @@
 
     inp.addEventListener("change", handleScoreSave);
     inp.addEventListener("blur", handleScoreSave);
+  });
+
+  // Ввод и автосохранение комментариев
+  document.querySelectorAll(".offline-comment-input").forEach(function(textarea) {
+    let prevValue = textarea.value;
+    let debounceTimer = null;
+
+    textarea.addEventListener("focus", function() {
+      textarea.classList.remove("comment-input-error");
+    });
+
+    function saveComment() {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      const currentValue = textarea.value;
+      if (currentValue === prevValue) return;
+
+      const oldValue = prevValue;
+      prevValue = currentValue;
+      textarea.classList.remove("comment-input-error");
+
+      const bookingId = textarea.dataset.bookingId;
+      sendAjax({
+        booking_id: bookingId,
+        comment: currentValue
+      }, function(data) {
+        // Успешно сохранено
+      }, function(errorMsg) {
+        prevValue = oldValue;
+        textarea.classList.add("comment-input-error");
+      });
+    }
+
+    textarea.addEventListener("input", function() {
+      textarea.classList.remove("comment-input-error");
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(saveComment, 800);
+    });
+
+    textarea.addEventListener("change", saveComment);
+    textarea.addEventListener("blur", saveComment);
   });
 })();
 </script>

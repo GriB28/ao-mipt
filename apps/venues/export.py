@@ -109,7 +109,7 @@ def _populate_grading_worksheet(ws, sheet_title, rows, problems, request=None):
     headers = ["ФИО участника", "Точка проведения", "Город", "Дата проведения", "Комплект"]
     for p in problems:
         headers.append(f"Задача {p.number}")
-    headers.extend(["Сумма", "Скан работы"])
+    headers.extend(["Сумма", "Скан работы", "Комментарий"])
 
     ws.append(headers)
 
@@ -174,6 +174,8 @@ def _populate_grading_worksheet(ws, sheet_title, rows, problems, request=None):
         else:
             row_data.append("Нет скана")
 
+        row_data.append(r.get("comment") or "")
+
         ws.append(row_data)
 
         ws.cell(row=row_idx, column=1).alignment = Alignment(horizontal="left", vertical="center")
@@ -205,6 +207,10 @@ def _populate_grading_worksheet(ws, sheet_title, rows, problems, request=None):
             scan_cell.hyperlink = full_scan_url
             scan_cell.font = link_font
 
+        comment_col = scan_col + 1
+        comment_cell = ws.cell(row=row_idx, column=comment_col)
+        comment_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
     for col_idx in range(1, len(headers) + 1):
         col_letter = get_column_letter(col_idx)
         max_len = max(len(str(ws.cell(row=r, column=col_idx).value or "")) for r in range(1, ws.max_row + 1))
@@ -217,8 +223,10 @@ def _populate_grading_worksheet(ws, sheet_title, rows, problems, request=None):
             min_w = 16
         elif col_idx == 4:
             min_w = 16
-        elif col_idx == len(headers):
+        elif col_idx == len(headers) - 1:
             min_w = 16
+        elif col_idx == len(headers):
+            min_w = 25
         ws.column_dimensions[col_letter].width = min(max(max_len + 3, min_w), 50)
 
     ws.freeze_panes = "B2"
