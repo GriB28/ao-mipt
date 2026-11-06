@@ -318,6 +318,8 @@ class Grade(TimeStampedModel):
     reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
                                  related_name="grades", verbose_name="проверяющий")
     score = models.DecimalField("балл", max_digits=6, decimal_places=2, null=True, blank=True)
+    is_dash = models.BooleanField("прочерк", default=False,
+                                  help_text="Вместо балла выставлен прочерк (считается как 0)")
     comment = models.TextField("комментарий проверяющего", blank=True,
                                help_text="Виден участнику после публикации результатов")
     status = models.CharField("статус", max_length=10, choices=Status.choices, default=Status.NEW)
@@ -327,7 +329,8 @@ class Grade(TimeStampedModel):
         verbose_name_plural = "оценки"
 
     def __str__(self):
-        return f"{self.submission} — {self.score if self.score is not None else '—'}"
+        score_val = "–" if self.is_dash else (self.score if self.score is not None else "—")
+        return f"{self.submission} — {score_val}"
 
 
 class Score(TimeStampedModel):
@@ -352,6 +355,8 @@ class Score(TimeStampedModel):
                                 related_name="scores", verbose_name="задача")
     points = models.DecimalField("балл", max_digits=6, decimal_places=2, null=True, blank=True,
                                  help_text="Пусто — задача не проверена или не сдавалась")
+    is_dash = models.BooleanField("прочерк", default=False,
+                                  help_text="Вместо балла выставлен прочерк (считается как 0)")
     venue = models.ForeignKey(
         "venues.Venue", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="scores", verbose_name="площадка",
@@ -376,4 +381,5 @@ class Score(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.registration.user} — задача {self.problem.number}: {self.points if self.points is not None else '—'}"
+        pts_val = "–" if self.is_dash else (self.points if self.points is not None else "—")
+        return f"{self.registration.user} — задача {self.problem.number}: {pts_val}"
