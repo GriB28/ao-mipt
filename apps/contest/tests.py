@@ -839,9 +839,9 @@ class OnlineReviewMatrixTests(TestCase):
 
     def setUp(self):
         from decimal import Decimal
+
         from django.core.files.uploadedfile import SimpleUploadedFile
-        from apps.participation.models import Registration, VenueBooking
-        from apps.venues.models import Venue
+
 
         now = timezone.now()
         self.season = Season.objects.create(year=2099, slug="s2099", title="Сезон 2099", is_active=True, is_published=True)
@@ -1000,9 +1000,11 @@ class OnlineReviewMatrixTests(TestCase):
             self.assertEqual(data["status"], "ok")
             grade = Grade.objects.get(submission=self.sub1_1)
             self.assertEqual(grade.score, Decimal("0"))
+            self.assertTrue(grade.is_dash)
             self.assertEqual(grade.status, Grade.Status.GRADED)
             score = Score.objects.get(registration__user=self.sub1_1.user, problem=self.sub1_1.problem)
             self.assertEqual(score.points, Decimal("0"))
+            self.assertTrue(score.is_dash)
 
     def test_bulk_save_dash_interpreted_as_zero_and_rendered_as_dash(self):
         self.client.force_login(self.reviewer)
@@ -1017,6 +1019,7 @@ class OnlineReviewMatrixTests(TestCase):
         self.assertIn("Сохранено оценок: 1", content)
         grade = Grade.objects.get(submission=self.sub1_1)
         self.assertEqual(grade.score, Decimal("0"))
+        self.assertTrue(grade.is_dash)
 
         # В таблице для организаторов отображается именно форма прочерка "–"
         get_resp = self.client.get(url)
@@ -1035,11 +1038,128 @@ class OnlineReviewMatrixTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         grade = Grade.objects.get(submission=self.sub1_1)
         self.assertEqual(grade.score, Decimal("0"))
+        self.assertTrue(grade.is_dash)
+        score = Score.objects.get(registration__user=self.sub1_1.user, problem=self.sub1_1.problem)
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertTrue(score.is_dash)
+
+    def test_zero_and_dash_do_not_replace_each_other_in_review(self):
+        self.client.force_login(self.reviewer)
+        save_url = reverse("contest:review_save_grade")
+        list_url = reverse("contest:review_list")
+
+        # 1. Ставим ноль ("0") через AJAX
+        resp = self.client.post(
+            save_url,
+            {"submission_id": self.sub1_1.pk, "score": "0"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        grade = Grade.objects.get(submission=self.sub1_1)
+        self.assertEqual(grade.score, Decimal("0"))
+        self.assertFalse(grade.is_dash)
+        score = Score.objects.get(registration__user=self.sub1_1.user, problem=self.sub1_1.problem)
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertFalse(score.is_dash)
+
+        # При перезаходе на сайт (GET) ноль остаётся нулём, а не прочерком
+        resp = self.client.get(list_url)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn(f'name="score_{self.sub1_1.pk}"\n                           value="0"', html)
+        self.assertNotIn(f'name="score_{self.sub1_1.pk}"\n                           value="–"', html)
+
+        # 2. Ставим прочерк ("-") через AJAX
+        resp = self.client.post(
+            save_url,
+            {"submission_id": self.sub1_1.pk, "score": "-"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        grade.refresh_from_db()
+        self.assertEqual(grade.score, Decimal("0"))
+        self.assertTrue(grade.is_dash)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertTrue(score.is_dash)
+
+        # При перезаходе на сайт (GET) прочерк остаётся прочерком, а не нулём
+        resp = self.client.get(list_url)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn(f'name="score_{self.sub1_1.pk}"\n                           value="–"', html)
+        self.assertNotIn(f'name="score_{self.sub1_1.pk}"\n                           value="0"', html)
+
+        # 3. Меняем обратно с прочерка на ноль через групповое сохранение (POST)
+        resp = self.client.post(
+            list_url,
+            {f"score_{self.sub1_1.pk}": "0"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        grade.refresh_from_db()
+        self.assertEqual(grade.score, Decimal("0"))
+        self.assertFalse(grade.is_dash)
+
+        resp = self.client.get(list_url)
+        html = resp.content.decode()
+        self.assertIn(f'name="score_{self.sub1_1.pk}"\n                           value="0"', html)
+
+        # 4. Проверяем форму страницы одного решения (review_detail)
+        detail_url = reverse("contest:review_detail", args=[self.sub1_1.pk])
+        resp = self.client.get(detail_url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'value="0"')
+
+        # Сохраняем прочерк через review_detail
+        resp = self.client.post(
+            detail_url,
+            {"score": "–", "comment": "", "status": Grade.Status.GRADED},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        grade.refresh_from_db()
+        self.assertEqual(grade.score, Decimal("0"))
+        self.assertTrue(grade.is_dash)
+
+        resp = self.client.get(detail_url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'value="–"')
+
+    def test_scoring_format_cell_score_zero_vs_dash(self):
+        from apps.contest.scoring import CANONICAL_DASH, format_cell_score, is_dash
+
+        self.assertFalse(is_dash(0))
+        self.assertFalse(is_dash("0"))
+        self.assertFalse(is_dash(Decimal("0")))
+        self.assertTrue(is_dash("-"))
+        self.assertTrue(is_dash("–"))
+        self.assertTrue(is_dash("—"))
+
+        # Ноль должен оставаться нулём
+        self.assertEqual(format_cell_score(0), "0")
+        self.assertEqual(format_cell_score(Decimal("0")), "0")
+        self.assertEqual(format_cell_score(0, is_dash=False), "0")
+        self.assertEqual(format_cell_score(Decimal("0"), is_dash=False), "0")
+
+        # Прочерк должен быть каноническим прочерком
+        self.assertEqual(format_cell_score(0, is_dash=True), CANONICAL_DASH)
+        self.assertEqual(format_cell_score(Decimal("0"), is_dash=True), CANONICAL_DASH)
+        self.assertEqual(format_cell_score("-"), CANONICAL_DASH)
+        self.assertEqual(format_cell_score("–"), CANONICAL_DASH)
+
+        # Пустые значения
+        self.assertEqual(format_cell_score(None), "")
+        self.assertEqual(format_cell_score(""), "")
+
+        # Другие числа
+        self.assertEqual(format_cell_score(Decimal("7.50")), "7.5")
+        self.assertEqual(format_cell_score(10), "10")
 
 
     def test_my_submissions_shows_offline_scan_when_published(self):
-        from datetime import date
         from django.core.files.uploadedfile import SimpleUploadedFile
+
         from apps.contest.models import Score
         from apps.participation.models import Registration, VenueBooking
         from apps.venues.models import Venue
