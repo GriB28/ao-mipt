@@ -234,7 +234,9 @@ class OfflineGradingAndScansTests(TestCase):
 
     def setUp(self):
         from decimal import Decimal
+
         from django.core.files.uploadedfile import SimpleUploadedFile
+
         from apps.contest.models import Problem, Score
 
         self.Decimal = Decimal
@@ -442,6 +444,7 @@ class OfflineGradingAndScansTests(TestCase):
             self.assertEqual(data["status"], "ok")
             score = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
             self.assertEqual(score.points, Decimal("0"))
+            self.assertTrue(score.is_dash)
 
         # 2. Не число (кроме прочерка) отклоняется
         resp = self.client.post(
@@ -468,10 +471,101 @@ class OfflineGradingAndScansTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         score.refresh_from_db()
         self.assertEqual(score.points, Decimal("0"))
+        self.assertTrue(score.is_dash)
 
         get_resp = self.client.get(part_url)
         self.assertEqual(get_resp.status_code, 200)
         html_part = get_resp.content.decode()
+        self.assertIn(f'name="score-{self.booking1.registration_id}-{self.p1_1.pk}"\n                         value="–"', html_part)
+
+    def test_offline_zero_and_dash_do_not_replace_each_other(self):
+        self.venue.managers.add(self.organizer)
+        self.client.force_login(self.organizer)
+        save_url = reverse("venues:save_scores")
+        map_url = f"{reverse('venues:map')}?tab=grading"
+
+        # 1. Сохраняем ноль через AJAX
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "0"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        score = self.Score.objects.get(registration=self.booking1.registration, problem=self.p1_1)
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertFalse(score.is_dash)
+
+        # При перезаходе на сайт ноль остаётся нулём, а не прочерком
+        resp = self.client.get(map_url)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn(f'name="score_{self.booking1.pk}_{self.p1_1.pk}"\n                     value="0"', html)
+        self.assertNotIn(f'name="score_{self.booking1.pk}_{self.p1_1.pk}"\n                     value="–"', html)
+
+        # 2. Сохраняем прочерк через AJAX
+        resp = self.client.post(
+            save_url,
+            {"booking_id": self.booking1.pk, "problem_id": self.p1_1.pk, "points": "-"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertTrue(score.is_dash)
+
+        # При перезаходе на сайт прочерк остаётся прочерком, а не нулём
+        resp = self.client.get(map_url)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn(f'name="score_{self.booking1.pk}_{self.p1_1.pk}"\n                     value="–"', html)
+        self.assertNotIn(f'name="score_{self.booking1.pk}_{self.p1_1.pk}"\n                     value="0"', html)
+
+        # 3. Меняем обратно на ноль через групповое сохранение (POST)
+        resp = self.client.post(
+            map_url,
+            {f"score_{self.booking1.pk}_{self.p1_1.pk}": "0"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertFalse(score.is_dash)
+
+        resp = self.client.get(map_url)
+        html = resp.content.decode()
+        self.assertIn(f'name="score_{self.booking1.pk}_{self.p1_1.pk}"\n                     value="0"', html)
+
+        # 4. Проверяем veb-ведомость площадки (participants)
+        part_url = reverse("venues:participants", args=[self.venue.pk])
+        resp = self.client.post(
+            part_url,
+            {f"score-{self.booking1.registration_id}-{self.p1_1.pk}": "0"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertFalse(score.is_dash)
+
+        resp = self.client.get(part_url)
+        self.assertEqual(resp.status_code, 200)
+        html_part = resp.content.decode()
+        self.assertIn(f'name="score-{self.booking1.registration_id}-{self.p1_1.pk}"\n                         value="0"', html_part)
+
+        # Ставим прочерк в participants
+        resp = self.client.post(
+            part_url,
+            {f"score-{self.booking1.registration_id}-{self.p1_1.pk}": "–"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.points, Decimal("0"))
+        self.assertTrue(score.is_dash)
+
+        resp = self.client.get(part_url)
+        self.assertEqual(resp.status_code, 200)
+        html_part = resp.content.decode()
         self.assertIn(f'name="score-{self.booking1.registration_id}-{self.p1_1.pk}"\n                         value="–"', html_part)
 
     def test_offline_scan_upload_download_and_permissions(self):
@@ -759,7 +853,7 @@ class VenueStagePassedTests(TestCase):
         res = self.client.get(url)
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "Этап прошёл")
-        self.assertContains(res, f'name="form-0-stage_passed"')
+        self.assertContains(res, 'name="form-0-stage_passed"')
 
     def test_admin_actions_mark_stage_passed(self):
         self.client.force_login(self.admin)

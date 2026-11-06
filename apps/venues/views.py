@@ -1,19 +1,19 @@
-from datetime import date
 import json
+import time
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-import time
 from urllib.parse import urlencode
-from django.db import OperationalError
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db import OperationalError
 from django.http import Http404, HttpResponse, JsonResponse
-from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.contest.models import Problem, Score
@@ -21,6 +21,8 @@ from apps.contest.scoring import (
     format_cell_score,
     format_points,
     is_dash,
+)
+from apps.contest.scoring import (
     total as total_points,
 )
 from apps.core.files import protected_file_response
@@ -383,7 +385,7 @@ def _get_grading_context(request, season, stage):
             if not is_inactive and val is not None:
                 row_total += val
 
-            val_str = _format_cell_score(val)
+            val_str = _format_cell_score(val, is_dash=bool(score_obj and score_obj.is_dash))
 
             cells.append({
                 "problem": problem,
@@ -444,6 +446,7 @@ def _save_all_offline_scores(request, bookings, problems):
                 continue
             elif is_dash(raw):
                 points = Decimal("0")
+                is_dash_val = True
             else:
                 try:
                     points = Decimal(raw.replace(",", "."))
@@ -451,12 +454,14 @@ def _save_all_offline_scores(request, bookings, problems):
                     continue
                 if points < 0 or (problem.max_score is not None and points > problem.max_score):
                     continue
+                is_dash_val = False
             is_skipped = problem.variant is not None and problem.variant != booking.effective_variant
             Score.objects.update_or_create(
                 registration=booking.registration,
                 problem=problem,
                 defaults={
                     "points": points,
+                    "is_dash": is_dash_val,
                     "venue": booking.venue,
                     "entered_by": request.user,
                     "is_skipped": is_skipped,
@@ -598,6 +603,7 @@ def offline_save_scores(request):
                     problem=problem,
                     defaults={
                         "points": points,
+                        "is_dash": True,
                         "venue": booking.venue,
                         "entered_by": request.user,
                         "is_skipped": is_skipped,
@@ -624,6 +630,7 @@ def offline_save_scores(request):
                     problem=problem,
                     defaults={
                         "points": points,
+                        "is_dash": False,
                         "venue": booking.venue,
                         "entered_by": request.user,
                         "is_skipped": is_skipped,
@@ -825,12 +832,13 @@ def venue_participants(request, pk):
     for booking in bookings:
         cells = []
         for problem in problems:
-            score_pts = (existing.get((booking.registration_id, problem.pk)) or Score()).points
+            score_obj = existing.get((booking.registration_id, problem.pk))
+            score_pts = score_obj.points if score_obj else None
             cells.append({
                 "problem": problem,
                 "name": f"score-{booking.registration_id}-{problem.pk}",
                 "points": score_pts,
-                "value": _format_cell_score(score_pts),
+                "value": _format_cell_score(score_pts, is_dash=bool(score_obj and score_obj.is_dash)),
             })
         rows.append(
             {
@@ -865,6 +873,7 @@ def _save_scores(request, venue, bookings, problems):
                 continue
             elif is_dash(raw):
                 points = Decimal("0")
+                is_dash_val = True
             else:
                 try:
                     points = Decimal(raw.replace(",", "."))
@@ -880,10 +889,16 @@ def _save_scores(request, venue, bookings, problems):
                         f"Балл {points} за задачу {problem.number} превышает максимум ({_format_points(problem.max_score)})."
                     )
                     continue
+                is_dash_val = False
             Score.objects.update_or_create(
                 registration_id=registration_id,
                 problem=problem,
-                defaults={"points": points, "venue": venue, "entered_by": request.user},
+                defaults={
+                    "points": points,
+                    "is_dash": is_dash_val,
+                    "venue": venue,
+                    "entered_by": request.user,
+                },
             )
             saved += 1
     return saved

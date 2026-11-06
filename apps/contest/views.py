@@ -17,7 +17,7 @@ from django.views.decorators.http import require_POST
 from apps.accounts.models import User
 from apps.core.files import protected_file_response
 from apps.core.validators import validate_solution_file
-from apps.participation.models import Registration, VenueBooking
+from apps.participation.models import Registration
 from apps.seasons.models import Season, Stage
 
 from .forms import GradeForm, ProblemForm, SubmissionForm
@@ -26,6 +26,8 @@ from .scoring import (
     format_cell_score,
     format_points,
     is_dash,
+)
+from .scoring import (
     total as scoring_total,
 )
 
@@ -284,7 +286,7 @@ def my_submissions(request):
         for item in stage_results:
             by_order.setdefault(item["stage"].order, []).append(item)
 
-        for order, items in by_order.items():
+        for items in by_order.values():
             if len(items) > 1:
                 max_total = max(x["total"] for x in items)
                 best_items = [x for x in items if x["total"] == max_total]
@@ -376,6 +378,7 @@ def review_list(request):
                 if raw == "":
                     if hasattr(sub, "grade") and sub.grade.score is not None:
                         sub.grade.score = None
+                        sub.grade.is_dash = False
                         sub.grade.status = Grade.Status.NEW
                         sub.grade.save()
                         Score.objects.filter(
@@ -386,6 +389,7 @@ def review_list(request):
                     points = Decimal("0")
                     grade, _ = Grade.objects.get_or_create(submission=sub)
                     grade.score = points
+                    grade.is_dash = True
                     grade.reviewer = request.user
                     grade.status = Grade.Status.GRADED
                     grade.save()
@@ -398,6 +402,7 @@ def review_list(request):
                         problem=sub.problem,
                         defaults={
                             "points": points,
+                            "is_dash": True,
                             "entered_by": request.user,
                             "is_skipped": False,
                         },
@@ -428,6 +433,7 @@ def review_list(request):
 
                     grade, _ = Grade.objects.get_or_create(submission=sub)
                     grade.score = points
+                    grade.is_dash = False
                     grade.reviewer = request.user
                     grade.status = Grade.Status.GRADED
                     grade.save()
@@ -440,6 +446,7 @@ def review_list(request):
                         problem=sub.problem,
                         defaults={
                             "points": points,
+                            "is_dash": False,
                             "entered_by": request.user,
                             "is_skipped": False,
                         },
@@ -485,7 +492,7 @@ def review_list(request):
             if score is not None:
                 row_total += score
 
-            score_str = _format_cell_score(score)
+            score_str = _format_cell_score(score, is_dash=bool(grade and grade.is_dash))
 
             cells.append({
                 "problem": p,
@@ -551,6 +558,7 @@ def review_save_grade(request):
     if raw_score == "":
         if grade:
             grade.score = None
+            grade.is_dash = False
             grade.status = Grade.Status.NEW
             grade.save()
         Score.objects.filter(registration__user=sub.user, problem=sub.problem).delete()
@@ -559,6 +567,7 @@ def review_save_grade(request):
         if not grade:
             grade = Grade(submission=sub)
         grade.score = points
+        grade.is_dash = True
         grade.reviewer = request.user
         grade.status = Grade.Status.GRADED
         grade.save()
@@ -571,6 +580,7 @@ def review_save_grade(request):
             problem=sub.problem,
             defaults={
                 "points": points,
+                "is_dash": True,
                 "entered_by": request.user,
                 "is_skipped": False,
             },
@@ -594,6 +604,7 @@ def review_save_grade(request):
         if not grade:
             grade = Grade(submission=sub)
         grade.score = points
+        grade.is_dash = False
         grade.reviewer = request.user
         grade.status = Grade.Status.GRADED
         grade.save()
@@ -606,6 +617,7 @@ def review_save_grade(request):
             problem=sub.problem,
             defaults={
                 "points": points,
+                "is_dash": False,
                 "entered_by": request.user,
                 "is_skipped": False,
             },
@@ -644,6 +656,25 @@ def review_detail(request, pk):
         grade.submission = submission
         grade.reviewer = request.user
         grade.save()
+        if submission.problem.stage and submission.problem.stage.season:
+            reg, _ = Registration.objects.get_or_create(
+                user=submission.user, season=submission.problem.stage.season
+            )
+            if grade.score is not None:
+                Score.objects.update_or_create(
+                    registration=reg,
+                    problem=submission.problem,
+                    defaults={
+                        "points": grade.score,
+                        "is_dash": grade.is_dash,
+                        "entered_by": request.user,
+                        "is_skipped": False,
+                    },
+                )
+            else:
+                Score.objects.filter(
+                    registration=reg, problem=submission.problem
+                ).delete()
         messages.success(request, "Оценка сохранена.")
         # Возвращаем в очередь с теми же фильтрами, чтобы проверять подряд.
         return redirect(_safe_back(request, request.POST.get("back")))

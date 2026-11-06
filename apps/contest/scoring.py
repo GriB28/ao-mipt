@@ -11,7 +11,7 @@
 Ни в шаблонах, ни во вьюхах складывать баллы напрямую нельзя.
 """
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 DASH_CHARS = set("-–—―−‒‑‐˗﹣－﹘")
 CANONICAL_DASH = "–"
@@ -25,23 +25,32 @@ def is_dash(val) -> bool:
     return bool(s) and all(ch in DASH_CHARS for ch in s)
 
 
+_is_dash = is_dash
+
+
 def format_points(val) -> str:
     """10.00 → «10», 7.50 → «7.5», None → «»."""
     if val is None:
         return ""
+    if not isinstance(val, Decimal):
+        try:
+            val = Decimal(str(val))
+        except (InvalidOperation, ValueError, TypeError):
+            return str(val)
     return str(int(val)) if val == val.to_integral() else f"{val:.2f}".rstrip("0").rstrip(".")
 
 
-def format_cell_score(val) -> str:
+def format_cell_score(val, is_dash: bool = False) -> str:
     """Отображение балла в ведомостях организаторов.
 
-    0 баллов отображается как канонический прочерк «–» (en-dash),
+    0 баллов отображается как «0»,
+    прочерк — как канонический прочерк «–» (en-dash),
     не проверенная / не сданная задача — как пустая строка «».
     """
-    if val is None:
-        return ""
-    if val == 0:
+    if is_dash or _is_dash(val):
         return CANONICAL_DASH
+    if val is None or val == "":
+        return ""
     return format_points(val)
 
 
