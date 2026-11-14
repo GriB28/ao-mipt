@@ -1,11 +1,13 @@
 from decimal import Decimal
+from pathlib import Path
 
 from django import forms
 from django.conf import settings
 
 from apps.core.sanitize import clean_html
+from apps.core.validators import validate_upload_size
 
-from .models import Grade, Problem, Submission
+from .models import Grade, Problem, ProblemAttachment, Submission
 from .scoring import CANONICAL_DASH, format_points, is_dash
 
 
@@ -31,16 +33,23 @@ class MultipleFileInput(forms.ClearableFileInput):
 
 
 class MultipleFileField(forms.FileField):
-    """Поле для загрузки нескольких файлов сразу (PDF + код)."""
+    """Поле для загрузки нескольких файлов сразу (PDF + код, материалы)."""
 
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("widget", MultipleFileInput(attrs={"multiple": True}))
         super().__init__(*args, **kwargs)
 
     def clean(self, data, initial=None):
+        if not data:
+            if self.required:
+                raise forms.ValidationError(self.error_messages["required"], code="required")
+            return []
         single = super().clean
         if isinstance(data, (list, tuple)):
-            return [single(item, initial) for item in data]
+            cleaned = [single(item, initial) for item in data if item]
+            if not cleaned and self.required:
+                raise forms.ValidationError(self.error_messages["required"], code="required")
+            return cleaned
         return [single(data, initial)]
 
 
@@ -146,6 +155,12 @@ class ProblemForm(forms.ModelForm):
     администратор после тура.
     """
 
+    attachments = MultipleFileField(
+        label="Прикреплённые файлы",
+        required=False,
+        help_text=f"Любые файлы к задаче любого формата (рисунки, графики, данные в csv/txt, таблицы, код, архивы). До {settings.MAX_UPLOAD_SIZE_MB} МБ на файл. Можно выбрать несколько.",
+    )
+
     class Meta:
         model = Problem
         fields = ("stage", "number", "title", "max_score", "statement_html", "figure", "figure_caption")
@@ -172,6 +187,8 @@ class ProblemForm(forms.ModelForm):
         # PDF), а организатор без текста условия задачу не заведёт.
         self.fields["statement_html"].required = True
         self.fields["statement_html"].error_messages["required"] = "Нужно условие задачи."
+        limit = settings.MAX_UPLOAD_SIZE_MB
+        self.fields["attachments"].widget.attrs["data-max-mb"] = f"{limit:g}"
         if self.instance and self.instance.pk and self.instance.max_score is not None:
             self.initial["max_score"] = _plain(self.instance.max_score)
 
@@ -185,3 +202,26 @@ class ProblemForm(forms.ModelForm):
         # Храним уже очищенный текст: в базе не должно лежать то, что
         # опасно показывать (см. apps/core/sanitize.py).
         return clean_html(self.cleaned_data["statement_html"])
+
+    def clean_attachments(self):
+        files = self.cleaned_data.get("attachments") or []
+        for f in files:
+            validate_upload_size(f)
+        return files
+
+    def save_attachments(self, problem):
+        files = self.cleaned_data.get("attachments") or []
+        new_attachments = []
+        for f in files:
+            name = Path(f.name).name[:255]
+            new_attachments.append(
+                ProblemAttachment(
+                    problem=problem,
+                    file=f,
+                    original_name=name,
+                    title=name[:200],
+                )
+            )
+        if new_attachments:
+            ProblemAttachment.objects.bulk_create(new_attachments)
+        return new_attachments

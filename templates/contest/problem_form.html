@@ -15,8 +15,7 @@
 <div class="note">
   <p><strong>Формулы.</strong> Пишите в долларах: <code>$v_0 = \sqrt{2gh}$</code> внутри строки,
   <code>$$ ... $$</code> — отдельной строкой по центру. Это обычный LaTeX.</p>
-  <p><strong>Рисунок.</strong> Одна схема или график к условию — поле «рисунок к условию».
-  Если файлов с данными несколько, их добавляют в админке как материалы к задаче.</p>
+  <p><strong>Файлы к задаче.</strong> Прикладывайте любые файлы любого формата и в любом количестве (рисунки, схемы, графики, данные csv/txt, таблицы, код, архивы). Их можно выбрать сразу несколько.</p>
   <p><strong>Когда участники увидят задачу.</strong> Все задачи этапа открываются
   одновременно в момент его начала — после одобрения администратором.</p>
   <p><strong>Баллы.</strong> Максимум за задачу участникам не показывается. Если задан — форма оценки
@@ -52,6 +51,36 @@
           <div id="statement-preview-content" class="card prose math statement-preview-box"></div>
         </div>
       </div>
+    {% elif field.name == "attachments" %}
+      {% if problem and problem.attachments.all %}
+        <div class="existing-attachments-box" style="margin: 1.5rem 0; padding: 1rem; background: var(--bg-surface, #f8f9fa); border: 1px solid var(--border-color, #e0e0e0); border-radius: var(--radius-md, 8px);">
+          <strong style="display: block; margin-bottom: 0.5rem;">Уже прикреплённые файлы:</strong>
+          <ul style="list-style: none; padding-left: 0; margin: 0;">
+            {% for a in problem.attachments.all %}
+              <li style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border-color, #e0e0e0);">
+                <div style="display: flex; align-items: center; gap: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  {% if a.is_image %}
+                    <span class="badge" style="font-size: 0.75rem;">изображение</span>
+                  {% else %}
+                    <span class="badge" style="font-size: 0.75rem;">файл</span>
+                  {% endif %}
+                  <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.filename }}</a>
+                </div>
+                <label style="display: inline-flex; align-items: center; gap: 0.35rem; color: var(--color-danger-500, #b3261e); font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
+                  <input type="checkbox" name="delete_attachments" value="{{ a.pk }}">
+                  Удалить
+                </label>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      <p>
+        {{ field.label_tag }}
+        {{ field }}
+        {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+        {{ field.errors }}
+      </p>
     {% else %}
       <p>
         {{ field.label_tag }}

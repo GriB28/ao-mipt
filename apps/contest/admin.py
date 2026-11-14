@@ -7,6 +7,8 @@ from .models import Grade, Problem, ProblemAttachment, Score, Submission, Submis
 class AttachmentInline(admin.TabularInline):
     model = ProblemAttachment
     extra = 1
+    fields = ("file", "title", "original_name")
+    readonly_fields = ("original_name",)
 
 
 @admin.register(Problem)
