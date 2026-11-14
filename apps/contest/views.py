@@ -21,7 +21,7 @@ from apps.participation.models import Registration
 from apps.seasons.models import Season, Stage
 
 from .forms import GradeForm, ProblemForm, SubmissionForm
-from .models import Grade, Problem, Score, Submission, SubmissionFile
+from .models import Grade, Problem, ProblemAttachment, Score, Submission, SubmissionFile
 from .scoring import (
     format_cell_score,
     format_points,
@@ -137,12 +137,12 @@ def problem_detail(request, pk):
     # чтобы посмотреть, как она будет выглядеть у участников.
     if request.user.is_authenticated and request.user.is_manager:
         problem = get_object_or_404(
-            Problem.objects.select_related("stage__season", "created_by"),
+            Problem.objects.select_related("stage__season", "created_by").prefetch_related("attachments"),
             pk=pk,
         )
     else:
         problem = get_object_or_404(
-            Problem.objects.visible().select_related("stage__season", "created_by"),
+            Problem.objects.visible().select_related("stage__season", "created_by").prefetch_related("attachments"),
             pk=pk,
         )
     return _problem_page(request, problem)
@@ -737,6 +737,9 @@ def problem_new(request):
         else:
             problem.status = Problem.Status.DRAFT
         problem.save()
+        new_attachments = form.save_attachments(problem)
+        if new_attachments:
+            messages.info(request, f"Прикреплено файлов: {len(new_attachments)}.")
         messages.success(request, _status_message(problem))
         return redirect("contest:problem_edit", pk=problem.pk)
     return render(request, "contest/problem_form.html",
@@ -751,7 +754,9 @@ def problem_edit(request, pk):
     с комментарием — без похода в Django-админку.
     """
     _require_reviewer(request.user)
-    problem = get_object_or_404(Problem.objects.editable_by(request.user), pk=pk)
+    problem = get_object_or_404(
+        Problem.objects.editable_by(request.user).prefetch_related("attachments"), pk=pk
+    )
     form = ProblemForm(request.POST or None, request.FILES or None, instance=problem)
     is_admin = request.user.is_admin
 
@@ -775,11 +780,41 @@ def problem_edit(request, pk):
             # иначе она так и останется помеченной как отклонённая.
             problem.status = Problem.Status.DRAFT
         problem.save()
+
+        # Обработка удаления отмеченных файлов
+        delete_ids = request.POST.getlist("delete_attachments")
+        if delete_ids:
+            deleted_count = 0
+            for att in problem.attachments.filter(pk__in=delete_ids):
+                att.delete()
+                deleted_count += 1
+            if deleted_count > 0:
+                messages.info(request, f"Удалено файлов: {deleted_count}.")
+
+        new_attachments = form.save_attachments(problem)
+        if new_attachments:
+            messages.info(request, f"Добавлено новых файлов: {len(new_attachments)}.")
+
         messages.success(request, _status_message(problem))
         return redirect("contest:problem_edit", pk=problem.pk)
 
     return render(request, "contest/problem_form.html",
                   {"form": form, "problem": problem, "is_admin": is_admin})
+
+
+@require_POST
+@login_required
+def problem_attachment_delete(request, problem_pk, attachment_pk):
+    """Удаление одного прикреплённого файла задачи организатором."""
+    _require_reviewer(request.user)
+    problem = get_object_or_404(Problem.objects.editable_by(request.user), pk=problem_pk)
+    attachment = get_object_or_404(problem.attachments, pk=attachment_pk)
+    name = attachment.filename
+    attachment.delete()
+    messages.success(request, f"Файл «{name}» удалён.")
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse({"status": "ok"})
+    return redirect("contest:problem_edit", pk=problem.pk)
 
 
 def _status_message(problem):

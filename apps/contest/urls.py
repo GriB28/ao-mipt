@@ -18,4 +18,9 @@ urlpatterns = [
     path("problems/manage/", views.problem_manage, name="problem_manage"),
     path("problems/new/", views.problem_new, name="problem_new"),
     path("problems/<int:pk>/edit/", views.problem_edit, name="problem_edit"),
+    path(
+        "problems/<int:problem_pk>/attachments/<int:attachment_pk>/delete/",
+        views.problem_attachment_delete,
+        name="problem_attachment_delete",
+    ),
 ]
