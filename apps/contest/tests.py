@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.accounts.testing import make_eligible
-from apps.contest.models import Grade, Problem, Score, Submission, SubmissionFile
+from apps.contest.models import Grade, Problem, ProblemAttachment, Score, Submission, SubmissionFile
 from apps.seasons.models import Season, Stage
 
 
@@ -794,6 +794,167 @@ class SecurityTest(TestCase):
         self.assertTrue(path.endswith("/data.csv"))
         # Имя файла задачи не угадать: в пути случайная папка.
         self.assertNotEqual(problem_upload_path(problem, "a.png"), problem_upload_path(problem, "a.png"))
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="olymp-test-media-"))
+class ProblemAttachmentsTest(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_demo", verbosity=0)
+
+    def setUp(self):
+        self.organizer = User.objects.get(email="organizer@example.ru")
+        self.participant = User.objects.get(email="student@example.ru")
+        make_eligible(self.participant)
+        self.problem = open_problem(author=self.organizer)
+
+    def test_problem_attachment_model_methods(self):
+        f = SimpleUploadedFile("data_table.csv", b"x,y\n1,2\n3,4", content_type="text/csv")
+        att = ProblemAttachment(problem=self.problem, file=f)
+        att.save()
+
+        self.assertEqual(att.original_name, "data_table.csv")
+        self.assertEqual(att.filename, "data_table.csv")
+        self.assertEqual(att.title, "data_table.csv")
+        self.assertEqual(str(att), "data_table.csv")
+        self.assertFalse(att.is_image)
+
+        # Проверяем изображение
+        img_f = SimpleUploadedFile("schema.png", b"\x89PNG\r\n\x1a\n", content_type="image/png")
+        img_att = ProblemAttachment(problem=self.problem, file=img_f)
+        img_att.save()
+        self.assertTrue(img_att.is_image)
+
+        att.delete()
+        self.assertFalse(ProblemAttachment.objects.filter(pk=att.pk).exists())
+
+    def test_problem_new_upload_multiple_files_of_different_formats(self):
+        self.client.force_login(self.organizer)
+        url = reverse("contest:problem_new")
+
+        file1 = SimpleUploadedFile("drawing.png", b"\x89PNG\r\n\x1a\n", content_type="image/png")
+        file2 = SimpleUploadedFile("dataset.csv", b"a,b\n1,2", content_type="text/csv")
+        file3 = SimpleUploadedFile("manual.pdf", b"%PDF-1.4 sample", content_type="application/pdf")
+        file4 = SimpleUploadedFile("code.py", b"print('test')", content_type="text/plain")
+        file5 = SimpleUploadedFile("archive.zip", b"PK\x03\x04", content_type="application/zip")
+
+        response = self.client.post(
+            url,
+            {
+                "stage": self.problem.stage.pk,
+                "number": "99",
+                "title": "Многофайловая задача",
+                "statement_html": "Условие с разными файлами.",
+                "max_score": "15",
+                "attachments": [file1, file2, file3, file4, file5],
+                "save_draft": "1",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        created_problem = Problem.objects.get(number="99", stage=self.problem.stage)
+        attachments = list(created_problem.attachments.order_by("created_at"))
+        self.assertEqual(len(attachments), 5)
+        names = {a.filename for a in attachments}
+        self.assertEqual(names, {"drawing.png", "dataset.csv", "manual.pdf", "code.py", "archive.zip"})
+
+    def test_problem_edit_add_and_delete_attachments(self):
+        self.client.force_login(self.organizer)
+        att1 = ProblemAttachment.objects.create(
+            problem=self.problem,
+            file=SimpleUploadedFile("first.txt", b"1"),
+            original_name="first.txt",
+        )
+        att2 = ProblemAttachment.objects.create(
+            problem=self.problem,
+            file=SimpleUploadedFile("second.txt", b"2"),
+            original_name="second.txt",
+        )
+
+        edit_url = reverse("contest:problem_edit", args=[self.problem.pk])
+        new_file = SimpleUploadedFile("third.csv", b"3", content_type="text/csv")
+
+        response = self.client.post(
+            edit_url,
+            {
+                "stage": self.problem.stage.pk,
+                "number": self.problem.number,
+                "title": self.problem.title,
+                "statement_html": "Новое условие.",
+                "attachments": [new_file],
+                "delete_attachments": [str(att1.pk)],
+                "save_draft": "1",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        self.assertFalse(ProblemAttachment.objects.filter(pk=att1.pk).exists())
+        self.assertTrue(ProblemAttachment.objects.filter(pk=att2.pk).exists())
+        self.assertTrue(self.problem.attachments.filter(original_name="third.csv").exists())
+
+    def test_problem_attachment_delete_view(self):
+        att = ProblemAttachment.objects.create(
+            problem=self.problem,
+            file=SimpleUploadedFile("to_delete.txt", b"bye"),
+            original_name="to_delete.txt",
+        )
+        delete_url = reverse("contest:problem_attachment_delete", args=[self.problem.pk, att.pk])
+
+        # Участник не может удалить
+        self.client.force_login(self.participant)
+        resp = self.client.post(delete_url)
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(ProblemAttachment.objects.filter(pk=att.pk).exists())
+
+        # Организатор может удалить
+        self.client.force_login(self.organizer)
+        resp = self.client.post(delete_url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(ProblemAttachment.objects.filter(pk=att.pk).exists())
+
+    def test_problem_detail_renders_attachments(self):
+        img_att = ProblemAttachment.objects.create(
+            problem=self.problem,
+            file=SimpleUploadedFile("diagram.png", b"\x89PNG\r\n\x1a\n"),
+            original_name="diagram.png",
+            title="Диаграмма эксперимента",
+        )
+        doc_att = ProblemAttachment.objects.create(
+            problem=self.problem,
+            file=SimpleUploadedFile("experiment_data.csv", b"time,val\n0,1"),
+            original_name="experiment_data.csv",
+        )
+
+        self.client.force_login(self.participant)
+        detail_url = reverse("contest:problem_detail", args=[self.problem.pk])
+        resp = self.client.get(detail_url)
+        self.assertEqual(resp.status_code, 200)
+
+        html = resp.content.decode()
+        self.assertIn("problem-figure", html)
+        self.assertIn(img_att.file.url, html)
+        self.assertIn("Диаграмма эксперимента", html)
+        self.assertIn("Материалы к задаче", html)
+        self.assertIn(doc_att.file.url, html)
+        self.assertIn("experiment_data.csv", html)
+
+    def test_attachment_size_limit(self):
+        from apps.contest.forms import ProblemForm
+        from django.conf import settings
+
+        big_content = b"x" * (settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024 + 1024)
+        big_file = SimpleUploadedFile("big.zip", big_content, content_type="application/zip")
+        form = ProblemForm(
+            data={
+                "stage": self.problem.stage.pk,
+                "number": "100",
+                "title": "Большой файл",
+                "statement_html": "Условие.",
+            },
+            files={"attachments": [big_file]},
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("attachments", form.errors)
+        self.assertIn("Файл больше", form.errors["attachments"][0])
 
 
 class ProblemAdminAuthorFieldTest(TestCase):

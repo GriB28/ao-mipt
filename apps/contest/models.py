@@ -27,7 +27,12 @@ def problem_upload_path(instance, filename):
     нельзя было скачать до начала тура, угадав имя вроде «risunok.png»:
     /media/ отдаётся без проверки прав.
     """
-    stage = instance.problem.stage if hasattr(instance, "problem_id") else instance.stage
+    if hasattr(instance, "problem") and instance.problem:
+        stage = instance.problem.stage
+    elif hasattr(instance, "problem_id") and instance.problem_id:
+        stage = instance.problem.stage
+    else:
+        stage = instance.stage
     return f"problems/{stage.season.slug}/{stage.slug}/{secrets.token_urlsafe(12)}/{filename}"
 
 
@@ -208,18 +213,40 @@ class Problem(TimeStampedModel):
 
 
 class ProblemAttachment(TimeStampedModel):
-    """Данные к задаче: signal.txt, csv с измерениями, картинки."""
+    """Данные к задаче: signal.txt, csv с измерениями, картинки и любые файлы."""
 
     problem = models.ForeignKey(Problem, on_delete=models.CASCADE, related_name="attachments", verbose_name="задача")
     title = models.CharField("название", max_length=200, blank=True)
     file = models.FileField("файл", upload_to=problem_upload_path, validators=[validate_upload_size])
+    original_name = models.CharField("исходное имя", max_length=255, blank=True)
 
     class Meta:
         verbose_name = "материал к задаче"
         verbose_name_plural = "материалы к задачам"
 
     def __str__(self):
-        return self.title or self.file.name
+        return self.title or self.filename
+
+    def save(self, *args, **kwargs):
+        if not self.original_name and self.file:
+            self.original_name = Path(self.file.name).name[:255]
+        if not self.title and self.original_name:
+            self.title = self.original_name[:200]
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.file:
+            self.file.delete(save=False)
+        super().delete(*args, **kwargs)
+
+    @property
+    def filename(self):
+        return self.original_name or Path(self.file.name).name
+
+    @property
+    def is_image(self):
+        ext = Path(self.file.name).suffix.lower()
+        return ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
 
 
 class Submission(TimeStampedModel):
