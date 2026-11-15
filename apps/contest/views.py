@@ -245,7 +245,8 @@ def my_submissions(request):
     if season:
         scores = list(Score.objects
                       .filter(registration__user=request.user,
-                              problem__stage__results_published=True)
+                              problem__stage__results_published=True,
+                              is_skipped=False)
                       .select_related("problem", "problem__stage", "venue")
                       .order_by("problem__stage__order", "problem__stage_id", "problem__number"))
 

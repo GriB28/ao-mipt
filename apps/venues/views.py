@@ -79,12 +79,11 @@ def _get_participant_offline_results(user, stage, my_booking):
     active_variant = my_booking.effective_variant
     all_problems = _venue_problems(stage)
 
-    # Задачи комплекта участника (или общие без комплекта)
-    variant_problems = [
-        p for p in all_problems
-        if p.variant is None or p.variant == active_variant
-    ]
-    if not variant_problems and all_problems:
+    # Задачи комплекта участника
+    has_variants = any(p.variant is not None for p in all_problems)
+    if has_variants:
+        variant_problems = [p for p in all_problems if p.variant == active_variant]
+    else:
         variant_problems = all_problems
 
     scores_map = {
@@ -92,6 +91,7 @@ def _get_participant_offline_results(user, stage, my_booking):
         for s in Score.objects.filter(
             registration=my_booking.registration,
             problem__in=variant_problems,
+            is_skipped=False,
         )
     }
 
@@ -305,10 +305,14 @@ def _venue_problems(stage):
     """Задачи тура, по которым выставляются баллы.
 
     Берём все одобренные, сортируем по натуральному ключу (1.1, 1.2, 2.1...).
+    Если у этапа есть комплекты (1.x, 2.x), берём только задачи комплектов.
     """
     if not stage:
         return []
     problems = list(Problem.objects.filter(stage=stage, status=Problem.Status.APPROVED))
+    has_variants = any(p.variant is not None for p in problems)
+    if has_variants:
+        problems = [p for p in problems if p.variant is not None]
     problems.sort(key=lambda p: p.sort_key)
     return problems
 
@@ -930,9 +934,19 @@ def venue_results(request, pk):
         .select_related("registration__user", "registration__user__profile")
     )
 
+    has_variants = any(p.variant is not None for p in problems)
+    if has_variants:
+        active_variants = {b.effective_variant for b in bookings if b.effective_variant}
+        if not active_variants and venue.default_variant:
+            active_variants = {venue.default_variant}
+        if active_variants:
+            problems = [p for p in problems if p.variant in active_variants]
+
     scores = {}
     for score in Score.objects.filter(
-        problem__in=problems, registration__in=[b.registration_id for b in bookings]
+        problem__in=problems,
+        registration__in=[b.registration_id for b in bookings],
+        is_skipped=False,
     ):
         scores.setdefault(score.registration_id, {})[score.problem_id] = score.points
 

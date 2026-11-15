@@ -6,6 +6,7 @@ from django.conf import settings
 
 from apps.core.sanitize import clean_html
 from apps.core.validators import validate_upload_size
+from apps.seasons.models import Stage
 
 from .models import Grade, Problem, ProblemAttachment, Submission
 from .scoring import CANONICAL_DASH, format_points, is_dash
@@ -183,6 +184,10 @@ class ProblemForm(forms.ModelForm):
         # песочницу её кладёт setup_site.
         self.fields["stage"].queryset = (self.fields["stage"].queryset
                                          .filter(is_practice=False, season__is_active=True))
+        if "stage" in self.fields and not self.initial.get("stage") and not getattr(self.instance, "pk", None):
+            online = self.fields["stage"].queryset.filter(kind=Stage.Kind.ONLINE).first()
+            if online:
+                self.initial["stage"] = online
         # В модели условие необязательно (у задач из архива бывает только
         # PDF), а организатор без текста условия задачу не заведёт.
         self.fields["statement_html"].required = True
