@@ -64,7 +64,11 @@
                   {% else %}
                     <span class="badge" style="font-size: 0.75rem;">файл</span>
                   {% endif %}
-                  <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.filename }}</a>
+                  {% if a.file %}
+                    <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.filename }}</a>
+                  {% else %}
+                    <span>{{ a.filename }}</span>
+                  {% endif %}
                 </div>
                 <label style="display: inline-flex; align-items: center; gap: 0.35rem; color: var(--color-danger-500, #b3261e); font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
                   <input type="checkbox" name="delete_attachments" value="{{ a.pk }}">
