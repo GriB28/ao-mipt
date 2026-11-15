@@ -956,6 +956,64 @@ class ProblemAttachmentsTest(TestCase):
         self.assertIn("attachments", form.errors)
         self.assertIn("Файл больше", form.errors["attachments"][0])
 
+    def test_problem_upload_path_resilience(self):
+        from apps.contest.models import problem_upload_path
+
+        # Unbound attachment (no problem assigned)
+        att = ProblemAttachment()
+        path1 = problem_upload_path(att, "unbound.txt")
+        self.assertTrue(path1.endswith("/unbound.txt"))
+        self.assertTrue(path1.startswith("problems/"))
+
+        # Problem without stage
+        prob = Problem()
+        path2 = problem_upload_path(prob, "nostage.png")
+        self.assertTrue(path2.endswith("/nostage.png"))
+        self.assertTrue(path2.startswith("problems/"))
+
+        # Attached to problem
+        att_with_problem = ProblemAttachment(problem=self.problem)
+        path3 = problem_upload_path(att_with_problem, "attached.pdf")
+        self.assertIn(self.problem.stage.slug, path3)
+
+    def test_empty_attachment_properties(self):
+        att = ProblemAttachment()
+        self.assertEqual(att.filename, "")
+        self.assertFalse(att.is_image)
+
+    def test_problem_new_with_figure_and_attachments(self):
+        import io
+        from PIL import Image
+
+        self.client.force_login(self.organizer)
+        url = reverse("contest:problem_new")
+
+        buf = io.BytesIO()
+        Image.new("RGB", (10, 10), color="blue").save(buf, format="PNG")
+        fig = SimpleUploadedFile("figure.png", buf.getvalue(), content_type="image/png")
+        att = SimpleUploadedFile("notes.txt", b"important data", content_type="text/plain")
+
+        response = self.client.post(
+            url,
+            {
+                "stage": self.problem.stage.pk,
+                "number": "101",
+                "title": "Задача с рисунком и файлами",
+                "statement_html": "Текст условия.",
+                "figure": fig,
+                "figure_caption": "Схема установки",
+                "attachments": [att],
+                "save_draft": "1",
+            },
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        prob = Problem.objects.get(number="101", stage=self.problem.stage)
+        self.assertTrue(bool(prob.figure))
+        self.assertEqual(prob.figure_caption, "Схема установки")
+        self.assertEqual(prob.attachments.count(), 1)
+        self.assertEqual(prob.attachments.first().filename, "notes.txt")
+
 
 class ProblemAdminAuthorFieldTest(TestCase):
     @classmethod
