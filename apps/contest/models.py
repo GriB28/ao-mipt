@@ -27,13 +27,47 @@ def problem_upload_path(instance, filename):
     нельзя было скачать до начала тура, угадав имя вроде «risunok.png»:
     /media/ отдаётся без проверки прав.
     """
-    if hasattr(instance, "problem") and instance.problem:
-        stage = instance.problem.stage
-    elif hasattr(instance, "problem_id") and instance.problem_id:
-        stage = instance.problem.stage
+    clean_filename = Path(filename).name
+    stage = None
+    try:
+        if hasattr(instance, "problem") and instance.problem:
+            stage = instance.problem.stage
+        elif hasattr(instance, "problem_id") and instance.problem_id:
+            from apps.contest.models import Problem
+
+            prob = Problem.objects.filter(pk=instance.problem_id).select_related("stage__season").first()
+            if prob:
+                stage = prob.stage
+    except Exception:
+        pass
+
+    if stage is None and hasattr(instance, "stage"):
+        try:
+            stage = instance.stage
+        except Exception:
+            pass
+
+    season_slug = "common"
+    stage_slug = "common"
+    if stage:
+        try:
+            if stage.season and stage.season.slug:
+                season_slug = stage.season.slug
+            if stage.slug:
+                stage_slug = stage.slug
+        except Exception:
+            pass
     else:
-        stage = instance.stage
-    return f"problems/{stage.season.slug}/{stage.slug}/{secrets.token_urlsafe(12)}/{filename}"
+        try:
+            from apps.seasons.models import Season
+
+            active = Season.objects.active()
+            if active and active.slug:
+                season_slug = active.slug
+        except Exception:
+            pass
+
+    return f"problems/{season_slug}/{stage_slug}/{secrets.token_urlsafe(12)}/{clean_filename}"
 
 
 def solution_upload_path(instance, filename):
@@ -228,7 +262,7 @@ class ProblemAttachment(TimeStampedModel):
         return self.title or self.filename
 
     def save(self, *args, **kwargs):
-        if not self.original_name and self.file:
+        if not self.original_name and self.file and getattr(self.file, "name", None):
             self.original_name = Path(self.file.name).name[:255]
         if not self.title and self.original_name:
             self.title = self.original_name[:200]
@@ -241,10 +275,16 @@ class ProblemAttachment(TimeStampedModel):
 
     @property
     def filename(self):
-        return self.original_name or Path(self.file.name).name
+        if self.original_name:
+            return self.original_name
+        if self.file and getattr(self.file, "name", None):
+            return Path(self.file.name).name
+        return ""
 
     @property
     def is_image(self):
+        if not self.file or not getattr(self.file, "name", None):
+            return False
         ext = Path(self.file.name).suffix.lower()
         return ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
 

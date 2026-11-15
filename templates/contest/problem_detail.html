@@ -29,7 +29,7 @@
 {% endif %}
 
 {% for a in problem.attachments.all %}
-  {% if a.is_image %}
+  {% if a.is_image and a.file %}
     <figure class="problem-figure">
       <img src="{{ a.file.url }}" alt="{{ a.title|default:a.filename }}">
       {% if a.title and a.title != a.filename %}<figcaption>{{ a.title }}</figcaption>{% endif %}
@@ -39,7 +39,7 @@
 
 {% if problem.attachments.all %}
   <h2>Материалы к задаче</h2>
-  <ul>{% for a in problem.attachments.all %}<li><a href="{{ a.file.url }}" download>{{ a.title|default:a.filename }}</a></li>{% endfor %}</ul>
+  <ul>{% for a in problem.attachments.all %}<li>{% if a.file %}<a href="{{ a.file.url }}" download>{{ a.title|default:a.filename }}</a>{% else %}<span>{{ a.title|default:a.filename }}</span>{% endif %}</li>{% endfor %}</ul>
 {% endif %}
 
 {% if problem.solution_is_public %}

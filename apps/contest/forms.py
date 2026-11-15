@@ -205,23 +205,25 @@ class ProblemForm(forms.ModelForm):
 
     def clean_attachments(self):
         files = self.cleaned_data.get("attachments") or []
+        if not isinstance(files, (list, tuple)):
+            files = [files]
         for f in files:
             validate_upload_size(f)
         return files
 
     def save_attachments(self, problem):
         files = self.cleaned_data.get("attachments") or []
+        if not isinstance(files, (list, tuple)):
+            files = [files]
         new_attachments = []
         for f in files:
-            name = Path(f.name).name[:255]
-            new_attachments.append(
-                ProblemAttachment(
-                    problem=problem,
-                    file=f,
-                    original_name=name,
-                    title=name[:200],
-                )
+            name = Path(getattr(f, "name", "") or "attachment").name[:255]
+            att = ProblemAttachment(
+                problem=problem,
+                file=f,
+                original_name=name,
+                title=name[:200],
             )
-        if new_attachments:
-            ProblemAttachment.objects.bulk_create(new_attachments)
+            att.save()
+            new_attachments.append(att)
         return new_attachments
