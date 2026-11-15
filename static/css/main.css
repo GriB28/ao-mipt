@@ -336,16 +336,17 @@ input[type=checkbox] { width: auto; margin-right: var(--space-2); }
 
 /* Галочка слева от подписи, а не отдельной строкой под ней: Django
    выводит подпись первой, разворачиваем порядок. Сама галочка
-   крупнее обычной — в неё попадают пальцем. */
-form p:has(> input[type=checkbox]) {
+   крупнее обычной — в неё попадают пальцем.
+   Не применяется к полям с файлами (ClearableFileInput), где чекбокс служит для очистки файла. */
+form p:has(> input[type=checkbox]):not(:has(input[type=file])) {
   display: flex;
   flex-direction: row-reverse;
   justify-content: flex-end;
   align-items: flex-start;
   gap: var(--space-3);
 }
-form p:has(> input[type=checkbox]) label { margin: 0; color: var(--text-primary); font-size: var(--text-sm); }
-form p > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--color-brand-500); }
+form p:has(> input[type=checkbox]):not(:has(input[type=file])) label { margin: 0; color: var(--text-primary); font-size: var(--text-sm); }
+form p:has(> input[type=checkbox]):not(:has(input[type=file])) > input[type=checkbox] { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--color-brand-500); }
 
 .helptext { font-size: var(--text-xs); color: var(--text-secondary); display: block; margin-top: var(--space-1); }
 .upload-note-error { color: var(--color-danger-500); }
