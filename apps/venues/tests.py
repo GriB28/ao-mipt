@@ -819,6 +819,44 @@ class OfflineGradingAndScansTests(TestCase):
         self.assertNotContains(resp, self.p1_1.get_absolute_url())
         self.assertNotContains(resp, self.p1_2.get_absolute_url())
 
+    def test_non_variant_and_foreign_variant_problems_hidden_from_offline_results(self):
+        """На странице результатов очного тура видны только задачи своего комплекта, а не все задачи."""
+        self.stage.results_published = True
+        self.stage.save()
+
+        # Создаём задачу без комплекта (например, ошибочно заведённую или тестовую)
+        p_extra = self.Problem.objects.create(
+            stage=self.stage,
+            number="101",
+            title="Тестовая задача без комплекта",
+            status=self.Problem.Status.APPROVED,
+        )
+
+        self.Score.objects.create(
+            registration=self.booking1.registration,
+            problem=self.p1_1,
+            points=self.Decimal("8"),
+            venue=self.venue,
+        )
+
+        self.client.force_login(self.participant1)
+        resp = self.client.get(reverse("venues:map"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Ваши результаты очного тура")
+        self.assertContains(resp, "Задача 1.1")
+        self.assertNotContains(resp, "Задача 2.1")
+        self.assertNotContains(resp, "Тестовая задача без комплекта")
+        self.assertNotContains(resp, "101")
+
+        # В итоговой таблице площадки отображаются только задачи комплекта площадки
+        self.venue.managers.add(self.organizer)
+        self.client.force_login(self.organizer)
+        resp = self.client.get(reverse("venues:results", args=[self.venue.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "1.1")
+        self.assertNotContains(resp, "2.1")
+        self.assertNotContains(resp, "101")
+
     def test_results_custom_html_text_on_offline_results_page(self):
         # Задаём текст с HTML и опасным тегом для проверки санитизации
         self.stage.results_text = "<p>Апелляции принимаются до <b>28 октября</b>.</p><script>alert('xss')</script>"
