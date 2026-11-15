@@ -339,6 +339,43 @@ class ReviewGradingTest(TestCase):
         self.assertIn("40", html)
         self.assertIn("В зачёт отбора идёт лучший результат", html)
 
+    def test_skipped_offline_scores_hidden_from_my_submissions(self):
+        """Пропущенные задачи другого комплекта не показываются на странице результатов."""
+        from apps.participation.models import Registration
+
+        now = timezone.now()
+        season = self.problem.stage.season
+        registration, _ = Registration.objects.get_or_create(season=season, user=self.kid)
+        stage = Stage.objects.create(
+            season=season,
+            kind=Stage.Kind.OFFLINE,
+            slug="offline-skip-test",
+            title="Очный тур скип",
+            starts_at=now - timedelta(days=2),
+            ends_at=now + timedelta(days=2),
+            results_published=True,
+            is_published=True,
+        )
+        p1 = Problem.objects.create(
+            stage=stage, number="1.1", title="Задача к1", status=Problem.Status.APPROVED
+        )
+        p2 = Problem.objects.create(
+            stage=stage, number="2.1", title="Задача к2", status=Problem.Status.APPROVED
+        )
+        Score.objects.create(
+            registration=registration, problem=p1, points=Decimal("10"), is_skipped=False
+        )
+        Score.objects.create(
+            registration=registration, problem=p2, points=Decimal("0"), is_skipped=True
+        )
+
+        self.client.force_login(self.kid)
+        resp = self.client.get(reverse("contest:my_submissions"))
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn("Задача к1", html)
+        self.assertNotIn("Задача к2", html)
+
 
 
 class ProblemApprovalTest(TestCase):
