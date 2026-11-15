@@ -240,11 +240,54 @@ class ArchiveOrderingTest(TestCase):
 
         call_command("seed_demo", verbosity=0)
 
-    def test_current_season_is_not_in_the_archive(self):
-        """Задачи текущего сезона живут в разделе тура, а не в архиве."""
+    def test_active_season_appears_in_archive_when_it_has_materials(self):
+        """Текущий сезон показывается в архиве, если для него загружены материалы."""
+        from apps.content.models import ArchiveMaterial
+        from apps.seasons.models import Season, Stage
+
+        active = Season.objects.get(year=2027)
+        stage = Stage.objects.filter(season=active, is_practice=False).first()
+
+        # Пока материалов нет — пустой сезон в архив не попадает
+        response = self.client.get("/problems/")
+        self.assertNotIn(2027, [s.year for s in response.context["seasons"]])
+
+        # Добавляем материал этапа текущего сезона
+        ArchiveMaterial.objects.create(
+            season=active,
+            stage=stage,
+            kind=ArchiveMaterial.Kind.PROBLEMS,
+            title="Условия отборочного этапа",
+            external_url="https://example.ru/ao27.pdf",
+        )
+
         response = self.client.get("/problems/")
         years = [s.year for s in response.context["seasons"]]
-        self.assertNotIn(2027, years)
+        self.assertIn(2027, years)
+        self.assertEqual(response.context["selected"], active)
+        self.assertContains(response, stage.title)
+        self.assertContains(response, "Условия отборочного этапа.pdf")
+
+    def test_site_problems_are_not_rendered_in_archive(self):
+        """Задачи из модели Problem не выводятся в архиве — только файлы ArchiveMaterial."""
+        from decimal import Decimal
+        from apps.contest.models import Problem
+        from apps.seasons.models import Season, Stage
+
+        season = Season.objects.get(year=2026)
+        stage = Stage.objects.create(
+            season=season, kind=Stage.Kind.ONLINE, slug="online-2026", title="Дистанционный этап",
+            starts_at=timezone.now(), ends_at=timezone.now(), is_published=True,
+        )
+        Problem.objects.create(
+            stage=stage, number="1", title="Задача с сайта для архива",
+            max_score=Decimal("10"), status=Problem.Status.APPROVED,
+        )
+
+        response = self.client.get("/problems/?year=2026")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("problems", response.context)
+        self.assertNotContains(response, "Задача с сайта для архива")
 
     def test_problems_come_before_extra_files(self):
         """Заходят за условиями и разборами, а не за csv с данными."""

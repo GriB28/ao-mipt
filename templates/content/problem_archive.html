@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Архив задач</h1>
-    <p class="lead prose">Условия, разборы и данные всех прошедших сезонов олимпиады.</p>
+    <p class="lead prose">Условия, разборы и данные всех сезонов олимпиады.</p>
   </div>
 </div>
 
@@ -22,24 +22,6 @@
 {% if selected %}
   <h2>{{ selected.title }}</h2>
 
-  {% if problems %}
-    <h3>Задачи</h3>
-    <table>
-      <thead><tr><th>Этап</th><th>№</th><th>Задача</th><th>Условие</th><th>Разбор</th></tr></thead>
-      <tbody>
-      {% for p in problems %}
-        <tr>
-          <td class="muted">{{ p.stage.title }}</td>
-          <td>{{ p.number }}</td>
-          <td>{{ p.title }}</td>
-          <td>{% if p.statement_pdf %}<a href="{{ p.statement_pdf.url }}">PDF</a>{% else %}—{% endif %}</td>
-          <td>{% if p.solution_is_public %}<a href="{{ p.solution_pdf.url }}">PDF</a>{% else %}—{% endif %}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-
   {% for stage_title, kinds in materials_by_stage %}
     <h3>{{ stage_title }}</h3>
     {% for kind_title, items in kinds %}
@@ -56,9 +38,7 @@
       </ul>
     {% endfor %}
   {% empty %}
-    {% if not problems %}
-      {% include "components/_empty_state.html" with text="Материалы этого сезона пока не выложены." mascot="img/mascot/penguin-reading.svg" %}
-    {% endif %}
+    {% include "components/_empty_state.html" with text="Материалы этого сезона пока не выложены." mascot="img/mascot/penguin-reading.svg" %}
   {% endfor %}
 {% else %}
   {% include "components/_empty_state.html" with text="Архив пока пуст." mascot="img/mascot/penguin-reading.svg" %}

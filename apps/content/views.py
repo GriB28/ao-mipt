@@ -5,9 +5,9 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import models
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 
-from apps.contest.models import Problem
-from apps.seasons.models import Season, Stage
+from apps.seasons.models import Season
 
 from .forms import LectureForm
 from .models import ArchiveMaterial, Lecture, News, Page, Playlist, Topic
@@ -116,23 +116,19 @@ def lecture_detail(request, season_slug, slug):
 
 def problem_archive(request):
     """
-    Архив прошлых лет.
+    Архив материалов всех сезонов (включая текущий).
 
-    Показываем два слоя сразу:
-      * разобранные по задачам (модель Problem) — если до них дошли руки;
-      * материалы тура целиком (ArchiveMaterial) — всё остальное.
-
-    Так архив полезен с первого дня, а разбор по задачам можно
-    доделывать постепенно, не блокируя публикацию.
+    Показываем только загруженные материалы этапов (ArchiveMaterial):
+    условия, разборы, данные к задачам, код, видео и результаты.
     """
-    # В архиве только прошедшие сезоны: текущий живёт на главной и в
-    # разделах туров, и его задачи не должны попадать сюда раньше времени.
-    # Плюс отсекаем сезоны, где смотреть нечего.
+    published_materials = ArchiveMaterial.objects.published().filter(
+        season=models.OuterRef("pk"),
+    )
+
     seasons = list(
         Season.objects.published()
-        .exclude(is_active=True)
-        .filter(models.Q(archive_materials__isnull=False) | models.Q(stages__problems__isnull=False))
-        .distinct()
+        .annotate(has_materials=models.Exists(published_materials))
+        .filter(has_materials=True)
         .order_by("-year")
     )
     year = request.GET.get("year")
@@ -143,19 +139,14 @@ def problem_archive(request):
     elif seasons:
         selected = seasons[0]
 
-    problems, materials_by_stage = [], []
+    materials_by_stage = []
     if selected:
-        problems = (Problem.objects
-                    .filter(status=Problem.Status.APPROVED, stage__season=selected)
-                    .exclude(stage__kind=Stage.Kind.OFFLINE, stage__results_published=False)
-                    .select_related("stage")
-                    .order_by("stage__order", "number"))
-
-        materials = (ArchiveMaterial.objects.published()
-                     .filter(season=selected)
-                     .select_related("stage")
-                     .order_by("stage__order", "stage__starts_at",
-                               "problem_number", "title"))
+        materials = (
+            ArchiveMaterial.objects.published()
+            .filter(season=selected)
+            .select_related("stage")
+            .order_by("stage__order", "stage__starts_at", "problem_number", "title")
+        )
 
         # Группируем: этап → тип материала. Порядок типов задаётся
         # KIND_ORDER, а не алфавитом: условия и разборы сверху,
@@ -180,7 +171,6 @@ def problem_archive(request):
     return render(request, "content/problem_archive.html", {
         "seasons": seasons,
         "selected": selected,
-        "problems": problems,
         "materials_by_stage": materials_by_stage,
     })
 
