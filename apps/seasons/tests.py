@@ -245,6 +245,13 @@ class HomeStatusTest(TestCase):
         self.assertIn("очный этап", html)
 
     def test_upcoming_stage_is_announced_with_its_start(self):
+        from apps.seasons.models import Stage
+
+        now = timezone.now()
+        Stage.objects.update(
+            starts_at=now + timedelta(days=10),
+            ends_at=now + timedelta(days=15),
+        )
         self._shift("ochny", 2, 5)
         html = self.client.get("/").content.decode()
         self.assertIn("начнётся", html)

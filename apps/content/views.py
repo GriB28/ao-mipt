@@ -145,7 +145,7 @@ def problem_archive(request):
             ArchiveMaterial.objects.published()
             .filter(season=selected)
             .select_related("stage")
-            .order_by("stageorder", "stagestarts_at", "problem_number", "title")
+            .order_by("stage__order", "stage__starts_at", "problem_number", "title")
         )
 
         # Группируем: этап → тип материала. Порядок типов задаётся
