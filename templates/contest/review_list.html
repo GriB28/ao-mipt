@@ -77,7 +77,7 @@
                 <div class="cell-sub-content">
                   <div class="sub-files-list" style="margin-bottom: 6px; display: flex; flex-direction: column; gap: 4px;">
                     {% for f in cell.files %}
-                      <a href="{{ f.file.url }}" target="_blank" rel="noopener" class="file-chip" title="{{ f.filename }}">
+                      <a href="{{ f.get_absolute_url }}" target="_blank" rel="noopener" class="file-chip" title="{{ f.filename }}">
                         {% if f.is_image %}🖼️{% else %}📄{% endif %} {{ f.filename|truncatechars:18 }}
                       </a>
                     {% empty %}

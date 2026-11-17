@@ -721,6 +721,15 @@ class LastSubmissionTest(TestCase):
         self.assertEqual(response["X-Content-Type-Options"], "nosniff")
         self.assertIn("attachment", self.client.get(sf.get_absolute_url() + "?download=1")["Content-Disposition"])
 
+    def test_submission_file_is_image(self):
+        self._send("решение.pdf")
+        sf = SubmissionFile.objects.get()
+        self.assertFalse(sf.is_image)
+
+        img_file = SimpleUploadedFile("scan.jpg", b"\xff\xd8\xff", content_type="image/jpeg")
+        sf_img = SubmissionFile.objects.create(submission=sf.submission, file=img_file)
+        self.assertTrue(sf_img.is_image)
+
     def test_other_participant_cannot_open_the_file(self):
         self._send()
         sf = SubmissionFile.objects.get()
@@ -1143,7 +1152,8 @@ class OnlineReviewMatrixTests(TestCase):
 
         # Файлы решений
         self.assertContains(resp, "solution1.pdf")
-        self.assertContains(resp, self.sf1.file.url)
+        self.assertContains(resp, self.sf1.get_absolute_url())
+        self.assertNotContains(resp, self.sf1.file.url)
 
         # Поля ввода
         self.assertContains(resp, f"score_{self.sub1_1.pk}")
