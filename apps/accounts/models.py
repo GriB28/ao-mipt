@@ -127,6 +127,33 @@ class User(AbstractUser):
         но право на конкретную задачу проверяет Problem.can_be_reviewed_by."""
         return self.is_manager
 
+    @property
+    def consent_banner_status(self):
+        """Статус для плашки согласия на обработку ПД.
+
+        Возвращает None, если плашка не требуется (анонимный пользователь,
+        организатор/администратор, анкета ещё не заполнена или согласие в порядке).
+        Иначе возвращает:
+        - 'missing' — если анкета заполнена, но согласие ни разу не прикреплялось;
+        - 'outdated' — если анкета была изменена и согласие устарело;
+        - 'rejected' — если согласие отклонено при проверке и требует пересылки.
+        """
+        if not self.is_authenticated:
+            return None
+        if not self.is_participant or self.is_manager:
+            return None
+        profile = getattr(self, "profile", None)
+        if profile is None or not profile.is_complete:
+            return None
+        consent = self.latest_consent
+        if consent is None:
+            return "missing"
+        if consent.status == ConsentDocument.Status.OUTDATED:
+            return "outdated"
+        if consent.status == ConsentDocument.Status.REJECTED:
+            return "rejected"
+        return None
+
 
 class ConsentMixin(models.Model):
     """Фиксация согласия на обработку персональных данных (152-ФЗ).
