@@ -837,3 +837,98 @@ class StaffUserAdminTest(TestCase):
         cl_no = resp_no.context["cl"]
         self.assertIn(self.admin, cl_no.queryset)
         self.assertNotIn(self.organizer, cl_no.queryset)
+
+
+class ConsentBannerTest(TestCase):
+    """Плашка над шапкой для участников, заполнивших анкету, но не прикрепивших согласие."""
+
+    def setUp(self):
+        self.participant = User.objects.create_user("student@e.ru", "olymp12345", email_confirmed=True)
+        ParticipantProfile.objects.create(user=self.participant)
+        self.admin = User.objects.create_superuser("admin@e.ru", "olymp12345")
+        self.organizer = User.objects.create_user("org@e.ru", "olymp12345", role=User.Role.ORGANIZER)
+
+    def _fill_profile(self):
+        self.client.force_login(self.participant)
+        self.client.post(reverse("accounts:profile"), profile_data())
+        self.participant.refresh_from_db()
+
+    def test_anonymous_user_no_banner(self):
+        resp = self.client.get(reverse("core:home"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "consent-alert-bar")
+
+    def test_manager_and_admin_no_banner(self):
+        for user in (self.admin, self.organizer):
+            self.assertIsNone(user.consent_banner_status)
+            self.client.force_login(user)
+            resp = self.client.get(reverse("core:home"))
+            self.assertEqual(resp.status_code, 200)
+            self.assertNotContains(resp, "consent-alert-bar")
+
+    def test_participant_incomplete_profile_no_banner(self):
+        self.assertFalse(self.participant.profile.is_complete)
+        self.assertIsNone(self.participant.consent_banner_status)
+        self.client.force_login(self.participant)
+        resp = self.client.get(reverse("core:home"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "consent-alert-bar")
+
+    def test_participant_complete_profile_missing_consent_shows_banner(self):
+        self._fill_profile()
+        self.assertTrue(self.participant.profile.is_complete)
+        self.assertEqual(self.participant.consent_banner_status, "missing")
+
+        resp = self.client.get(reverse("core:home"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "consent-alert-bar")
+        self.assertContains(resp, "согласие на&nbsp;обработку персональных данных ещё не&nbsp;прикреплено")
+        self.assertContains(resp, "Прикрепить согласие →")
+        self.assertContains(resp, reverse("accounts:profile") + "#consent")
+
+    def test_participant_with_pending_or_approved_consent_no_banner(self):
+        self._fill_profile()
+        consent = ConsentDocument.objects.create(
+            user=self.participant,
+            file="consents/test.pdf",
+            status=ConsentDocument.Status.PENDING,
+        )
+        self.assertIsNone(self.participant.consent_banner_status)
+        self.client.force_login(self.participant)
+        resp = self.client.get(reverse("core:home"))
+        self.assertNotContains(resp, "consent-alert-bar")
+
+        consent.status = ConsentDocument.Status.APPROVED
+        consent.save()
+        self.assertIsNone(self.participant.consent_banner_status)
+        resp = self.client.get(reverse("core:home"))
+        self.assertNotContains(resp, "consent-alert-bar")
+
+    def test_participant_outdated_consent_shows_banner(self):
+        self._fill_profile()
+        ConsentDocument.objects.create(
+            user=self.participant,
+            file="consents/test.pdf",
+            status=ConsentDocument.Status.OUTDATED,
+        )
+        self.assertEqual(self.participant.consent_banner_status, "outdated")
+        self.client.force_login(self.participant)
+        resp = self.client.get(reverse("core:home"))
+        self.assertContains(resp, "consent-alert-bar")
+        self.assertContains(resp, "данные анкеты изменились")
+        self.assertContains(resp, "Обновить согласие →")
+
+    def test_participant_rejected_consent_shows_banner(self):
+        self._fill_profile()
+        ConsentDocument.objects.create(
+            user=self.participant,
+            file="consents/test.pdf",
+            status=ConsentDocument.Status.REJECTED,
+        )
+        self.assertEqual(self.participant.consent_banner_status, "rejected")
+        self.client.force_login(self.participant)
+        resp = self.client.get(reverse("core:home"))
+        self.assertContains(resp, "consent-alert-bar")
+        self.assertContains(resp, "согласие на&nbsp;обработку персональных данных отклонено")
+        self.assertContains(resp, "Прикрепить согласие →")
+
