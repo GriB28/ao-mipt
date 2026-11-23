@@ -505,6 +505,80 @@ form p:has(> input[type=checkbox]):not(:has(input[type=file])) > input[type=chec
 .message.success { background: var(--color-success-100); color: var(--color-success-500); }
 .message.warning { background: var(--color-warning-100); color: var(--color-warning-500); }
 
+/* --- Плашка-предупреждение о согласии на обработку ПД ------------------ */
+
+.consent-alert-bar {
+  background: var(--color-danger-500);
+  color: #ffffff;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  position: relative;
+  z-index: 10;
+}
+
+.consent-alert-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.consent-alert-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.consent-alert-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: #ffffff;
+}
+
+.consent-alert-text {
+  margin: 0;
+  line-height: var(--leading-normal);
+  color: #ffffff;
+}
+
+.consent-alert-text strong {
+  font-weight: var(--weight-bold);
+}
+
+a.btn.consent-alert-btn {
+  flex: none;
+  background: #ffffff;
+  color: var(--color-danger-500);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+a.btn.consent-alert-btn:hover {
+  background: var(--color-danger-100);
+  color: var(--color-danger-500);
+  text-decoration: none;
+}
+
+@media (max-width: 720px) {
+  .consent-alert-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+  a.btn.consent-alert-btn {
+    align-self: stretch;
+    text-align: center;
+  }
+}
+
 /* --- Видео --------------------------------------------------------------- */
 
 .video-frame {

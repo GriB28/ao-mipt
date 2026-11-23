@@ -371,6 +371,14 @@ class SubmissionFile(TimeStampedModel):
         """Имя файла, как его загрузил участник, без служебного пути."""
         return self.original_name or Path(self.file.name).name
 
+    @property
+    def is_image(self):
+        name = self.original_name or (self.file.name if self.file else "")
+        if not name:
+            return False
+        ext = Path(name).suffix.lower()
+        return ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
+
 
 class Grade(TimeStampedModel):
     """Оценка за конкретную попытку. Проверяют организаторы."""

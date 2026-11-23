@@ -21,6 +21,33 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+{% if user.is_authenticated and user.consent_banner_status %}
+<div class="consent-alert-bar" role="alert">
+  <div class="container consent-alert-inner">
+    <div class="consent-alert-main">
+      <svg class="consent-alert-icon" viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true" focusable="false">
+        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+      </svg>
+      <p class="consent-alert-text">
+        {% if user.consent_banner_status == "outdated" %}
+          <strong>Внимание:</strong> данные анкеты изменились — необходимо прикрепить актуальное согласие на&nbsp;обработку персональных данных.
+        {% elif user.consent_banner_status == "rejected" %}
+          <strong>Внимание:</strong> согласие на&nbsp;обработку персональных данных отклонено — требуется загрузить исправленный скан.
+        {% else %}
+          <strong>Внимание:</strong> анкета заполнена, но согласие на&nbsp;обработку персональных данных ещё не&nbsp;прикреплено. Без него участие невозможно.
+        {% endif %}
+      </p>
+    </div>
+    <a href="{% url 'accounts:profile' %}#consent" class="btn btn-small consent-alert-btn">
+      {% if user.consent_banner_status == "outdated" %}
+        Обновить согласие →
+      {% else %}
+        Прикрепить согласие →
+      {% endif %}
+    </a>
+  </div>
+</div>
+{% endif %}
 <header class="site-header">
   <div class="container header-inner">
     <img class="header-mascot" src="{% static 'img/mascot/face-private.svg' %}" alt="" aria-hidden="true">
